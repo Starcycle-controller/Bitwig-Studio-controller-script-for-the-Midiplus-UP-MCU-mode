@@ -604,9 +604,10 @@ function onMidi(status, data1, data2) {
    }
 
    // 3. Jog / Scroll Wheel (CC 60 on Channel 1: 0xB0)
-   // Behavior pattern follows Ableton's real MackieControl.Transport
-   // handle_jog_wheel_rotation(): CTRL = tempo nudge, ALT = quarter step,
-   // SCRUB toggle = fine scrub vs coarse jump, doubled while playing.
+   // Default: smooth, un-quantized scrub through the arranger timeline.
+   // CTRL held = nudge tempo instead; SCRUB toggle (note 101) = finer
+   // sensitivity for precise positioning; ALT halves whichever step is
+   // currently active.
    if (msgType === 0xB0 && data1 === 60) {
       // Same sign-magnitude fix as the encoders above
       var backwards = data2 >= 64;
@@ -619,23 +620,14 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      var step = Math.max(1.0, Math.abs(rawStep) / 2.0);
-      if (transport.isPlaying().get()) {
-         step *= 4.0;
-      }
+      var step = Math.abs(rawStep) * (isScrubToggled ? 0.01 : 0.05);
       if (isAltPressed) {
-         step /= 4.0;
+         step /= 2.0;
       }
-      if (backwards) {
-         step = -step;
-      }
-
-      if (isScrubToggled) {
-         // Fine scrub - small fixed increments regardless of computed step
-         transport.incPosition(backwards ? -0.05 : 0.05, false);
-      } else {
-         transport.incPosition(step * 0.25, true);
-      }
+      // snap=false: move exactly by `step` beats rather than quantizing to
+      // the beat grid, so rotation feels like continuous scrubbing instead
+      // of jumping between beats.
+      transport.incPosition(backwards ? -step : step, false);
       return;
    }
 
