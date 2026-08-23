@@ -40,6 +40,10 @@ var MODE_SENDS = 1;   // Faders 1-8 = Send Levels (Press 1: Sends 1-8, Press 2: 
 var MODE_DEVICE = 2;  // Encoders = 8 Remote Control Macros
 
 var MAX_SENDS = 16;
+// How many devices deep into each track's chain to search for a device
+// named "Tool" (see PAN / isToolVolumeMode below). Raise if you nest Tool
+// deeper than this in your chains.
+var TOOL_DEVICE_SCAN_DEPTH = 4;
 var currentMode = MODE_MIXER;
 var sendBankPage = 0; // 0 = Sends 1-8, 1 = Sends 9-16
 var isFlipped = false;
@@ -59,6 +63,13 @@ var isScrubToggled = false;
 // RETURNS (note 51): swap the 8 channel strips between the main track bank
 // and the effect ("return") track bank.
 var isViewingReturns = false;
+
+// PAN (note 42): while active, faders/encoders control the Gain/Pan of a
+// "Tool" utility device found on each track, instead of the track's own
+// volume/pan. Assumes the Tool device's first remote-control parameter is
+// Gain and the second is Pan - verify against the LCD parameter names once
+// tested, since Bitwig doesn't expose a documented fixed order for this.
+var isToolVolumeMode = false;
 
 // Safely call a zero-argument method on an object (e.g. application.duplicate()).
 // Prevents an unknown/incorrect API method name from crashing the whole script.
@@ -105,6 +116,18 @@ var returnsLedState = { arm: [false, false, false, false, false, false, false, f
                          mute: [false, false, false, false, false, false, false, false],
                          select: [false, false, false, false, false, false, false, false] };
 
+// Per-track "Tool" device tracking (see isToolVolumeMode above). For each
+// bank slot, mainToolSlot[i]/returnsToolSlot[i] holds which position (0 to
+// TOOL_DEVICE_SCAN_DEPTH-1) in that track's device chain is currently named
+// "Tool", or -1 if none is. mainToolRemote[i]/returnsToolRemote[i] holds a
+// 2-parameter (Gain, Pan) remote-controls page for every scanned position,
+// indexed the same way, so the right one can be picked once the matching
+// slot is known.
+var mainToolSlot = [-1, -1, -1, -1, -1, -1, -1, -1];
+var returnsToolSlot = [-1, -1, -1, -1, -1, -1, -1, -1];
+var mainToolRemote = [];
+var returnsToolRemote = [];
+
 // Display State Caches (8 channels x 7 chars)
 var topRowText = ["       ", "       ", "       ", "       ", "       ", "       ", "       ", "       "];
 var bottomRowText = ["       ", "       ", "       ", "       ", "       ", "       ", "       ", "       "];
@@ -118,6 +141,19 @@ function activeTrackBank() {
 
 function activeLedState() {
    return isViewingReturns ? returnsLedState : mainLedState;
+}
+
+// Returns the Gain (paramIndex 0) or Pan (paramIndex 1) parameter of the
+// "Tool" device on the given track slot of the active bank, or null if that
+// track has no device named "Tool" within the first TOOL_DEVICE_SCAN_DEPTH
+// positions of its chain.
+function getToolParam(trackIndex, paramIndex) {
+   var slot = isViewingReturns ? returnsToolSlot[trackIndex] : mainToolSlot[trackIndex];
+   if (slot < 0) {
+      return null;
+   }
+   var remotesForTrack = isViewingReturns ? returnsToolRemote[trackIndex] : mainToolRemote[trackIndex];
+   return remotesForTrack[slot].getParameter(paramIndex);
 }
 
 function init() {
@@ -158,6 +194,10 @@ function init() {
    // shared display caches / LEDs.
    setupChannelStripObservers(trackBank, mainLedState, false);
    setupChannelStripObservers(effectTrackBank, returnsLedState, true);
+
+   // Track each bank's per-track "Tool" device, if any (see isToolVolumeMode).
+   setupToolDeviceTracking(trackBank, mainToolSlot, mainToolRemote);
+   setupToolDeviceTracking(effectTrackBank, returnsToolSlot, returnsToolRemote);
 
    // Setup Observers for 16 Sends on Cursor Track (For Fader Send Control Mode)
    for (var s = 0; s < MAX_SENDS; s++) {
@@ -344,6 +384,38 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
    }
 }
 
+// For every track in `bank`, scans the first TOOL_DEVICE_SCAN_DEPTH devices
+// in its chain for one named "Tool", tracking which position (if any) it's
+// currently at in `toolSlotState[trackIndex]`, and eagerly creating a
+// 2-parameter (assumed Gain, Pan) remote-controls page for every scanned
+// position in `toolRemoteState[trackIndex]` so getToolParam() can just index
+// into it once the matching slot is known.
+function setupToolDeviceTracking(bank, toolSlotState, toolRemoteState) {
+   for (var i = 0; i < 8; i++) {
+      (function (trackIndex) {
+         var track = bank.getItemAt(trackIndex);
+         var deviceBank = track.createDeviceBank(TOOL_DEVICE_SCAN_DEPTH);
+         var remotesForTrack = [];
+         toolRemoteState[trackIndex] = remotesForTrack;
+
+         for (var d = 0; d < TOOL_DEVICE_SCAN_DEPTH; d++) {
+            (function (deviceIndex) {
+               var device = deviceBank.getItemAt(deviceIndex);
+               remotesForTrack[deviceIndex] = device.createCursorRemoteControlsPage(2);
+
+               device.name().addValueObserver(function (name) {
+                  if (name === "Tool") {
+                     toolSlotState[trackIndex] = deviceIndex;
+                  } else if (toolSlotState[trackIndex] === deviceIndex) {
+                     toolSlotState[trackIndex] = -1;
+                  }
+               });
+            })(d);
+         }
+      })(i);
+   }
+}
+
 // Re-sends the cached Arm/Solo/Mute/Select LED state for whichever bank is
 // currently active - used after toggling RETURNS so the hardware LEDs catch
 // up to the bank that's now actually mapped to the 8 channel strips.
@@ -382,12 +454,26 @@ function onMidi(status, data1, data2) {
             var sendTargetIndex = (sendBankPage * 8) + channel;
             cursorTrack.sendBank().getItemAt(sendTargetIndex).set(normalizedVal);
          } else if (!isFlipped) {
-            // Standard Mixer Fader -> Track Volume
-            activeTrackBank().getItemAt(channel).volume().set(normalizedVal);
+            // Standard Mixer Fader -> Track Volume (or Tool Gain in isToolVolumeMode)
+            if (currentMode === MODE_MIXER && isToolVolumeMode) {
+               var gainParam = getToolParam(channel, 0);
+               if (gainParam) {
+                  gainParam.set(normalizedVal);
+               }
+            } else {
+               activeTrackBank().getItemAt(channel).volume().set(normalizedVal);
+            }
          } else {
             // Flipped Fader behavior
             if (currentMode === MODE_MIXER) {
-               activeTrackBank().getItemAt(channel).pan().set(normalizedVal);
+               if (isToolVolumeMode) {
+                  var panParam = getToolParam(channel, 1);
+                  if (panParam) {
+                     panParam.set(normalizedVal);
+                  }
+               } else {
+                  activeTrackBank().getItemAt(channel).pan().set(normalizedVal);
+               }
             } else if (currentMode === MODE_DEVICE) {
                remoteControls.getParameter(channel).set(normalizedVal);
             }
@@ -412,7 +498,14 @@ function onMidi(status, data1, data2) {
 
       if (!isFlipped) {
          if (currentMode === MODE_MIXER) {
-            activeTrackBank().getItemAt(encoderIndex).pan().inc(delta, resolution);
+            if (isToolVolumeMode) {
+               var encPanParam = getToolParam(encoderIndex, 1);
+               if (encPanParam) {
+                  encPanParam.inc(delta, resolution);
+               }
+            } else {
+               activeTrackBank().getItemAt(encoderIndex).pan().inc(delta, resolution);
+            }
          } else if (currentMode === MODE_SENDS) {
             var encSendIdx = (sendBankPage * 8) + encoderIndex;
             cursorTrack.sendBank().getItemAt(encSendIdx).inc(delta, resolution);
@@ -420,8 +513,15 @@ function onMidi(status, data1, data2) {
             remoteControls.getParameter(encoderIndex).inc(delta, resolution);
          }
       } else {
-         // Flipped Encoder -> Track Volume
-         activeTrackBank().getItemAt(encoderIndex).volume().inc(delta, resolution);
+         // Flipped Encoder -> Track Volume (or Tool Gain in isToolVolumeMode)
+         if (currentMode === MODE_MIXER && isToolVolumeMode) {
+            var encGainParam = getToolParam(encoderIndex, 0);
+            if (encGainParam) {
+               encGainParam.inc(delta, resolution);
+            }
+         } else {
+            activeTrackBank().getItemAt(encoderIndex).volume().inc(delta, resolution);
+         }
       }
       return;
    }
@@ -595,9 +695,10 @@ function handleButtonPress(note) {
          refreshFaders();
          break;
 
-      case 42: // PAN -> Pan Mode
+      case 42: // PAN -> toggle Tool device Gain/Pan control (see isToolVolumeMode)
          currentMode = MODE_MIXER;
-         host.showPopupNotification("Mode: Pan");
+         isToolVolumeMode = !isToolVolumeMode;
+         host.showPopupNotification(isToolVolumeMode ? "Faders: Tool Device Gain / Pan" : "Faders: Track Volume / Pan");
          updateModeLEDs();
          refreshDisplayText();
          refreshFaders();
@@ -906,7 +1007,7 @@ function handleButtonPress(note) {
 function updateModeLEDs() {
    midiOut.sendMidi(0x90, 40, currentMode === MODE_MIXER ? 127 : 0); // TRACK LED
    midiOut.sendMidi(0x90, 41, currentMode === MODE_SENDS ? 127 : 0); // SEND LED
-   midiOut.sendMidi(0x90, 42, currentMode === MODE_MIXER ? 127 : 0); // PAN LED
+   midiOut.sendMidi(0x90, 42, isToolVolumeMode ? 127 : 0); // PAN LED - lit while Tool Gain/Pan mode is active
    midiOut.sendMidi(0x90, 43, currentMode === MODE_DEVICE ? 127 : 0); // PLUG-IN LED
 }
 
@@ -917,10 +1018,20 @@ function refreshFaders() {
          var sendIdx = (sendBankPage * 8) + i;
          sendPitchBend(i, cursorTrack.sendBank().getItemAt(sendIdx).value().get());
       } else if (!isFlipped) {
-         sendPitchBend(i, activeTrackBank().getItemAt(i).volume().value().get());
+         if (currentMode === MODE_MIXER && isToolVolumeMode) {
+            var gainParam = getToolParam(i, 0);
+            sendPitchBend(i, gainParam ? gainParam.value().get() : 0);
+         } else {
+            sendPitchBend(i, activeTrackBank().getItemAt(i).volume().value().get());
+         }
       } else {
          if (currentMode === MODE_MIXER) {
-            sendPitchBend(i, activeTrackBank().getItemAt(i).pan().value().get());
+            if (isToolVolumeMode) {
+               var panParam = getToolParam(i, 1);
+               sendPitchBend(i, panParam ? panParam.value().get() : 0.5);
+            } else {
+               sendPitchBend(i, activeTrackBank().getItemAt(i).pan().value().get());
+            }
          } else if (currentMode === MODE_DEVICE) {
             sendPitchBend(i, remoteControls.getParameter(i).value().get());
          }
@@ -937,9 +1048,20 @@ function refreshDisplayText() {
          topRowText[i] = formatString(sendItem.name().get() || ("Send " + (sendIdx + 1)), 7);
          bottomRowText[i] = formatString(sendItem.displayedValue().get(), 7);
       } else if (currentMode === MODE_MIXER) {
-         var track = activeTrackBank().getItemAt(i);
-         topRowText[i] = formatString(track.name().get(), 7);
-         bottomRowText[i] = formatString(track.volume().displayedValue().get(), 7);
+         if (isToolVolumeMode) {
+            var gainParam = getToolParam(i, 0);
+            if (gainParam) {
+               topRowText[i] = formatString(gainParam.name().get(), 7);
+               bottomRowText[i] = formatString(gainParam.displayedValue().get(), 7);
+            } else {
+               topRowText[i] = formatString("No Tool", 7);
+               bottomRowText[i] = formatString("", 7);
+            }
+         } else {
+            var track = activeTrackBank().getItemAt(i);
+            topRowText[i] = formatString(track.name().get(), 7);
+            bottomRowText[i] = formatString(track.volume().displayedValue().get(), 7);
+         }
       } else if (currentMode === MODE_DEVICE) {
          var param = remoteControls.getParameter(i);
          topRowText[i] = formatString(param.name().get(), 7);
