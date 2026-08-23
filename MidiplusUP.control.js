@@ -878,8 +878,17 @@ function onMidi(status, data1, data2) {
       // Jog Wheel Push / PUNCH IN (Note 87 - see isWheelPressed above)
       if (data1 === 87) {
          if (isPressed) {
+            // This hardware re-sends Note-On 87 (still while physically
+            // held) whenever another button is pressed alongside it -
+            // confirmed via the RAW Note-On debug log showing repeated 87
+            // presses interspersed with SHIFT/OPTION/CTRL/ALT. Only reset
+            // the combo-use flag on a genuine fresh press (not already
+            // held), so a repeat assertion doesn't wipe out combo use that
+            // already happened earlier in the same hold.
+            if (!isWheelPressed) {
+               wheelPushUsedForCombo = false;
+            }
             isWheelPressed = true;
-            wheelPushUsedForCombo = false;
          } else {
             isWheelPressed = false;
             if (!wheelPushUsedForCombo) {
