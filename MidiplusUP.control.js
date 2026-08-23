@@ -598,13 +598,10 @@ function onMidi(status, data1, data2) {
             // Sends Mode: Faders 1-8 control Sends on focused track
             var sendTargetIndex = (sendBankPage * 8) + channel;
             cursorTrack.sendBank().getItemAt(sendTargetIndex).set(normalizedVal);
-         } else if (currentMode === MODE_DEVICE) {
-            // Plugin mode: faders always mirror the device encoders (the
-            // current device's remote-control/macro bank), regardless of
-            // FLIP - there's no track volume/pan to fall back to here.
-            remoteControls.getParameter(channel).set(normalizedVal);
          } else if (!isFlipped) {
-            // Standard Mixer Fader -> Track Volume (or Tool Gain in isToolVolumeMode)
+            // Standard Fader -> Track Volume (or Tool Gain in isToolVolumeMode).
+            // Applies in both MIXER and DEVICE modes - FLIP is the overlay
+            // that swaps faders/encoders between volume and macros.
             if (currentMode === MODE_MIXER && isToolVolumeMode) {
                var gainParam = getToolParam(channel, 0);
                if (gainParam) {
@@ -613,8 +610,12 @@ function onMidi(status, data1, data2) {
             } else {
                activeTrackBank().getItemAt(channel).volume().set(normalizedVal);
             }
+         } else if (currentMode === MODE_DEVICE) {
+            // Flipped + Plugin mode: faders control the device macros
+            // (encoders take over track volume - see the encoder handler).
+            remoteControls.getParameter(channel).set(normalizedVal);
          } else {
-            // Flipped Fader behavior (MIXER only - DEVICE is handled above)
+            // Flipped Fader behavior (MIXER)
             if (isToolVolumeMode) {
                var panParam = getToolParam(channel, 1);
                if (panParam) {
@@ -1236,7 +1237,11 @@ function handleButtonPress(note) {
       // is toggled on - matches Ableton's Transport.__on_cursor_*_pressed()
       // pattern (zoom vs scroll depending on the zoom-toggle state).
       case 96: // LEFT ARROW
-         if (isZoomToggled) {
+         if (currentMode === MODE_DEVICE) {
+            // Plugin mode: LEFT/RIGHT select the previous/next device on
+            // the current chain, same target as the PLUGIN/CTRL+jog combos.
+            cursorDevice.selectPrevious();
+         } else if (isZoomToggled) {
             // application.zoomIn()/zoomOut() fired without error but never
             // actually changed the arranger's horizontal zoom (confirmed on
             // hardware, arranger focused) - trying zoomToFit() instead,
@@ -1250,7 +1255,9 @@ function handleButtonPress(note) {
          break;
 
       case 97: // RIGHT ARROW
-         if (isZoomToggled) {
+         if (currentMode === MODE_DEVICE) {
+            cursorDevice.selectNext();
+         } else if (isZoomToggled) {
             safeCall(application, "zoomToSelection", "Zoom to Selection");
          } else {
             safeCall(application, "arrowKeyRight");
@@ -1321,8 +1328,6 @@ function refreshFaders() {
       if (currentMode === MODE_SENDS) {
          var sendIdx = (sendBankPage * 8) + i;
          sendPitchBend(i, cursorTrack.sendBank().getItemAt(sendIdx).value().get());
-      } else if (currentMode === MODE_DEVICE) {
-         sendPitchBend(i, remoteControls.getParameter(i).value().get());
       } else if (!isFlipped) {
          if (currentMode === MODE_MIXER && isToolVolumeMode) {
             var gainParam = getToolParam(i, 0);
@@ -1330,6 +1335,8 @@ function refreshFaders() {
          } else {
             sendPitchBend(i, activeTrackBank().getItemAt(i).volume().value().get());
          }
+      } else if (currentMode === MODE_DEVICE) {
+         sendPitchBend(i, remoteControls.getParameter(i).value().get());
       } else {
          if (isToolVolumeMode) {
             var panParam = getToolParam(i, 1);
