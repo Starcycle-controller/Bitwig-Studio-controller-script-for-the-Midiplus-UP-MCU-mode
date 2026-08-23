@@ -144,6 +144,30 @@ function safeCall(obj, methodName, popupText) {
    }
 }
 
+// Safely invoke a Bitwig action by id (application.getAction(id).invoke()),
+// for functionality (like switching the arranger tool) that has no direct
+// method on Application - only reachable through the action registry.
+// Never crashes on a wrong/unavailable id, just reports it.
+function safeInvokeAction(actionId, popupText) {
+   try {
+      var action = application.getAction(actionId);
+      if (!action) {
+         println("Action not found: " + actionId);
+         host.showPopupNotification((popupText || actionId) + " (unavailable)");
+         return false;
+      }
+      action.invoke();
+      if (popupText) {
+         host.showPopupNotification(popupText);
+      }
+      return true;
+   } catch (e) {
+      println("Error invoking action \"" + actionId + "\": " + e);
+      host.showPopupNotification((popupText || actionId) + " (error)");
+      return false;
+   }
+}
+
 // Host Objects
 var trackBank = null;
 var effectTrackBank = null; // "Returns" bank, shown when isViewingReturns is true
@@ -1255,12 +1279,15 @@ function handleButtonPress(note) {
          host.showPopupNotification("Back To Arrangement");
          break;
 
-      case 81: // DRAW -> Toggle Automation Editor. There's no "draw mode" or
-               // automation-lane API in Bitwig's Controller API (no way to
-               // select/expand a specific track's automation lane), so this
-               // is the closest available equivalent.
-         application.toggleAutomationEditor();
-         host.showPopupNotification("Toggle Automation Editor");
+      case 81: // DRAW -> Select the Time Selection arranger tool (keyboard
+               // shortcut "2" in Bitwig; "1" is Point Select, the default).
+               // No direct Application method for arranger tool switching
+               // exists, so this goes through the action registry instead -
+               // see safeInvokeAction. Note: there's also no API for
+               // reading/writing the arranger's time-selection range itself,
+               // so the wheel can't be wired up to grow/shrink a selection
+               // from here - only the tool switch is achievable.
+         safeInvokeAction("Time Selection Tool", "Select Time Tool");
          break;
 
       case 82: // MARKER -> Add Cue Marker at Playhead
