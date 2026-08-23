@@ -523,6 +523,12 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          // track volume, which (per the FLIP overlay) is both MIXER-unflipped
          // and DEVICE-unflipped.
          track.volume().value().addValueObserver(function (value) {
+            // TEMPORARY DEBUG: confirms whether this callback fires at all
+            // for an externally-driven (mouse) volume change - remove once
+            // the live fader-sync issue is diagnosed.
+            println("Volume observer fired - index: " + index + ", value: " + value +
+               ", isFlipped: " + isFlipped + ", currentMode: " + currentMode +
+               ", isViewingReturns: " + isViewingReturns + ", isReturnsBank: " + isReturnsBank);
             if (!isFlipped && (currentMode === MODE_MIXER || currentMode === MODE_DEVICE) &&
                 isViewingReturns === isReturnsBank) {
                sendPitchBend(index, value);
