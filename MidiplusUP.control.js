@@ -40,9 +40,13 @@ var MODE_SENDS = 1;   // Faders 1-8 = Send Levels (Press 1: Sends 1-8, Press 2: 
 var MODE_DEVICE = 2;  // Encoders = 8 Remote Control Macros
 
 var MAX_SENDS = 16;
+// Name to search for when looking for the per-track gain-staging utility
+// device (see PAN / isToolVolumeMode below). Match is case-sensitive and
+// exact - rename your Tool device instances to this if you change it.
+var TOOL_DEVICE_NAME = "TRLVL";
 // How many devices deep into each track's chain to search for a device
-// named "Tool" (see PAN / isToolVolumeMode below). Raise if you nest Tool
-// deeper than this in your chains.
+// named TOOL_DEVICE_NAME. Raise if you nest it deeper than this in your
+// chains.
 var TOOL_DEVICE_SCAN_DEPTH = 4;
 var currentMode = MODE_MIXER;
 var sendBankPage = 0; // 0 = Sends 1-8, 1 = Sends 9-16
@@ -64,11 +68,12 @@ var isScrubToggled = false;
 // and the effect ("return") track bank.
 var isViewingReturns = false;
 
-// PAN (note 42): while active, faders/encoders control the Gain/Pan of a
-// "Tool" utility device found on each track, instead of the track's own
-// volume/pan. Assumes the Tool device's first remote-control parameter is
-// Gain and the second is Pan - verify against the LCD parameter names once
-// tested, since Bitwig doesn't expose a documented fixed order for this.
+// PAN (note 42): TOGGLE - while active, faders/encoders control the
+// Gain/Pan of a TOOL_DEVICE_NAME utility device found on each track,
+// instead of the track's own volume/pan. Assumes the device's first
+// remote-control parameter is Gain and the second is Pan - verify against
+// the LCD parameter names once tested, since Bitwig doesn't expose a
+// documented fixed order for this.
 var isToolVolumeMode = false;
 
 // Safely call a zero-argument method on an object (e.g. application.duplicate()).
@@ -116,17 +121,24 @@ var returnsLedState = { arm: [false, false, false, false, false, false, false, f
                          mute: [false, false, false, false, false, false, false, false],
                          select: [false, false, false, false, false, false, false, false] };
 
-// Per-track "Tool" device tracking (see isToolVolumeMode above). For each
-// bank slot, mainToolSlot[i]/returnsToolSlot[i] holds which position (0 to
-// TOOL_DEVICE_SCAN_DEPTH-1) in that track's device chain is currently named
-// "Tool", or -1 if none is. mainToolRemote[i]/returnsToolRemote[i] holds a
-// 2-parameter (Gain, Pan) remote-controls page for every scanned position,
-// indexed the same way, so the right one can be picked once the matching
-// slot is known.
+// Per-track TOOL_DEVICE_NAME device tracking (see isToolVolumeMode above).
+// For each bank slot, mainToolSlot[i]/returnsToolSlot[i] holds which
+// position (0 to TOOL_DEVICE_SCAN_DEPTH-1) in that track's device chain is
+// currently named TOOL_DEVICE_NAME, or -1 if none is.
+// mainToolRemote[i]/returnsToolRemote[i] holds a 2-parameter (Gain, Pan)
+// remote-controls page for every scanned position, indexed the same way,
+// so the right one can be picked once the matching slot is known.
 var mainToolSlot = [-1, -1, -1, -1, -1, -1, -1, -1];
 var returnsToolSlot = [-1, -1, -1, -1, -1, -1, -1, -1];
 var mainToolRemote = [];
 var returnsToolRemote = [];
+
+// Same tracking, but for the single arranger-selected cursorTrack rather
+// than a bank slot - used by PAN (case 42) to decide whether it needs to
+// open the device browser for the currently-selected track before Tool
+// Gain/Pan mode will have anything to control there.
+var cursorToolSlot = -1;
+var cursorToolRemote = [];
 
 // Display State Caches (8 channels x 7 chars)
 var topRowText = ["       ", "       ", "       ", "       ", "       ", "       ", "       ", "       "];
@@ -144,9 +156,9 @@ function activeLedState() {
 }
 
 // Returns the Gain (paramIndex 0) or Pan (paramIndex 1) parameter of the
-// "Tool" device on the given track slot of the active bank, or null if that
-// track has no device named "Tool" within the first TOOL_DEVICE_SCAN_DEPTH
-// positions of its chain.
+// TOOL_DEVICE_NAME device on the given track slot of the active bank, or
+// null if that track has no such device within the first
+// TOOL_DEVICE_SCAN_DEPTH positions of its chain.
 function getToolParam(trackIndex, paramIndex) {
    var slot = isViewingReturns ? returnsToolSlot[trackIndex] : mainToolSlot[trackIndex];
    if (slot < 0) {
@@ -195,9 +207,14 @@ function init() {
    setupChannelStripObservers(trackBank, mainLedState, false);
    setupChannelStripObservers(effectTrackBank, returnsLedState, true);
 
-   // Track each bank's per-track "Tool" device, if any (see isToolVolumeMode).
+   // Track each bank's per-track TOOL_DEVICE_NAME device, if any (see isToolVolumeMode).
    setupToolDeviceTracking(trackBank, mainToolSlot, mainToolRemote);
    setupToolDeviceTracking(effectTrackBank, returnsToolSlot, returnsToolRemote);
+   cursorToolRemote = scanTrackForToolDevice(
+      cursorTrack,
+      function (deviceIndex) { cursorToolSlot = deviceIndex; },
+      function (deviceIndex) { if (cursorToolSlot === deviceIndex) { cursorToolSlot = -1; } }
+   );
 
    // Setup Observers for 16 Sends on Cursor Track (For Fader Send Control Mode)
    for (var s = 0; s < MAX_SENDS; s++) {
@@ -385,33 +402,54 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
 }
 
 // For every track in `bank`, scans the first TOOL_DEVICE_SCAN_DEPTH devices
-// in its chain for one named "Tool", tracking which position (if any) it's
+// in its chain for one named TOOL_DEVICE_NAME, tracking which position (if any) it's
 // currently at in `toolSlotState[trackIndex]`, and eagerly creating a
 // 2-parameter (assumed Gain, Pan) remote-controls page for every scanned
 // position in `toolRemoteState[trackIndex]` so getToolParam() can just index
 // into it once the matching slot is known.
+// Scans `track`'s device chain (first TOOL_DEVICE_SCAN_DEPTH devices) for
+// one named TOOL_DEVICE_NAME. Calls onSlotFound(deviceIndex) once a scanned
+// position's device is (re)named to match, onSlotLost(deviceIndex) once a
+// previously-matching position's device is renamed away or replaced.
+// Returns the per-position remote-controls page array so callers can look
+// up parameters once they know which position matched.
+function scanTrackForToolDevice(track, onSlotFound, onSlotLost) {
+   var deviceBank = track.createDeviceBank(TOOL_DEVICE_SCAN_DEPTH);
+   var remotesForTrack = [];
+
+   for (var d = 0; d < TOOL_DEVICE_SCAN_DEPTH; d++) {
+      (function (deviceIndex) {
+         var device = deviceBank.getItemAt(deviceIndex);
+         remotesForTrack[deviceIndex] = device.createCursorRemoteControlsPage(2);
+
+         device.name().addValueObserver(function (name) {
+            if (name === TOOL_DEVICE_NAME) {
+               onSlotFound(deviceIndex);
+            } else {
+               onSlotLost(deviceIndex);
+            }
+         });
+      })(d);
+   }
+
+   return remotesForTrack;
+}
+
 function setupToolDeviceTracking(bank, toolSlotState, toolRemoteState) {
    for (var i = 0; i < 8; i++) {
       (function (trackIndex) {
-         var track = bank.getItemAt(trackIndex);
-         var deviceBank = track.createDeviceBank(TOOL_DEVICE_SCAN_DEPTH);
-         var remotesForTrack = [];
-         toolRemoteState[trackIndex] = remotesForTrack;
-
-         for (var d = 0; d < TOOL_DEVICE_SCAN_DEPTH; d++) {
-            (function (deviceIndex) {
-               var device = deviceBank.getItemAt(deviceIndex);
-               remotesForTrack[deviceIndex] = device.createCursorRemoteControlsPage(2);
-
-               device.name().addValueObserver(function (name) {
-                  if (name === "Tool") {
-                     toolSlotState[trackIndex] = deviceIndex;
-                  } else if (toolSlotState[trackIndex] === deviceIndex) {
-                     toolSlotState[trackIndex] = -1;
-                  }
-               });
-            })(d);
-         }
+         toolSlotState[trackIndex] = -1;
+         toolRemoteState[trackIndex] = scanTrackForToolDevice(
+            bank.getItemAt(trackIndex),
+            function (deviceIndex) {
+               toolSlotState[trackIndex] = deviceIndex;
+            },
+            function (deviceIndex) {
+               if (toolSlotState[trackIndex] === deviceIndex) {
+                  toolSlotState[trackIndex] = -1;
+               }
+            }
+         );
       })(i);
    }
 }
@@ -695,10 +733,21 @@ function handleButtonPress(note) {
          refreshFaders();
          break;
 
-      case 42: // PAN -> toggle Tool device Gain/Pan control (see isToolVolumeMode)
+      case 42: // PAN -> toggle TOOL_DEVICE_NAME Gain/Pan control (see isToolVolumeMode)
          currentMode = MODE_MIXER;
          isToolVolumeMode = !isToolVolumeMode;
-         host.showPopupNotification(isToolVolumeMode ? "Faders: Tool Device Gain / Pan" : "Faders: Track Volume / Pan");
+         if (isToolVolumeMode && cursorToolSlot < 0) {
+            // Selected track has no TOOL_DEVICE_NAME device yet. Scripts
+            // can't silently insert a specific built-in device (Bitwig's
+            // insertBitwigDevice() needs a real java.util.UUID, which isn't
+            // constructible from a .control.js script) - the closest
+            // available thing is popping the browser at the end of its
+            // chain so you can add one in a couple of clicks.
+            cursorTrack.endOfDeviceChainInsertionPoint().browse();
+            host.showPopupNotification("No " + TOOL_DEVICE_NAME + " on selected track - opening browser");
+         } else {
+            host.showPopupNotification(isToolVolumeMode ? "Faders: " + TOOL_DEVICE_NAME + " Gain / Pan" : "Faders: Track Volume / Pan");
+         }
          updateModeLEDs();
          refreshDisplayText();
          refreshFaders();
@@ -1054,7 +1103,7 @@ function refreshDisplayText() {
                topRowText[i] = formatString(gainParam.name().get(), 7);
                bottomRowText[i] = formatString(gainParam.displayedValue().get(), 7);
             } else {
-               topRowText[i] = formatString("No Tool", 7);
+               topRowText[i] = formatString("No " + TOOL_DEVICE_NAME, 7);
                bottomRowText[i] = formatString("", 7);
             }
          } else {
