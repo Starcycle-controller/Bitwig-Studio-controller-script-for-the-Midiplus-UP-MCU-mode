@@ -1653,8 +1653,15 @@ function queueFaderPitchBend(channel, normalizedValue) {
 function faderFlushTask() {
    for (var i = 0; i < 9; i++) {
       if (pendingFaderPitchBend[i] !== null) {
+         // TEMPORARY DEBUG: confirms the flush loop actually runs and
+         // computes the expected MIDI bytes - remove once diagnosed.
+         var debugVal14 = Math.max(0, Math.min(16383, Math.round(pendingFaderPitchBend[i] * 16383)));
+         println("faderFlushTask sending - channel: " + i + ", value: " + pendingFaderPitchBend[i] +
+            ", status: 0x" + (0xE0 + i).toString(16) + ", lsb: " + (debugVal14 & 0x7F) +
+            ", msb: " + ((debugVal14 >> 7) & 0x7F));
          sendPitchBend(i, pendingFaderPitchBend[i]);
          pendingFaderPitchBend[i] = null;
+         host.requestFlush();
       }
    }
    host.scheduleTask(faderFlushTask, 30);
