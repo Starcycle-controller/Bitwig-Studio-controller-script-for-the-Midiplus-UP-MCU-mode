@@ -263,87 +263,6 @@ function activeLedState() {
    return isViewingReturns ? returnsLedState : mainLedState;
 }
 
-// Sets a volume-like parameter as close as possible to targetDb, without
-// assuming Bitwig's internal (undocumented, non-linear) normalized-value-
-// to-dB gain law - binary search using the parameter's own displayedValue()
-// text as ground truth converges correctly regardless of the actual curve,
-// since volume is always monotonic in dB. ~24 iterations is comfortably
-// enough precision (2^-24 of the 0..1 range) and cheap enough to run
-// synchronously inside a single button-press handler.
-// Per-channel-index (0-7) in-progress volume-to-dB search state, or null
-// when idle - see setVolumeToDb / advanceVolumeResetSearch. Both a
-// scheduleTask-based delay AND a plain .get()-after-.set() were confirmed
-// on hardware to read a STALE, frozen value that never reflected this
-// script's own .set() calls (one attempt converged to the range's top
-// regardless of target, the next to the bottom - consistent with the read
-// being frozen at whatever the value happened to be before the search
-// started, not advancing at all). Driving the search from the volume
-// parameter's own addValueObserver instead sidesteps the timing question
-// entirely: the callback only fires once Bitwig has actually applied the
-// change, so the value it reports is guaranteed current.
-var volumeResetSearch = [null, null, null, null, null, null, null, null];
-
-function advanceVolumeResetSearch(index, volumeParam, isReturnsBank) {
-   var search = volumeResetSearch[index];
-   if (!search || search.isReturnsBank !== isReturnsBank) {
-      // Either idle, or this fired for the OTHER bank's same-index track
-      // (main vs returns are separate Parameter objects with separate
-      // observers - a change on one can't actually trigger the other's
-      // callback, but an unrelated external change to this exact track,
-      // e.g. someone dragging the on-screen fader, could still fire this
-      // observer while an unrelated search is active for the same index
-      // on the other bank - don't act on it).
-      return;
-   }
-   var currentDb = parseFloat(volumeParam.displayedValue().get());
-   if (isNaN(currentDb) || currentDb < search.targetDb) {
-      search.low = search.mid;
-   } else {
-      search.high = search.mid;
-   }
-   search.iterationsRemaining--;
-   if (search.iterationsRemaining <= 0) {
-      volumeResetSearch[index] = null;
-      volumeParam.set((search.low + search.high) / 2);
-      if (search.restoreAutomationWrite) {
-         transport.isArrangerAutomationWriteEnabled().set(true);
-      }
-      return;
-   }
-   search.mid = (search.low + search.high) / 2;
-   volumeParam.set(search.mid);
-}
-
-// Kicks off a binary search (via advanceVolumeResetSearch, chained through
-// the value observer registered in setupChannelStripObservers) that lands
-// volumeParam as close as possible to targetDb, without assuming Bitwig's
-// internal (undocumented, non-linear) normalized-value-to-dB gain law -
-// works regardless of the actual curve, since volume is always monotonic
-// in dB.
-function setVolumeToDb(index, volumeParam, targetDb, isReturnsBank) {
-   // If Automation Write is on, the rapid .set() calls this performs would
-   // otherwise get recorded onto the timeline as automation points at the
-   // current playhead (confirmed on hardware - this broke manual fader
-   // control entirely once that automation started playing back). Suspend
-   // it for the duration of the search and restore it afterward,
-   // regardless of whether it was on to begin with.
-   var wasAutomationWriteEnabled = transport.isArrangerAutomationWriteEnabled().get();
-   if (wasAutomationWriteEnabled) {
-      transport.isArrangerAutomationWriteEnabled().set(false);
-   }
-   var initialMid = 0.5;
-   volumeResetSearch[index] = {
-      targetDb: targetDb,
-      low: 0.0,
-      high: 1.0,
-      mid: initialMid,
-      iterationsRemaining: 20,
-      restoreAutomationWrite: wasAutomationWriteEnabled,
-      isReturnsBank: isReturnsBank
-   };
-   volumeParam.set(initialMid);
-}
-
 // Returns the Gain (paramIndex 0) or Pan (paramIndex 1) parameter of the
 // TOOL_DEVICE_NAME device on the given track slot of the active bank, or
 // null if that track has no such device within the first
@@ -607,16 +526,12 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
 
          // Track Volume Observer - live-updates the fader while it's showing
          // track volume, which (per the FLIP overlay) is both MIXER-unflipped
-         // and DEVICE-unflipped. Also drives the encoder-click volume-to-dB
-         // reset's binary search (see advanceVolumeResetSearch) - this fires
-         // reliably on every actual applied change, unlike a manual
-         // .get()-after-.set() poll.
+         // and DEVICE-unflipped.
          track.volume().value().addValueObserver(function (value) {
             if (!isFlipped && (currentMode === MODE_MIXER || currentMode === MODE_DEVICE) &&
                 isViewingReturns === isReturnsBank) {
                sendPitchBend(index, value);
             }
-            advanceVolumeResetSearch(index, track.volume(), isReturnsBank);
          });
 
          track.volume().displayedValue().addValueObserver(function (dispVal) {
@@ -1183,13 +1098,16 @@ function handleButtonPress(note) {
       // Encoder Push Click (Reset Parameter)
       var encIdx = note - 32;
       if (currentMode === MODE_MIXER) {
+         // Reverted to a plain .reset() (back to unity/0dB) - the
+         // dB-targeting attempts (-10dB for non-group tracks) caused real
+         // problems on hardware across three different implementations
+         // (wrong convergence, then broken automation, then a script
+         // freeze likely from Bitwig ramping the parameter and firing the
+         // observer many times per .set()) and were reverted rather than
+         // risk a fourth broken iteration. See git history if revisiting.
          var resetTrack = activeTrackBank().getItemAt(encIdx);
          resetTrack.pan().reset();
-         // Group tracks reset to unity (0 dB); Audio/Hybrid/Instrument (and
-         // anything else, e.g. Effect) reset to -10 dB instead of unity -
-         // see setVolumeToDb for why this isn't a simple .reset() call.
-         var resetTargetDb = (resetTrack.trackType().get() === "Group") ? 0 : -10;
-         setVolumeToDb(encIdx, resetTrack.volume(), resetTargetDb, isViewingReturns);
+         resetTrack.volume().reset();
       } else if (currentMode === MODE_SENDS) {
          var resetSendIdx = (sendBankPage * 8) + encIdx;
          cursorTrack.sendBank().getItemAt(resetSendIdx).reset();
