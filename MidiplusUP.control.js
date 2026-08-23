@@ -1121,6 +1121,10 @@ function handleButtonPress(note) {
          }
          refreshDisplayText();
          refreshFaders();
+         // This hardware self-lights the button's LED on press and doesn't
+         // clear it without a host echo (same issue as the I/O button, note
+         // 40, above) - flash it off rather than leaving it stuck lit.
+         flashLed(48, 150);
          break;
 
       case 49: // CHANNEL NEXT (>) -> nudge 1 channel forward, jump to last
@@ -1144,6 +1148,7 @@ function handleButtonPress(note) {
          }
          refreshDisplayText();
          refreshFaders();
+         flashLed(49, 150);
          break;
 
       case 50: // FLIP -> Swap Faders and Encoders
