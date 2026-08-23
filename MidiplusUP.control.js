@@ -483,21 +483,28 @@ function init() {
    updateModeLEDs();
    host.scheduleTask(displayFlushTask, 100);
 
-   // TEMPORARY DIAGNOSTIC: checking whether Bitwig has an equivalent to
-   // Ableton's "Capture and Insert Scene" / consolidate-to-scene action -
+   // TEMPORARY DIAGNOSTIC: checking whether Bitwig has an action that moves
+   // Arranger content into the Clip Launcher / a new scene in one step -
    // dumps anything matching on script load, remove once answered.
    var allActionsAtStartup = application.getActions();
    var sceneRelatedCount = 0;
+   var sceneKeywords = ["scene", "consolidate", "capture", "insert", "launcher", "arrange"];
    for (var startupActionIdx = 0; startupActionIdx < allActionsAtStartup.length; startupActionIdx++) {
       var startupActionName = allActionsAtStartup[startupActionIdx].getName().toLowerCase();
-      if (startupActionName.indexOf("scene") !== -1 || startupActionName.indexOf("consolidate") !== -1 ||
-          startupActionName.indexOf("capture") !== -1) {
+      var matchedKeyword = false;
+      for (var kwIdx = 0; kwIdx < sceneKeywords.length; kwIdx++) {
+         if (startupActionName.indexOf(sceneKeywords[kwIdx]) !== -1) {
+            matchedKeyword = true;
+            break;
+         }
+      }
+      if (matchedKeyword) {
          println("Action: \"" + allActionsAtStartup[startupActionIdx].getName() + "\" (id: \"" +
             allActionsAtStartup[startupActionIdx].getId() + "\")");
          sceneRelatedCount++;
       }
    }
-   println("Found " + sceneRelatedCount + " scene/consolidate/capture actions out of " + allActionsAtStartup.length + " total.");
+   println("Found " + sceneRelatedCount + " matching actions out of " + allActionsAtStartup.length + " total.");
 
    println("Midiplus UP Controller Script Ready.");
 }
