@@ -845,7 +845,7 @@ function handleButtonPress(note) {
             remoteControls.selectPreviousPage(true);
             host.showPopupNotification("Device Page Previous");
          } else {
-            activeTrackBank().selectPreviousPage();
+            activeTrackBank().scrollPageBackwards();
             host.showPopupNotification("Track Bank Left");
          }
          refreshDisplayText();
@@ -861,7 +861,7 @@ function handleButtonPress(note) {
             remoteControls.selectNextPage(true);
             host.showPopupNotification("Device Page Next");
          } else {
-            activeTrackBank().selectNextPage();
+            activeTrackBank().scrollPageForwards();
             host.showPopupNotification("Track Bank Right");
          }
          refreshDisplayText();
