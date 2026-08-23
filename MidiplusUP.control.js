@@ -100,6 +100,20 @@ var BANK_PAGE_STEP_MESSAGES = 4;
 var isZoomToggled = false;
 var isScrubToggled = false;
 
+// DRAW (note 81): cycles through the 6 arranger edit tools (Bitwig's own
+// keyboard shortcuts 1-6), wrapping back to the first after the sixth
+// press. Real action ids confirmed via the DRAW-button diagnostic dump
+// (application.getActions(), filtered to names containing "tool").
+var ARRANGER_TOOL_ACTIONS = [
+   { id: "select_object_selection_tool", name: "Pointer Tool" },
+   { id: "select_time_selection_tool", name: "Time Selection Tool" },
+   { id: "select_create_tool", name: "Pencil Tool" },
+   { id: "select_spray_tool", name: "Spray Can Tool" },
+   { id: "select_erase_tool", name: "Eraser Tool" },
+   { id: "select_cut_tool", name: "Knife Tool" }
+];
+var arrangerToolCycleIndex = 0;
+
 // OPTION + Jog Wheel halves/doubles the loop length (see onMidi). Raw wheel
 // CC messages arrive far more often than one per physical detent, and
 // halving/doubling is exponential, so ticks are accumulated here and only
@@ -1279,23 +1293,13 @@ function handleButtonPress(note) {
          host.showPopupNotification("Back To Arrangement");
          break;
 
-      case 81: // DRAW -> TEMPORARY DIAGNOSTIC: "Time Selection Tool" (the
-               // guessed action id) wasn't found, so instead of guessing
-               // again this dumps every real action whose name contains
-               // "tool" to the console - press DRAW once and paste the
-               // output back so the real ids for the six arranger tools
-               // (keyboard shortcuts 1-6) can be wired up for real.
-         var allActions = application.getActions();
-         var toolActionCount = 0;
-         for (var actionIdx = 0; actionIdx < allActions.length; actionIdx++) {
-            var actionName = allActions[actionIdx].getName();
-            if (actionName.toLowerCase().indexOf("tool") !== -1) {
-               println("Action: \"" + actionName + "\" (id: \"" + allActions[actionIdx].getId() + "\")");
-               toolActionCount++;
-            }
-         }
-         println("Found " + toolActionCount + " actions containing \"tool\" out of " + allActions.length + " total.");
-         host.showPopupNotification("Dumped " + toolActionCount + " tool actions to console");
+      case 81: // DRAW -> cycle through the 6 arranger edit tools, one per
+               // press (Pointer -> Time Selection -> Pencil -> Spray Can ->
+               // Eraser -> Knife -> back to Pointer) - see
+               // ARRANGER_TOOL_ACTIONS above.
+         var nextTool = ARRANGER_TOOL_ACTIONS[arrangerToolCycleIndex];
+         safeInvokeAction(nextTool.id, nextTool.name);
+         arrangerToolCycleIndex = (arrangerToolCycleIndex + 1) % ARRANGER_TOOL_ACTIONS.length;
          break;
 
       case 82: // MARKER -> Add Cue Marker at Playhead
