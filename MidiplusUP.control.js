@@ -753,6 +753,7 @@ function handleButtonPress(note) {
             refreshDisplayText();
             refreshFaders();
          }
+         flashLed(40, 150);
          break;
 
       case 41: // SEND -> 3-State Send Mode: 1st Press (Sends 1-8) -> 2nd Press (Sends 9-16) -> 3rd Press (Exit Send Mode)
@@ -1093,10 +1094,23 @@ function handleButtonPress(note) {
 
 // Update Mode Assignment LEDs
 function updateModeLEDs() {
-   midiOut.sendMidi(0x90, 40, currentMode === MODE_MIXER ? 127 : 0); // TRACK LED
+   // Note 40 (TRACK/IO) isn't handled here - see flashLed() in case 40.
    midiOut.sendMidi(0x90, 41, currentMode === MODE_SENDS ? 127 : 0); // SEND LED
    midiOut.sendMidi(0x90, 42, isToolVolumeMode ? 127 : 0); // PAN LED - lit while Tool Gain/Pan mode is active
    midiOut.sendMidi(0x90, 43, currentMode === MODE_DEVICE ? 127 : 0); // PLUG-IN LED
+}
+
+// Fire-and-forget LED flash for actions with no real on/off state to
+// reflect back (e.g. I/O's Inspector-panel toggle: Bitwig's Controller API
+// exposes application.toggleInspector() but no matching "is it visible"
+// getter, so the LED can't honestly track real panel state). Lights the
+// LED, then turns it off again after durationMs as tactile "press
+// registered" feedback instead.
+function flashLed(note, durationMs) {
+   midiOut.sendMidi(0x90, note, 127);
+   host.scheduleTask(function () {
+      midiOut.sendMidi(0x90, note, 0);
+   }, durationMs);
 }
 
 // Refresh Motorized Faders upon Flip or Mode Change
