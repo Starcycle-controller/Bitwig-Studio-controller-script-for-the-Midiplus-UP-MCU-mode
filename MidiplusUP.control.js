@@ -390,7 +390,7 @@ function init() {
                var offset = sendBankPage * 8;
                if (sendIdx >= offset && sendIdx < offset + 8) {
                   var channelIdx = sendIdx - offset;
-                  sendPitchBend(channelIdx, val);
+                  queueFaderPitchBend(channelIdx, val);
                }
             }
          });
@@ -421,7 +421,7 @@ function init() {
 
    // Master Track Volume Observer
    masterTrack.volume().value().addValueObserver(function (value) {
-      sendPitchBend(8, value); // Channel 9 (0xE8) for Master Fader
+      queueFaderPitchBend(8, value); // Channel 9 (0xE8) for Master Fader
    });
 
    // Device Parameter Observers (For Custom Device Remote Control Mode)
@@ -445,7 +445,7 @@ function init() {
 
          param.value().addValueObserver(function (value) {
             if (currentMode === MODE_DEVICE && isFlipped) {
-               sendPitchBend(paramIndex, value);
+               queueFaderPitchBend(paramIndex, value);
             }
          });
       })(j);
@@ -491,6 +491,7 @@ function init() {
    // Flush display initially
    updateModeLEDs();
    host.scheduleTask(displayFlushTask, 100);
+   host.scheduleTask(faderFlushTask, 30);
 
    println("Midiplus UP Controller Script Ready.");
 }
@@ -521,17 +522,12 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
 
          // Track Volume Observer - live-updates the fader while it's showing
          // track volume, which (per the FLIP overlay) is both MIXER-unflipped
-         // and DEVICE-unflipped.
+         // and DEVICE-unflipped. Queued/throttled rather than sent directly -
+         // see queueFaderPitchBend/faderFlushTask.
          track.volume().value().addValueObserver(function (value) {
-            // TEMPORARY DEBUG: confirms whether this callback fires at all
-            // for an externally-driven (mouse) volume change - remove once
-            // the live fader-sync issue is diagnosed.
-            println("Volume observer fired - index: " + index + ", value: " + value +
-               ", isFlipped: " + isFlipped + ", currentMode: " + currentMode +
-               ", isViewingReturns: " + isViewingReturns + ", isReturnsBank: " + isReturnsBank);
             if (!isFlipped && (currentMode === MODE_MIXER || currentMode === MODE_DEVICE) &&
                 isViewingReturns === isReturnsBank) {
-               sendPitchBend(index, value);
+               queueFaderPitchBend(index, value);
             }
          });
 
@@ -545,7 +541,7 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          // Track Pan Observer
          track.pan().value().addValueObserver(function (value) {
             if (currentMode === MODE_MIXER && isFlipped && isViewingReturns === isReturnsBank) {
-               sendPitchBend(index, value);
+               queueFaderPitchBend(index, value);
             }
          });
 
@@ -1635,6 +1631,33 @@ function sendPitchBend(channel, normalizedValue) {
    var msb = (val14 >> 7) & 0x7F;
 
    midiOut.sendMidi(0xE0 + channel, lsb, msb);
+}
+
+// Live value observers (volume/pan/send/macro) can fire dozens of times a
+// second during a mouse drag - confirmed on hardware via debug log that
+// the observer callbacks and their sendPitchBend() calls were all firing
+// correctly with valid values, yet the motorized fader never actually
+// moved, while the SAME sendPitchBend() call works fine when refreshFaders()
+// sends one message per channel as a one-shot burst (mode switch, bank
+// flip). Strongly suggests this hardware can't keep up with / drops a
+// flood of rapid pitch-bend messages to the same channel. Queuing only the
+// latest value per channel and flushing on a timer (faderFlushTask, same
+// throttling shape as displayFlushTask below) caps the rate without
+// changing refreshFaders()'s already-working one-shot bursts.
+var pendingFaderPitchBend = [null, null, null, null, null, null, null, null, null];
+
+function queueFaderPitchBend(channel, normalizedValue) {
+   pendingFaderPitchBend[channel] = normalizedValue;
+}
+
+function faderFlushTask() {
+   for (var i = 0; i < 9; i++) {
+      if (pendingFaderPitchBend[i] !== null) {
+         sendPitchBend(i, pendingFaderPitchBend[i]);
+         pendingFaderPitchBend[i] = null;
+      }
+   }
+   host.scheduleTask(faderFlushTask, 30);
 }
 
 // Render MCU LCD Display SysEx Messages
