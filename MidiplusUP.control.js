@@ -687,14 +687,15 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      var step = Math.abs(rawStep) * 0.05;
-      if (isAltPressed) {
-         step /= 2.0;
-      }
-      // snap=false: move exactly by `step` beats rather than quantizing to
-      // the beat grid, so rotation feels like continuous scrubbing instead
-      // of jumping between beats.
-      transport.incPosition(backwards ? -step : step, false);
+      // Default: jump exactly one quarter note per wheel message (half of
+      // that, an eighth note, with ALT held), landing precisely on the
+      // beat grid line - same "compute the exact target position" approach
+      // as the bar-jump/loop-shift branches above, rather than a smooth
+      // but grid-imprecise scrub.
+      var beatStep = isAltPressed ? 0.5 : 1.0;
+      var currentBeatUnit = Math.round(transport.getPosition().get() / beatStep);
+      var targetBeatUnit = backwards ? currentBeatUnit - 1 : currentBeatUnit + 1;
+      transport.getPosition().set(Math.max(0, targetBeatUnit) * beatStep);
       return;
    }
 
