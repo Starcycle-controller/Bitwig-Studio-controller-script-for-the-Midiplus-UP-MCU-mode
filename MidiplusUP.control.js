@@ -785,8 +785,10 @@ function onMidi(status, data1, data2) {
             loopScaleAccumulator -= LOOP_SCALE_THRESHOLD;
             var oldLoopDuration = transport.arrangerLoopDuration().get();
             var newLoopDuration = backwards ? oldLoopDuration / 2.0 : oldLoopDuration * 2.0;
-            // Floor at a 64th note so repeated halving can't reach zero/negative.
-            transport.arrangerLoopDuration().set(Math.max(0.0625, newLoopDuration));
+            // Floor at a 64th note so repeated halving can't reach zero/negative,
+            // and cap at 256 bars so repeated doubling can't run away forever.
+            var maxLoopDuration = 256 * getBeatsPerBar();
+            transport.arrangerLoopDuration().set(Math.max(0.0625, Math.min(maxLoopDuration, newLoopDuration)));
          }
          return;
       }
