@@ -64,6 +64,16 @@ var isAltPressed = false;     // Note 73
 var isZoomToggled = false;
 var isScrubToggled = false;
 
+// OPTION + Jog Wheel halves/doubles the loop length (see onMidi). Raw wheel
+// CC messages arrive far more often than one per physical detent, and
+// halving/doubling is exponential, so ticks are accumulated here and only
+// trigger a halve/double once LOOP_SCALE_THRESHOLD worth has built up -
+// otherwise a single flick of the wheel could shrink or grow the loop by
+// many powers of two almost instantly. Tune the threshold if it feels too
+// fast/slow in practice.
+var loopScaleAccumulator = 0;
+var LOOP_SCALE_THRESHOLD = 32;
+
 // RETURNS (note 51): swap the 8 channel strips between the main track bank
 // and the effect ("return") track bank.
 var isViewingReturns = false;
@@ -628,6 +638,21 @@ function onMidi(status, data1, data2) {
          // CTRL + Jog Wheel: Nudge Tempo (fine with ALT held)
          var tempoStep = isAltPressed ? 0.1 : 1.0;
          transport.tempo().incRaw(rawStep * tempoStep);
+         return;
+      }
+
+      if (isOptionPressed) {
+         // OPTION + Jog Wheel: turn left halves the loop length, turn right
+         // doubles it - accumulated across messages, see
+         // loopScaleAccumulator above.
+         loopScaleAccumulator += Math.abs(rawStep);
+         if (loopScaleAccumulator >= LOOP_SCALE_THRESHOLD) {
+            loopScaleAccumulator -= LOOP_SCALE_THRESHOLD;
+            var oldLoopDuration = transport.arrangerLoopDuration().get();
+            var newLoopDuration = backwards ? oldLoopDuration / 2.0 : oldLoopDuration * 2.0;
+            // Floor at a 64th note so repeated halving can't reach zero/negative.
+            transport.arrangerLoopDuration().set(Math.max(0.0625, newLoopDuration));
+         }
          return;
       }
 
