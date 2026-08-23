@@ -362,14 +362,12 @@ function init() {
    setupChannelStripObservers(trackBank, mainLedState, false);
    setupChannelStripObservers(effectTrackBank, returnsLedState, true);
 
-   // Enable hardware meter display for all 8 strips (real MCU protocol,
-   // per Ableton's own driver: SysEx F0 00 00 66 14 20 <strip> <mode> F7,
-   // mode = 1|2 = 3 to enable metering for an assigned channel). Sent once
-   // here rather than toggled per mode switch - only the per-track
-   // addVuMeterObserver callbacks above are gated by MODE_MIXER.
-   for (var meterStripIdx = 0; meterStripIdx < 8; meterStripIdx++) {
-      midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, meterStripIdx, 3, 0xF7]);
-   }
+   // TEMPORARILY DISABLED for diagnosis: testing whether the meter-enable
+   // SysEx or the Channel Pressure meter messages are interfering with
+   // pitch-bend fader updates on this hardware. Re-enable once diagnosed.
+   // for (var meterStripIdx = 0; meterStripIdx < 8; meterStripIdx++) {
+   //    midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, meterStripIdx, 3, 0xF7]);
+   // }
 
    // Track each bank's per-track TOOL_DEVICE_NAME device, if any (see isToolVolumeMode).
    setupToolDeviceTracking(trackBank, mainToolSlot, mainToolRemote);
@@ -540,7 +538,9 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          // index into the high nibble and the level into the low nibble.
          // Requires the meter-enable SysEx sent once in init() below.
          track.addVuMeterObserver(13, -1, true, function (level) {
-            if (currentMode === MODE_MIXER && isViewingReturns === isReturnsBank) {
+            if (false && currentMode === MODE_MIXER && isViewingReturns === isReturnsBank) {
+               // TEMPORARILY DISABLED for diagnosis (see the meter-enable
+               // SysEx comment in init()) - re-enable by removing "false &&".
                midiOut.sendMidi(0xD0, (index << 4) | level, 0);
             }
          });
@@ -1617,6 +1617,12 @@ function sendPitchBend(channel, normalizedValue) {
 
    var lsb = val14 & 0x7F;
    var msb = (val14 >> 7) & 0x7F;
+
+   // TEMPORARY DEBUG: reconfirms byte-level correctness for every
+   // sendPitchBend call (including from refreshFaders) - remove once
+   // diagnosed.
+   println("sendPitchBend - channel: " + channel + ", normalizedValue: " + normalizedValue +
+      ", status: 0x" + (0xE0 + channel).toString(16) + ", lsb: " + lsb + ", msb: " + msb);
 
    midiOut.sendMidi(0xE0 + channel, lsb, msb);
 }
