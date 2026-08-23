@@ -439,9 +439,12 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
             }
          });
 
-         // Track Volume Observer
+         // Track Volume Observer - live-updates the fader while it's showing
+         // track volume, which (per the FLIP overlay) is both MIXER-unflipped
+         // and DEVICE-unflipped.
          track.volume().value().addValueObserver(function (value) {
-            if (currentMode === MODE_MIXER && !isFlipped && isViewingReturns === isReturnsBank) {
+            if (!isFlipped && (currentMode === MODE_MIXER || currentMode === MODE_DEVICE) &&
+                isViewingReturns === isReturnsBank) {
                sendPitchBend(index, value);
             }
          });
