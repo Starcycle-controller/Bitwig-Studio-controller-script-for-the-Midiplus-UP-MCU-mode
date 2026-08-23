@@ -385,6 +385,15 @@ function init() {
    setupChannelStripObservers(trackBank, mainLedState, false);
    setupChannelStripObservers(effectTrackBank, returnsLedState, true);
 
+   // Enable hardware meter display for all 8 strips (real MCU protocol,
+   // per Ableton's own driver: SysEx F0 00 00 66 14 20 <strip> <mode> F7,
+   // mode = 1|2 = 3 to enable metering for an assigned channel). Sent once
+   // here rather than toggled per mode switch - only the per-track
+   // addVuMeterObserver callbacks above are gated by MODE_MIXER.
+   for (var meterStripIdx = 0; meterStripIdx < 8; meterStripIdx++) {
+      midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, meterStripIdx, 3, 0xF7]);
+   }
+
    // Track each bank's per-track TOOL_DEVICE_NAME device, if any (see isToolVolumeMode).
    setupToolDeviceTracking(trackBank, mainToolSlot, mainToolRemote);
    setupToolDeviceTracking(effectTrackBank, returnsToolSlot, returnsToolRemote);
@@ -559,6 +568,18 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          track.pan().value().addValueObserver(function (value) {
             if (currentMode === MODE_MIXER && isFlipped && isViewingReturns === isReturnsBank) {
                sendPitchBend(index, value);
+            }
+         });
+
+         // Track Meter Observer - real MCU protocol per Ableton's own
+         // driver (ChannelStrip.py): meter level (0-12) is sent as a
+         // Channel Pressure message on MIDI channel 1 (status 0xD0, always
+         // - not per-strip), with a single data byte packing the strip
+         // index into the high nibble and the level into the low nibble.
+         // Requires the meter-enable SysEx sent once in init() below.
+         track.addVuMeterObserver(13, -1, true, function (level) {
+            if (currentMode === MODE_MIXER && isViewingReturns === isReturnsBank) {
+               midiOut.sendMidi(0xD0, (index << 4) | level, 0);
             }
          });
 
