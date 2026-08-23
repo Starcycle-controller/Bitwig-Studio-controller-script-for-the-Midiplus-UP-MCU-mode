@@ -1099,7 +1099,11 @@ function handleButtonPress(note) {
       // pattern (zoom vs scroll depending on the zoom-toggle state).
       case 96: // LEFT ARROW
          if (isZoomToggled) {
-            safeCall(application, "zoomOut", "Zoom Out (Horizontal)");
+            // application.zoomIn()/zoomOut() fired without error but never
+            // actually changed the arranger's horizontal zoom (confirmed on
+            // hardware, arranger focused) - trying zoomToFit() instead,
+            // since it's a distinct, confirmed-real method.
+            safeCall(application, "zoomToFit", "Zoom to Fit");
          } else {
             safeCall(application, "arrowKeyLeft");
          }
@@ -1109,7 +1113,7 @@ function handleButtonPress(note) {
 
       case 97: // RIGHT ARROW
          if (isZoomToggled) {
-            safeCall(application, "zoomIn", "Zoom In (Horizontal)");
+            safeCall(application, "zoomToSelection", "Zoom to Selection");
          } else {
             safeCall(application, "arrowKeyRight");
          }
