@@ -186,6 +186,11 @@ function init() {
    // Initialize Effect ("Returns") Track Bank - shown via the RETURNS button
    effectTrackBank = host.createEffectTrackBank(8, MAX_SENDS, 8);
 
+   // Read on-demand (not observed) by the SHIFT+BANK/CHANNEL "jump to last"
+   // handlers below, so they need markInterested() or .get() throws.
+   trackBank.itemCount().markInterested();
+   effectTrackBank.itemCount().markInterested();
+
    // Initialize Master Track
    masterTrack = host.createMasterTrack(0);
 
@@ -200,6 +205,12 @@ function init() {
    transport = host.createTransport();
    application = host.createApplication();
    arranger = host.createArranger();
+
+   // Read on-demand (not observed) by END, and by the CTRL+PUNCH IN/OUT
+   // loop-start/end handlers, so they need markInterested() or .get() throws.
+   transport.getPosition().markInterested();
+   transport.arrangerLoopStart().markInterested();
+   transport.arrangerLoopDuration().markInterested();
 
    // Setup Observers for both the main track bank and the returns bank -
    // only the currently-active one (per isViewingReturns) writes to the
@@ -420,7 +431,20 @@ function scanTrackForToolDevice(track, onSlotFound, onSlotLost) {
    for (var d = 0; d < TOOL_DEVICE_SCAN_DEPTH; d++) {
       (function (deviceIndex) {
          var device = deviceBank.getItemAt(deviceIndex);
-         remotesForTrack[deviceIndex] = device.createCursorRemoteControlsPage(2);
+         var remote = device.createCursorRemoteControlsPage(2);
+         remotesForTrack[deviceIndex] = remote;
+
+         // Bitwig only syncs a Value's current state (and allows .get()) if
+         // it's been observed or markInterested() was called on it during
+         // init - refreshFaders()/refreshDisplayText() read these on-demand
+         // rather than observing them, so without this they throw
+         // "Either call markInterested() or add at least one observer".
+         for (var p = 0; p < 2; p++) {
+            var param = remote.getParameter(p);
+            param.name().markInterested();
+            param.displayedValue().markInterested();
+            param.value().markInterested();
+         }
 
          device.name().addValueObserver(function (name) {
             if (name === TOOL_DEVICE_NAME) {
