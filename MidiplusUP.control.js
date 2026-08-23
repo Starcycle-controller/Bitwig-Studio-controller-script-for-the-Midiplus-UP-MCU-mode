@@ -263,6 +263,29 @@ function activeLedState() {
    return isViewingReturns ? returnsLedState : mainLedState;
 }
 
+// Sets a volume-like parameter as close as possible to targetDb, without
+// assuming Bitwig's internal (undocumented, non-linear) normalized-value-
+// to-dB gain law - binary search using the parameter's own displayedValue()
+// text as ground truth converges correctly regardless of the actual curve,
+// since volume is always monotonic in dB. ~24 iterations is comfortably
+// enough precision (2^-24 of the 0..1 range) and cheap enough to run
+// synchronously inside a single button-press handler.
+function setVolumeToDb(volumeParam, targetDb) {
+   var low = 0.0;
+   var high = 1.0;
+   for (var i = 0; i < 24; i++) {
+      var mid = (low + high) / 2;
+      volumeParam.set(mid);
+      var currentDb = parseFloat(volumeParam.displayedValue().get());
+      if (isNaN(currentDb) || currentDb < targetDb) {
+         low = mid;
+      } else {
+         high = mid;
+      }
+   }
+   volumeParam.set((low + high) / 2);
+}
+
 // Returns the Gain (paramIndex 0) or Pan (paramIndex 1) parameter of the
 // TOOL_DEVICE_NAME device on the given track slot of the active bank, or
 // null if that track has no such device within the first
@@ -501,6 +524,11 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          // group-fold handler in handleButtonPress, so need markInterested().
          track.isGroup().markInterested();
          track.isGroupExpanded().markInterested();
+
+         // Read on-demand (not observed) by the encoder push-click volume
+         // reset (notes 32-39) in handleButtonPress, so needs
+         // markInterested() too.
+         track.trackType().markInterested();
 
          // Track Name Observer
          track.name().addValueObserver(function (name) {
@@ -1072,7 +1100,13 @@ function handleButtonPress(note) {
       // Encoder Push Click (Reset Parameter)
       var encIdx = note - 32;
       if (currentMode === MODE_MIXER) {
-         activeTrackBank().getItemAt(encIdx).pan().reset();
+         var resetTrack = activeTrackBank().getItemAt(encIdx);
+         resetTrack.pan().reset();
+         // Group tracks reset to unity (0 dB); Audio/Hybrid/Instrument (and
+         // anything else, e.g. Effect) reset to -10 dB instead of unity -
+         // see setVolumeToDb for why this isn't a simple .reset() call.
+         var resetTargetDb = (resetTrack.trackType().get() === "Group") ? 0 : -10;
+         setVolumeToDb(resetTrack.volume(), resetTargetDb);
       } else if (currentMode === MODE_SENDS) {
          var resetSendIdx = (sendBankPage * 8) + encIdx;
          cursorTrack.sendBank().getItemAt(resetSendIdx).reset();
