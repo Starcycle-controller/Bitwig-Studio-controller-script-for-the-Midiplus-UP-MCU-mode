@@ -1357,6 +1357,7 @@ function handleButtonPress(note) {
             host.showPopupNotification("Mode: Scene Launch");
          } else {
             currentMode = MODE_MIXER;
+            arranger.isClipLauncherVisible().set(false);
             try {
                application.setPanelLayout("ARRANGE");
             } catch (e) {
