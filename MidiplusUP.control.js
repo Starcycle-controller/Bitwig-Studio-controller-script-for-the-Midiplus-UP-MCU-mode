@@ -59,6 +59,14 @@ var isOptionPressed = false;  // Note 71
 var isControlPressed = false; // Note 72
 var isAltPressed = false;     // Note 73
 
+// Physical jog wheel push/click, confirmed via the RAW Note-On debug log
+// to be note 87 on this hardware - not a real PUNCH IN button, despite 87
+// being PUNCH IN's note in the standard Mackie Control protocol (Ableton's
+// driver). Treated as a momentary hold modifier, same pattern as
+// SHIFT/OPTION/CTRL/ALT: held while pressed, drives the jog wheel's
+// bar-jump scrub (same as toggling SCRUB).
+var isWheelPressed = false;
+
 // ZOOM (100) and SCRUB (101) are TOGGLE buttons in the real protocol (press
 // to flip state, not held-while-down like SHIFT/OPTION/CTRL/ALT).
 var isZoomToggled = false;
@@ -666,7 +674,7 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      if (isScrubToggled) {
+      if (isScrubToggled || isWheelPressed) {
          // Jump exactly one bar per wheel message, regardless of how hard
          // it was spun - "increments" of a whole bar, landing precisely on
          // the bar line (incPosition's own snap=true only quantizes to the
@@ -722,6 +730,12 @@ function onMidi(status, data1, data2) {
       if (data1 === 73) {
          isAltPressed = isPressed;
          midiOut.sendMidi(0x90, 73, isAltPressed ? 127 : 0);
+         return;
+      }
+
+      // Jog Wheel Push (Note 87 on this hardware - see isWheelPressed above)
+      if (data1 === 87) {
+         isWheelPressed = isPressed;
          return;
       }
 
@@ -1046,18 +1060,12 @@ function handleButtonPress(note) {
          transport.isArrangerLoopEnabled().toggle();
          break;
 
-      case 87: // PUNCH IN (CTRL+PI: set loop start from playhead)
-         if (isControlPressed) {
-            var oldLoopStart = transport.arrangerLoopStart().get();
-            var newLoopStart = transport.getPosition().get();
-            transport.arrangerLoopStart().set(newLoopStart);
-            transport.arrangerLoopDuration().set(transport.arrangerLoopDuration().get() + (oldLoopStart - newLoopStart));
-            host.showPopupNotification("Set Loop Start from Playhead");
-         } else {
-            transport.isPunchInEnabled().toggle();
-            host.showPopupNotification("Toggle Punch-In Recording");
-         }
-         break;
+      // Note 87 is confirmed (via the RAW Note-On debug log) to be the
+      // physical jog wheel push on this hardware, not a real PUNCH IN
+      // button - it's now fully consumed as a momentary hold modifier in
+      // onMidi (see isWheelPressed), so this case is unreachable and was
+      // removed. transport.isPunchInEnabled() is still available if a real
+      // PUNCH IN button is found on a different note later.
 
       case 88: // PUNCH OUT (CTRL+PO: set loop end from playhead)
          if (isControlPressed) {
