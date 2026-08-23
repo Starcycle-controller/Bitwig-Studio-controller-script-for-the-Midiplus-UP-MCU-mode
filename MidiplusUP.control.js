@@ -335,7 +335,7 @@ function init() {
                var offset = sendBankPage * 8;
                if (sendIdx >= offset && sendIdx < offset + 8) {
                   var channelIdx = sendIdx - offset;
-                  topRowText[channelIdx] = formatString(sendName || ("Send " + (sendIdx + 1)), 7);
+                  topRowText[channelIdx] = formatTrackName(sendName || ("Send " + (sendIdx + 1)), 7);
                   displayNeedsUpdate = true;
                }
             }
@@ -355,7 +355,7 @@ function init() {
 
          param.name().addValueObserver(function (name) {
             if (currentMode === MODE_DEVICE) {
-               topRowText[paramIndex] = formatString(name, 7);
+               topRowText[paramIndex] = formatTrackName(name, 7);
                displayNeedsUpdate = true;
             }
          });
@@ -434,7 +434,7 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          // Track Name Observer
          track.name().addValueObserver(function (name) {
             if (currentMode === MODE_MIXER && isViewingReturns === isReturnsBank) {
-               topRowText[index] = formatString(name, 7);
+               topRowText[index] = formatTrackName(name, 7);
                displayNeedsUpdate = true;
             }
          });
@@ -1419,13 +1419,13 @@ function refreshDisplayText() {
       if (currentMode === MODE_SENDS) {
          var sendIdx = (sendBankPage * 8) + i;
          var sendItem = cursorTrack.sendBank().getItemAt(sendIdx);
-         topRowText[i] = formatString(sendItem.name().get() || ("Send " + (sendIdx + 1)), 7);
+         topRowText[i] = formatTrackName(sendItem.name().get() || ("Send " + (sendIdx + 1)), 7);
          bottomRowText[i] = formatString(sendItem.displayedValue().get(), 7);
       } else if (currentMode === MODE_MIXER) {
          if (isToolVolumeMode) {
             var gainParam = getToolParam(i, 0);
             if (gainParam) {
-               topRowText[i] = formatString(gainParam.name().get(), 7);
+               topRowText[i] = formatTrackName(gainParam.name().get(), 7);
                bottomRowText[i] = formatString(gainParam.displayedValue().get(), 7);
             } else {
                topRowText[i] = formatString("No " + TOOL_DEVICE_NAME, 7);
@@ -1433,12 +1433,12 @@ function refreshDisplayText() {
             }
          } else {
             var track = activeTrackBank().getItemAt(i);
-            topRowText[i] = formatString(track.name().get(), 7);
+            topRowText[i] = formatTrackName(track.name().get(), 7);
             bottomRowText[i] = formatString(track.volume().displayedValue().get(), 7);
          }
       } else if (currentMode === MODE_DEVICE) {
          var param = remoteControls.getParameter(i);
-         topRowText[i] = formatString(param.name().get(), 7);
+         topRowText[i] = formatTrackName(param.name().get(), 7);
          bottomRowText[i] = formatString(param.displayedValue().get(), 7);
       }
    }
@@ -1486,6 +1486,27 @@ function formatString(str, length) {
    str = str.trim();
    if (str.length > length) {
       return str.substring(0, length);
+   }
+   while (str.length < length) {
+      str = str + " ";
+   }
+   return str;
+}
+
+// Helper: Format a NAME (track/send/device/param) to fixed length, showing
+// the first half and last half of the name (dropping the middle) instead of
+// just cutting it off at the end - each LCD cell is only 7 characters (the
+// display is 56 chars total / 8 channels), so a name like "Kickdrum Bus" is
+// otherwise chopped down to just "Kickdru", losing anything past character
+// 7. Splits as ceil(length/2) head + floor(length/2) tail, so for the
+// standard 7-char cell that's the first 4 and last 3 characters.
+function formatTrackName(str, length) {
+   if (!str) str = "";
+   str = str.trim();
+   if (str.length > length) {
+      var headLen = Math.ceil(length / 2);
+      var tailLen = length - headLen;
+      return str.substring(0, headLen) + str.substring(str.length - tailLen);
    }
    while (str.length < length) {
       str = str + " ";
