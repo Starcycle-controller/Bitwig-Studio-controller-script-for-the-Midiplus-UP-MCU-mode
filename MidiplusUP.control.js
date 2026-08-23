@@ -1019,15 +1019,22 @@ function handleButtonPress(note) {
          refreshFaders();
          break;
 
-      case 43: // PLUG-IN / DEVICE -> jump to the first device on the
-               // selected track and open its panel (does NOT touch the
-               // expanded device view - that's CTRL long-press, see the
-               // CTRL block in onMidi). Hold + jog wheel steps through
-               // devices instead (see isPluginHeld).
-         currentMode = MODE_DEVICE;
-         cursorDevice.selectFirst();
-         cursorDevice.isWindowOpen().set(true);
-         host.showPopupNotification("Device: First Plugin");
+      case 43: // PLUG-IN / DEVICE -> toggle into Device mode, jumping to the
+               // first device on the selected track and opening its panel
+               // (does NOT touch the expanded device view - that's CTRL
+               // long-press, see the CTRL block in onMidi). Pressing again
+               // while already in Device mode exits back to Mixer mode.
+               // Hold + jog wheel steps through devices instead (see
+               // isPluginHeld).
+         if (currentMode !== MODE_DEVICE) {
+            currentMode = MODE_DEVICE;
+            cursorDevice.selectFirst();
+            cursorDevice.isWindowOpen().set(true);
+            host.showPopupNotification("Device: First Plugin");
+         } else {
+            currentMode = MODE_MIXER;
+            host.showPopupNotification("Mode: Mixer (Track Volume / Pan)");
+         }
          updateModeLEDs();
          refreshDisplayText();
          refreshFaders();
@@ -1092,8 +1099,20 @@ function handleButtonPress(note) {
          refreshFaders();
          break;
 
-      case 48: // CHANNEL PREV (<) -> nudge 1 channel back, or jump to first with SHIFT
-         if (isShiftPressed) {
+      case 48: // CHANNEL PREV (<) -> nudge 1 channel back, jump to first with
+               // SHIFT, or (with CTRL) select previous device / nudge tempo
+               // down - this hardware substitutes CHANNEL PREV/NEXT button
+               // presses for jog wheel turns while CTRL is held, instead of
+               // sending CC 60 wheel messages, so that's intercepted here
+               // rather than in the jog wheel's CTRL branch.
+         if (isControlPressed) {
+            ctrlUsedForCombo = true;
+            if (currentMode === MODE_DEVICE) {
+               cursorDevice.selectPrevious();
+            } else {
+               transport.tempo().incRaw(isAltPressed ? -0.1 : -1.0);
+            }
+         } else if (isShiftPressed) {
             activeTrackBank().scrollPosition().set(0);
             host.showPopupNotification("Jump to First Channel");
          } else {
@@ -1104,8 +1123,18 @@ function handleButtonPress(note) {
          refreshFaders();
          break;
 
-      case 49: // CHANNEL NEXT (>) -> nudge 1 channel forward, or jump to last with SHIFT
-         if (isShiftPressed) {
+      case 49: // CHANNEL NEXT (>) -> nudge 1 channel forward, jump to last
+               // with SHIFT, or (with CTRL) select next device / nudge tempo
+               // up - see case 48 above for why CTRL is checked here instead
+               // of in the jog wheel handler.
+         if (isControlPressed) {
+            ctrlUsedForCombo = true;
+            if (currentMode === MODE_DEVICE) {
+               cursorDevice.selectNext();
+            } else {
+               transport.tempo().incRaw(isAltPressed ? 0.1 : 1.0);
+            }
+         } else if (isShiftPressed) {
             var maxOffsetCh = Math.max(0, activeTrackBank().itemCount().get() - 8);
             activeTrackBank().scrollPosition().set(maxOffsetCh);
             host.showPopupNotification("Jump to Last Channel");
