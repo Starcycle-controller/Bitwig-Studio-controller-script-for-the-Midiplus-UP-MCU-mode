@@ -127,6 +127,12 @@ var application = null;
 var arranger = null;
 var midiOut = null;
 
+// SELECT button double-press detection (fold/unfold a group track) - one
+// timestamp per physical channel-strip slot, shared across whichever bank
+// is currently active.
+var lastSelectPressTime = [0, 0, 0, 0, 0, 0, 0, 0];
+var DOUBLE_PRESS_MS = 400;
+
 // Cached per-bank LED state (main vs returns), since both banks' observers
 // run all the time but only the active bank's state should light the 32
 // shared Rec/Solo/Mute/Select LEDs.
@@ -377,6 +383,11 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
    for (var i = 0; i < 8; i++) {
       (function (index) {
          var track = bank.getItemAt(index);
+
+         // Read on-demand (not observed) by the SELECT double-press
+         // group-fold handler in handleButtonPress, so need markInterested().
+         track.isGroup().markInterested();
+         track.isGroupExpanded().markInterested();
 
          // Track Name Observer
          track.name().addValueObserver(function (name) {
@@ -788,9 +799,21 @@ function handleButtonPress(note) {
       return;
    }
    if (note >= 24 && note <= 31) {
-      // Select 1-8
-      activeTrackBank().getItemAt(note - 24).selectInMixer();
-      cursorTrack.selectChannel(activeTrackBank().getItemAt(note - 24));
+      // Select 1-8 - double-pressing a group track's own SELECT button
+      // (within DOUBLE_PRESS_MS) folds/unfolds it instead of re-selecting it.
+      var selIdx = note - 24;
+      var selectedTrack = activeTrackBank().getItemAt(selIdx);
+      var nowMs = Date.now();
+      var isDoublePress = (nowMs - lastSelectPressTime[selIdx]) < DOUBLE_PRESS_MS;
+      lastSelectPressTime[selIdx] = nowMs;
+
+      if (isDoublePress && selectedTrack.isGroup().get()) {
+         selectedTrack.isGroupExpanded().toggle();
+         lastSelectPressTime[selIdx] = 0; // don't let a 3rd quick press toggle again
+      } else {
+         selectedTrack.selectInMixer();
+         cursorTrack.selectChannel(selectedTrack);
+      }
       return;
    }
    if (note >= 32 && note <= 39) {
