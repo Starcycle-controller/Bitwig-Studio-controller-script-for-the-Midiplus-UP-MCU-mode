@@ -98,14 +98,6 @@ var BANK_PAGE_STEP_MESSAGES = 4;
 var isZoomToggled = false;
 var isScrubToggled = false;
 
-// CHANNEL PREV/NEXT (48/49) also act as a TOGGLE (either one flips the same
-// shared state): while on, the jog wheel nudges the track bank left/right
-// instead of scrubbing the timeline - see case 48/49 in handleButtonPress
-// and the jog wheel handler below.
-var isChannelModeToggled = false;
-var channelModeStepAccumulator = 0;
-var CHANNEL_MODE_STEP_MESSAGES = 4;
-
 // OPTION + Jog Wheel halves/doubles the loop length (see onMidi). Raw wheel
 // CC messages arrive far more often than one per physical detent, and
 // halving/doubling is exponential, so ticks are accumulated here and only
@@ -809,24 +801,6 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      if (isChannelModeToggled) {
-         // CHANNEL mode toggled on: the wheel nudges the track bank
-         // left/right (1 channel per detent) instead of scrubbing the
-         // timeline, once every CHANNEL_MODE_STEP_MESSAGES wheel messages.
-         channelModeStepAccumulator++;
-         if (channelModeStepAccumulator >= CHANNEL_MODE_STEP_MESSAGES) {
-            channelModeStepAccumulator = 0;
-            if (backwards) {
-               activeTrackBank().scrollBackwards();
-            } else {
-               activeTrackBank().scrollForwards();
-            }
-            refreshDisplayText();
-            refreshFaders();
-         }
-         return;
-      }
-
       // Default: jump exactly one quarter note per wheel message (half of
       // that, an eighth note, with ALT held), landing precisely on the
       // beat grid line - same "compute the exact target position" approach
@@ -1125,15 +1099,21 @@ function handleButtonPress(note) {
          refreshFaders();
          break;
 
-      case 48: // CHANNEL PREV (<) -> toggle Channel Scroll Mode (the jog
-               // wheel nudges the track bank instead of scrubbing the
-               // timeline while it's on - see isChannelModeToggled in the
-               // jog wheel handler), jump to first channel with SHIFT, or
-               // (with CTRL) select previous device / nudge tempo down -
-               // this hardware substitutes CHANNEL PREV/NEXT button presses
-               // for jog wheel turns while CTRL is held, instead of sending
-               // CC 60 wheel messages, so that's intercepted here rather
-               // than in the jog wheel's CTRL branch.
+      case 48: // CHANNEL PREV (<) -> nudge 1 channel back, jump to first with
+               // SHIFT, or (with CTRL) select previous device / nudge tempo
+               // down. This hardware has its own firmware-level "wheel
+               // assignment" for CHANNEL: pressing it lights the button's
+               // LED locally (confirmed NOT controllable from here - our
+               // note-on/off echo is ignored; the LED only clears when a
+               // sibling assignment button like BANK is pressed instead),
+               // and while lit, turning the jog wheel sends repeated
+               // Note-On 48/49 messages instead of CC 60 - confirmed via
+               // the RAW Note-On debug log. So there's no separate "mode"
+               // to track in software at all: every 48/49 press, whether a
+               // real button tap or a wheel-driven repeat, should just
+               // nudge one channel immediately. CTRL is checked here rather
+               // than in the jog wheel's CTRL branch for the same reason
+               // (see that branch's comment).
          if (isControlPressed) {
             ctrlUsedForCombo = true;
             if (currentMode === MODE_DEVICE) {
@@ -1141,31 +1121,21 @@ function handleButtonPress(note) {
             } else {
                transport.tempo().incRaw(isAltPressed ? -0.1 : -1.0);
             }
-            refreshDisplayText();
-            refreshFaders();
          } else if (isShiftPressed) {
             activeTrackBank().scrollPosition().set(0);
             host.showPopupNotification("Jump to First Channel");
-            refreshDisplayText();
-            refreshFaders();
-            // One-shot action, not the mode toggle below - flash it off
-            // rather than leaving it stuck lit (same issue as the I/O
-            // button, note 40, above).
-            flashLed(48, 150);
          } else {
-            isChannelModeToggled = !isChannelModeToggled;
-            channelModeStepAccumulator = 0;
-            midiOut.sendMidi(0x90, 48, isChannelModeToggled ? 127 : 0);
-            midiOut.sendMidi(0x90, 49, isChannelModeToggled ? 127 : 0);
-            host.showPopupNotification("Channel Scroll Mode: " + (isChannelModeToggled ? "ON" : "OFF"));
+            activeTrackBank().scrollBackwards();
+            host.showPopupNotification("Nudge Channel Left");
          }
+         refreshDisplayText();
+         refreshFaders();
          break;
 
-      case 49: // CHANNEL NEXT (>) -> toggle Channel Scroll Mode (same shared
-               // state as CHANNEL PREV above), jump to last channel with
-               // SHIFT, or (with CTRL) select next device / nudge tempo up -
-               // see case 48 above for why CTRL is checked here instead of
-               // in the jog wheel handler.
+      case 49: // CHANNEL NEXT (>) -> nudge 1 channel forward, jump to last
+               // with SHIFT, or (with CTRL) select next device / nudge tempo
+               // up - see case 48 above for why this is a plain one-shot
+               // nudge rather than a tracked mode.
          if (isControlPressed) {
             ctrlUsedForCombo = true;
             if (currentMode === MODE_DEVICE) {
@@ -1173,22 +1143,16 @@ function handleButtonPress(note) {
             } else {
                transport.tempo().incRaw(isAltPressed ? 0.1 : 1.0);
             }
-            refreshDisplayText();
-            refreshFaders();
          } else if (isShiftPressed) {
             var maxOffsetCh = Math.max(0, activeTrackBank().itemCount().get() - 8);
             activeTrackBank().scrollPosition().set(maxOffsetCh);
             host.showPopupNotification("Jump to Last Channel");
-            refreshDisplayText();
-            refreshFaders();
-            flashLed(49, 150);
          } else {
-            isChannelModeToggled = !isChannelModeToggled;
-            channelModeStepAccumulator = 0;
-            midiOut.sendMidi(0x90, 48, isChannelModeToggled ? 127 : 0);
-            midiOut.sendMidi(0x90, 49, isChannelModeToggled ? 127 : 0);
-            host.showPopupNotification("Channel Scroll Mode: " + (isChannelModeToggled ? "ON" : "OFF"));
+            activeTrackBank().scrollForwards();
+            host.showPopupNotification("Nudge Channel Right");
          }
+         refreshDisplayText();
+         refreshFaders();
          break;
 
       case 50: // FLIP -> Swap Faders and Encoders
