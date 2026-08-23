@@ -386,12 +386,12 @@ function init() {
          var sendItem = cursorTrack.sendBank().getItemAt(sendIdx);
 
          // Live fader-follow (pushing this value to the hardware fader as
-         // it changes) was confirmed non-functional on this hardware - see
-         // sendPitchBend below for why. This observer is kept anyway
-         // purely to satisfy markInterested() for the .value().get() calls
-         // refreshFaders() makes (mode switch / bank-flip fader sync,
-         // which IS confirmed working) - removing it would break that.
-         sendItem.value().addValueObserver(function (val) {});
+         // it changes) was confirmed non-functional on this hardware -
+         // see the comment above sendPitchBend for why. Still need
+         // markInterested() for the .value().get() calls refreshFaders()
+         // makes (mode switch / bank-flip fader sync, which IS confirmed
+         // working) - removing this would break that.
+         sendItem.value().markInterested();
 
          sendItem.displayedValue().addValueObserver(function (dispVal) {
             if (currentMode === MODE_SENDS) {
@@ -417,9 +417,9 @@ function init() {
       })(s);
    }
 
-   // Master Track Volume Observer - kept only for markInterested(), see the
+   // Master Track Volume - kept only for markInterested(), see the
    // comment on the send observer above.
-   masterTrack.volume().value().addValueObserver(function (value) {});
+   masterTrack.volume().value().markInterested();
 
    // Device Parameter Observers (For Custom Device Remote Control Mode)
    for (var j = 0; j < 8; j++) {
@@ -442,7 +442,7 @@ function init() {
 
          // Kept only for markInterested(), see the comment on the send
          // observer in setupChannelStripObservers.
-         param.value().addValueObserver(function (value) {});
+         param.value().markInterested();
       })(j);
    }
 
@@ -514,14 +514,14 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
             }
          });
 
-         // Track Volume Observer - live push-to-fader was confirmed
-         // non-functional on this hardware (isolated single sends from a
-         // scheduleTask context never reach it, even throttled and
-         // flushed - only sends made synchronously inside onMidi() while
-         // handling an incoming message work, e.g. refreshFaders() on
-         // mode switch / bank-flip). Kept registered purely for
-         // markInterested() - see the comment on the send observer above.
-         track.volume().value().addValueObserver(function (value) {});
+         // Track Volume - live push-to-fader was confirmed non-functional
+         // on this hardware (isolated single sends from a scheduleTask
+         // context never reach it, even throttled and flushed - only
+         // sends made synchronously inside onMidi() while handling an
+         // incoming message work, e.g. refreshFaders() on mode switch /
+         // bank-flip). Still need markInterested() - see the comment on
+         // the send observer above.
+         track.volume().value().markInterested();
 
          track.volume().displayedValue().addValueObserver(function (dispVal) {
             if (currentMode === MODE_MIXER && !isFlipped && isViewingReturns === isReturnsBank) {
@@ -530,9 +530,8 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
             }
          });
 
-         // Track Pan Observer - same as volume above, kept only for
-         // markInterested().
-         track.pan().value().addValueObserver(function (value) {});
+         // Track Pan - same as volume above, kept only for markInterested().
+         track.pan().value().markInterested();
 
          // Track Meter Observer - real MCU protocol per Ableton's own
          // driver (ChannelStrip.py): meter level (0-12) is sent as a
