@@ -362,12 +362,15 @@ function init() {
    setupChannelStripObservers(trackBank, mainLedState, false);
    setupChannelStripObservers(effectTrackBank, returnsLedState, true);
 
-   // TEMPORARILY DISABLED for diagnosis: testing whether the meter-enable
-   // SysEx or the Channel Pressure meter messages are interfering with
-   // pitch-bend fader updates on this hardware. Re-enable once diagnosed.
-   // for (var meterStripIdx = 0; meterStripIdx < 8; meterStripIdx++) {
-   //    midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, meterStripIdx, 3, 0xF7]);
-   // }
+   // TEMPORARILY sending the DISABLE form (mode=0) instead of the enable
+   // (mode=3) sent in earlier sessions - a prior session's enable may have
+   // left the hardware toggled into meter mode persistently (surviving a
+   // power cycle), and just not re-sending "enable" this session wouldn't
+   // undo that. Explicitly reverting it to test whether that's what's
+   // blocking pitch-bend fader updates. Re-enable properly once diagnosed.
+   for (var meterStripIdx = 0; meterStripIdx < 8; meterStripIdx++) {
+      midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, meterStripIdx, 0, 0xF7]);
+   }
 
    // Track each bank's per-track TOOL_DEVICE_NAME device, if any (see isToolVolumeMode).
    setupToolDeviceTracking(trackBank, mainToolSlot, mainToolRemote);
