@@ -467,14 +467,29 @@ function setupToolDeviceTracking(bank, toolSlotState, toolRemoteState) {
             bank.getItemAt(trackIndex),
             function (deviceIndex) {
                toolSlotState[trackIndex] = deviceIndex;
+               refreshToolModeIfActive();
             },
             function (deviceIndex) {
                if (toolSlotState[trackIndex] === deviceIndex) {
                   toolSlotState[trackIndex] = -1;
+                  refreshToolModeIfActive();
                }
             }
          );
       })(i);
+   }
+}
+
+// scanTrackForToolDevice()'s onSlotFound/onSlotLost callbacks only update
+// the tracking arrays - they don't touch the LCD/fader caches themselves.
+// Without this, adding (or removing) a TOOL_DEVICE_NAME device while PAN
+// mode is already active leaves the LCD showing its last cached text (e.g.
+// "No TRLVL") until something unrelated happens to trigger a refresh, even
+// though the fader/encoder already work since those read live state.
+function refreshToolModeIfActive() {
+   if (currentMode === MODE_MIXER && isToolVolumeMode) {
+      refreshDisplayText();
+      refreshFaders();
    }
 }
 
