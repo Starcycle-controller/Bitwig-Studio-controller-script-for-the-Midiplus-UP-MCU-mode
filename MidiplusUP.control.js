@@ -69,13 +69,16 @@ var ctrlUsedForCombo = false;
 // created in init() below (see ctrlHoldTimeSetting).
 var CTRL_LONG_PRESS_MS = 500;
 
-// Physical jog wheel push/click, confirmed via the RAW Note-On debug log
-// to be note 87 on this hardware - not a real PUNCH IN button, despite 87
-// being PUNCH IN's note in the standard Mackie Control protocol (Ableton's
-// driver). Treated as a momentary hold modifier, same pattern as
-// SHIFT/OPTION/CTRL/ALT: held while pressed, drives the jog wheel's
-// bar-jump scrub (same as toggling SCRUB).
+// Physical jog wheel push/click AND the hardware's PUNCH IN button are the
+// same note (87) on this unit - confirmed via the RAW Note-On debug log
+// both times (matches the standard Mackie Control protocol, where 87 really
+// is PUNCH IN's note). Dual-purpose like PLUGIN/BANK/CTRL: held while
+// pressed, it drives the jog wheel's bar-jump scrub (same as toggling
+// SCRUB); a plain tap (release without having turned the wheel in between)
+// toggles Punch-In recording instead - wheelPushUsedForCombo distinguishes
+// the two, same pattern as ctrlUsedForCombo above.
 var isWheelPressed = false;
+var wheelPushUsedForCombo = false;
 
 // PLUGIN Button (Note 43): a press still reaches handleButtonPress() for
 // its own action (jump to the first device on the selected track and open
@@ -794,6 +797,12 @@ function onMidi(status, data1, data2) {
          // the bar line (incPosition's own snap=true only quantizes to the
          // nearest beat, not the bar, so the target position is computed
          // directly instead).
+         if (isWheelPressed) {
+            // Wheel was actually turned during this hold, so the release
+            // shouldn't also toggle Punch-In - see wheelPushUsedForCombo
+            // above.
+            wheelPushUsedForCombo = true;
+         }
          var beatsPerBar = getBeatsPerBar();
          var currentBar = Math.round(transport.getPosition().get() / beatsPerBar);
          var targetBar = backwards ? currentBar - 1 : currentBar + 1;
@@ -859,9 +868,18 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // Jog Wheel Push (Note 87 on this hardware - see isWheelPressed above)
+      // Jog Wheel Push / PUNCH IN (Note 87 - see isWheelPressed above)
       if (data1 === 87) {
-         isWheelPressed = isPressed;
+         if (isPressed) {
+            isWheelPressed = true;
+            wheelPushUsedForCombo = false;
+         } else {
+            isWheelPressed = false;
+            if (!wheelPushUsedForCombo) {
+               transport.isPunchInEnabled().toggle();
+               host.showPopupNotification("Toggle Punch-In Recording");
+            }
+         }
          return;
       }
 
@@ -1257,12 +1275,9 @@ function handleButtonPress(note) {
          transport.isArrangerLoopEnabled().toggle();
          break;
 
-      // Note 87 is confirmed (via the RAW Note-On debug log) to be the
-      // physical jog wheel push on this hardware, not a real PUNCH IN
-      // button - it's now fully consumed as a momentary hold modifier in
-      // onMidi (see isWheelPressed), so this case is unreachable and was
-      // removed. transport.isPunchInEnabled() is still available if a real
-      // PUNCH IN button is found on a different note later.
+      // Note 87 (PUNCH IN / jog wheel push) is fully handled in onMidi's
+      // modifier-button section, not here - see isWheelPressed and
+      // wheelPushUsedForCombo above.
 
       case 88: // PUNCH OUT (CTRL+PO: set loop end from playhead)
          if (isControlPressed) {
