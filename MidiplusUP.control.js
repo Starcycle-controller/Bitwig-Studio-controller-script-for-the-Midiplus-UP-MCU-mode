@@ -270,20 +270,32 @@ function activeLedState() {
 // since volume is always monotonic in dB. ~24 iterations is comfortably
 // enough precision (2^-24 of the 0..1 range) and cheap enough to run
 // synchronously inside a single button-press handler.
-function setVolumeToDb(volumeParam, targetDb) {
-   var low = 0.0;
-   var high = 1.0;
-   for (var i = 0; i < 24; i++) {
-      var mid = (low + high) / 2;
-      volumeParam.set(mid);
-      var currentDb = parseFloat(volumeParam.displayedValue().get());
-      if (isNaN(currentDb) || currentDb < targetDb) {
-         low = mid;
-      } else {
-         high = mid;
-      }
+function setVolumeToDbStep(volumeParam, targetDb, low, high, iterationsRemaining) {
+   if (iterationsRemaining <= 0) {
+      volumeParam.set((low + high) / 2);
+      return;
    }
-   volumeParam.set((low + high) / 2);
+   var mid = (low + high) / 2;
+   volumeParam.set(mid);
+   // .get() right after .set() in the same tick returns the STALE
+   // pre-set value (confirmed on hardware: every step was walking to the
+   // top of the range regardless of target) - deferring the read via
+   // scheduleTask gives Bitwig time to actually process the .set() first.
+   host.scheduleTask(function () {
+      var currentDb = parseFloat(volumeParam.displayedValue().get());
+      var nextLow = low;
+      var nextHigh = high;
+      if (isNaN(currentDb) || currentDb < targetDb) {
+         nextLow = mid;
+      } else {
+         nextHigh = mid;
+      }
+      setVolumeToDbStep(volumeParam, targetDb, nextLow, nextHigh, iterationsRemaining - 1);
+   }, 20);
+}
+
+function setVolumeToDb(volumeParam, targetDb) {
+   setVolumeToDbStep(volumeParam, targetDb, 0.0, 1.0, 20);
 }
 
 // Returns the Gain (paramIndex 0) or Pan (paramIndex 1) parameter of the
