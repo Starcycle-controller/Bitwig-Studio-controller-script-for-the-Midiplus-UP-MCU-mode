@@ -38,6 +38,7 @@ host.addDeviceNameBasedDiscoveryPair(["Midiplus UP MIDI 1"], ["Midiplus UP MIDI 
 var MODE_MIXER = 0;   // Faders 1-8 = Track Volume 1-8, Encoders = Pan
 var MODE_SENDS = 1;   // Faders 1-8 = Send Levels (Press 1: Sends 1-8, Press 2: Sends 9-16, Press 3: Exit)
 var MODE_DEVICE = 2;  // Encoders = 8 Remote Control Macros
+var MODE_SCENE = 3;   // BTA: jog wheel selects a scene, wheel push launches it
 
 var MAX_SENDS = 16;
 // Name to search for when looking for the per-track gain-staging utility
@@ -86,6 +87,13 @@ var isWheelPressed = false;
 var isPluginHeld = false;
 var pluginDeviceStepAccumulator = 0;
 var PLUGIN_DEVICE_STEP_MESSAGES = 4;
+
+// MODE_SCENE (BTA, note 80): which of the 8 scenes in sceneBank's window is
+// currently selected - the jog wheel moves this, note 87 (wheel push)
+// launches it. Same wheel-message debounce pattern as the combos above.
+var sceneCursorIndex = 0;
+var sceneStepAccumulator = 0;
+var SCENE_STEP_MESSAGES = 4;
 
 // BANK PREV/NEXT Buttons (Notes 46/47): a press still reaches
 // handleButtonPress() for their own bank-paging action, but held state is
@@ -185,6 +193,7 @@ function safeInvokeAction(actionId, popupText) {
 // Host Objects
 var trackBank = null;
 var effectTrackBank = null; // "Returns" bank, shown when isViewingReturns is true
+var sceneBank = null; // MODE_SCENE (BTA): fixed 8-scene window, see sceneCursorIndex below
 var masterTrack = null;
 var cursorTrack = null;
 var cursorDevice = null;
@@ -289,6 +298,13 @@ function init() {
    // handlers below, so they need markInterested() or .get() throws.
    trackBank.itemCount().markInterested();
    effectTrackBank.itemCount().markInterested();
+
+   // Scene Bank (8 scenes) - MODE_SCENE, entered via BTA. Fixed window, no
+   // paging built for now (see sceneCursorIndex above).
+   sceneBank = host.createSceneBank(8);
+   for (var sceneIdx = 0; sceneIdx < 8; sceneIdx++) {
+      sceneBank.getScene(sceneIdx).name().markInterested();
+   }
 
    // Initialize Master Track
    masterTrack = host.createMasterTrack(0);
@@ -442,6 +458,10 @@ function init() {
 
    transport.isMetronomeEnabled().addValueObserver(function (isClick) {
       midiOut.sendMidi(0x90, 89, isClick ? 127 : 0); // Metronome LED
+   });
+
+   transport.isArrangerAutomationWriteEnabled().addValueObserver(function (isWriting) {
+      midiOut.sendMidi(0x90, 53, isWriting ? 127 : 0); // SMPTE/BEATS LED (Automation Write)
    });
 
    // Cursor Track Name Observer
@@ -762,6 +782,25 @@ function onMidi(status, data1, data2) {
       var backwards = data2 >= 64;
       var rawStep = backwards ? -(data2 - 64) : data2;
 
+      if (currentMode === MODE_SCENE) {
+         // BTA / Scene Mode: plain wheel turn moves the selected-scene
+         // cursor within the 8-scene bank window (see sceneCursorIndex
+         // above) - takes priority over every other modifier combo below,
+         // since none of them make sense while browsing scenes. Launching
+         // is done separately by note 87's press handler.
+         sceneStepAccumulator += Math.abs(rawStep);
+         if (sceneStepAccumulator >= SCENE_STEP_MESSAGES) {
+            sceneStepAccumulator -= SCENE_STEP_MESSAGES;
+            sceneCursorIndex = backwards ?
+               Math.max(0, sceneCursorIndex - 1) :
+               Math.min(7, sceneCursorIndex + 1);
+            var selectedScene = sceneBank.getScene(sceneCursorIndex);
+            var selectedSceneName = selectedScene.name().get() || ("Scene " + (sceneCursorIndex + 1));
+            host.showPopupNotification("Scene " + (sceneCursorIndex + 1) + ": " + selectedSceneName);
+         }
+         return;
+      }
+
       if (isControlPressed) {
          // Using CTRL to modify the wheel means a long-press expanded-view
          // toggle shouldn't also fire when it's released - see the CTRL
@@ -927,9 +966,17 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // Jog Wheel Push / Pan Mode (Note 87 - see isWheelPressed above)
+      // Jog Wheel Push / Pan Mode (Note 87 - see isWheelPressed above). In
+      // MODE_SCENE, a press launches the currently selected scene instead -
+      // Pan Mode's bar-jump branch is unreachable in that mode anyway (the
+      // wheel handler's MODE_SCENE branch takes priority), so there's no
+      // conflict between the two uses of this note.
       if (data1 === 87) {
          isWheelPressed = isPressed;
+         if (isPressed && currentMode === MODE_SCENE) {
+            sceneBank.getScene(sceneCursorIndex).launch();
+            host.showPopupNotification("Launch Scene " + (sceneCursorIndex + 1));
+         }
          return;
       }
 
@@ -1244,9 +1291,14 @@ function handleButtonPress(note) {
       // Note 52 is the generic MCU "Name/Value display" toggle - no
       // meaningful equivalent surfaced in Bitwig's API, left unbound.
 
-      // Note 53 (SMPTE/BEATS) has no equivalent surfaced in Bitwig's
-      // Controller API (no time-display-format toggle found on Transport),
-      // so it's left unbound rather than guessing an action string.
+      case 53: // SMPTE/BEATS -> repurposed as Automation Write toggle (the
+               // time-display-format concept it's named for has no Bitwig
+               // equivalent, but transport.isArrangerAutomationWriteEnabled()
+               // is a real SettableBooleanValue matching the "automation
+               // toggle" request).
+         transport.isArrangerAutomationWriteEnabled().toggle();
+         host.showPopupNotification("Toggle Automation Write");
+         break;
 
       // F1-F8 (notes 54-61) and F9-F16 (notes 62-69): Ableton's own driver
       // no-ops on all of these (SoftwareController.handle_function_key_switch_ids
@@ -1285,12 +1337,30 @@ function handleButtonPress(note) {
          host.showPopupNotification("Redo");
          break;
 
-      case 80: // B.T.A. (Back To Arrangement)
-         for (var btaIdx = 0; btaIdx < 8; btaIdx++) {
-            trackBank.getItemAt(btaIdx).returnToArrangement();
+      case 80: // B.T.A. -> repurposed as MODE_SCENE toggle ("Scene Mode"):
+               // shows the clip launcher + switches to the Mix panel layout,
+               // and the jog wheel selects/launches scenes instead of its
+               // usual transport scrub (see the jog wheel handler and note
+               // 87's press handler). Second press exits back to Mixer mode,
+               // same toggle pattern as PLUGIN/SEND.
+         if (currentMode !== MODE_SCENE) {
+            currentMode = MODE_SCENE;
+            sceneCursorIndex = 0;
+            sceneStepAccumulator = 0;
+            arranger.isClipLauncherVisible().set(true);
+            try {
+               application.setPanelLayout("MIX");
+            } catch (e) {
+               println("Error setting panel layout to MIX: " + e);
+            }
+            host.showPopupNotification("Mode: Scene Launch");
+         } else {
+            currentMode = MODE_MIXER;
+            host.showPopupNotification("Mode: Mixer (Track Volume / Pan)");
          }
-         cursorTrack.returnToArrangement();
-         host.showPopupNotification("Back To Arrangement");
+         updateModeLEDs();
+         refreshDisplayText();
+         refreshFaders();
          break;
 
       case 81: // DRAW -> cycle through the 6 arranger edit tools, one per
@@ -1442,6 +1512,7 @@ function updateModeLEDs() {
    midiOut.sendMidi(0x90, 41, currentMode === MODE_SENDS ? 127 : 0); // SEND LED
    midiOut.sendMidi(0x90, 42, isToolVolumeMode ? 127 : 0); // PAN LED - lit while Tool Gain/Pan mode is active
    midiOut.sendMidi(0x90, 43, currentMode === MODE_DEVICE ? 127 : 0); // PLUG-IN LED
+   midiOut.sendMidi(0x90, 80, currentMode === MODE_SCENE ? 127 : 0); // B.T.A. LED
 }
 
 // Fire-and-forget LED flash for actions with no real on/off state to
