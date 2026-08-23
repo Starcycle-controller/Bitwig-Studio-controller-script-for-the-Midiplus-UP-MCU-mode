@@ -1087,11 +1087,9 @@ function handleButtonPress(note) {
          host.showPopupNotification("Jump to Start (Home)");
          break;
 
-      case 90: // END -> Jump Playhead to end of the arranger loop (approximates
-               // Ableton's "last event in the project", which Bitwig doesn't
-               // expose directly)
-         transport.getPosition().set(transport.arrangerLoopDuration().get());
-         host.showPopupNotification("Jump to Loop End");
+      case 90: // END -> Jump Playhead to the current loop start
+         transport.getPosition().set(transport.arrangerLoopStart().get());
+         host.showPopupNotification("Jump to Loop Start");
          break;
 
       // Cursor Arrows (96-99): navigate normally, or zoom while ZOOM (100)
