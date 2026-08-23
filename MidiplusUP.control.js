@@ -618,6 +618,17 @@ function onMidi(status, data1, data2) {
    var msgType = status & 0xF0;
    var channel = status & 0x0F;
 
+   // DEBUG: catches any Control Change not otherwise logged below (encoders
+   // 16-23 and the jog wheel's CC 60 have their own more specific handling
+   // further down) - the manual documents a separate CC-based mapping table
+   // (its raw "MIDI mode", distinct from the note-based MCU/Live mode this
+   // unit is actually running in), so this helps confirm whether any given
+   // button really sends nothing, or sends a CC instead of the expected
+   // Note-On.
+   if (msgType === 0xB0 && data1 !== 60 && !(data1 >= 16 && data1 <= 23)) {
+      println("RAW CC received - CC#: " + data1 + ", Value: " + data2);
+   }
+
    // 1. Motorized Pitchbend Faders (14-bit resolution)
    if (msgType === 0xE0) {
       var val14 = (data2 << 7) | data1;
