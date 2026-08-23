@@ -703,6 +703,15 @@ function onMidi(status, data1, data2) {
       var backwards = data2 >= 64;
       var rawStep = backwards ? -(data2 - 64) : data2;
 
+      if (isWheelPressed) {
+         // The wheel was turned during this hold - regardless of which
+         // modifier branch below actually handles it (SHIFT, CTRL, etc. all
+         // take priority over the plain wheel-push bar-jump branch) - so
+         // releasing it shouldn't also toggle Punch-In. See
+         // wheelPushUsedForCombo above.
+         wheelPushUsedForCombo = true;
+      }
+
       if (isControlPressed) {
          // Using CTRL to modify the wheel means a long-press expanded-view
          // toggle shouldn't also fire when it's released - see the CTRL
@@ -797,12 +806,6 @@ function onMidi(status, data1, data2) {
          // the bar line (incPosition's own snap=true only quantizes to the
          // nearest beat, not the bar, so the target position is computed
          // directly instead).
-         if (isWheelPressed) {
-            // Wheel was actually turned during this hold, so the release
-            // shouldn't also toggle Punch-In - see wheelPushUsedForCombo
-            // above.
-            wheelPushUsedForCombo = true;
-         }
          var beatsPerBar = getBeatsPerBar();
          var currentBar = Math.round(transport.getPosition().get() / beatsPerBar);
          var targetBar = backwards ? currentBar - 1 : currentBar + 1;
