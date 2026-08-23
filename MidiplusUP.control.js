@@ -67,6 +67,12 @@ var isAltPressed = false;     // Note 73
 // bar-jump scrub (same as toggling SCRUB).
 var isWheelPressed = false;
 
+// PLUGIN Button (Note 43): a press still reaches handleButtonPress() for
+// its own action (jump to the first device on the selected track and open
+// its panel), but held state is also tracked here so the jog wheel can
+// step through devices while it's held - see isPluginHeld below.
+var isPluginHeld = false;
+
 // ZOOM (100) and SCRUB (101) are TOGGLE buttons in the real protocol (press
 // to flip state, not held-while-down like SHIFT/OPTION/CTRL/ALT).
 var isZoomToggled = false;
@@ -660,6 +666,17 @@ function onMidi(status, data1, data2) {
          return;
       }
 
+      if (isPluginHeld) {
+         // PLUGIN held + Jog Wheel: step to the next/previous device on the
+         // selected track, one per message.
+         if (backwards) {
+            cursorDevice.selectPrevious();
+         } else {
+            cursorDevice.selectNext();
+         }
+         return;
+      }
+
       if (isOptionPressed) {
          // OPTION + Jog Wheel: turn left halves the loop length, turn right
          // doubles it - accumulated across messages, see
@@ -749,6 +766,17 @@ function onMidi(status, data1, data2) {
       if (data1 === 87) {
          isWheelPressed = isPressed;
          return;
+      }
+
+      // PLUGIN Button (Note 43) - track hold state for the jog wheel device
+      // navigation combo, but (unlike the pure modifiers above) only
+      // `return` on release: a press still needs to fall through to
+      // handleButtonPress() below for its own action.
+      if (data1 === 43) {
+         isPluginHeld = isPressed;
+         if (!isPressed) {
+            return;
+         }
       }
 
       // ZOOM Button (Note 100) - toggles zoom mode for the cursor arrows
@@ -882,17 +910,13 @@ function handleButtonPress(note) {
          refreshFaders();
          break;
 
-      case 43: // PLUG-IN / DEVICE -> Cycle Available Plugins on Track
-         if (currentMode === MODE_DEVICE) {
-            if (isShiftPressed) {
-               cursorDevice.selectPrevious();
-            } else {
-               cursorDevice.selectNext();
-            }
-         } else {
-            currentMode = MODE_DEVICE;
-            host.showPopupNotification("Mode: Device Remote Controls (Macros)");
-         }
+      case 43: // PLUG-IN / DEVICE -> jump to the first device on the
+               // selected track and open its panel. Hold + jog wheel steps
+               // through devices instead (see isPluginHeld).
+         currentMode = MODE_DEVICE;
+         cursorDevice.selectFirst();
+         cursorDevice.isWindowOpen().set(true);
+         host.showPopupNotification("Device: First Plugin");
          updateModeLEDs();
          refreshDisplayText();
          refreshFaders();
