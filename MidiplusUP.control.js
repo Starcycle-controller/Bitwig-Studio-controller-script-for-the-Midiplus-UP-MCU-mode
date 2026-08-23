@@ -385,15 +385,13 @@ function init() {
       (function (sendIdx) {
          var sendItem = cursorTrack.sendBank().getItemAt(sendIdx);
 
-         sendItem.value().addValueObserver(function (val) {
-            if (currentMode === MODE_SENDS) {
-               var offset = sendBankPage * 8;
-               if (sendIdx >= offset && sendIdx < offset + 8) {
-                  var channelIdx = sendIdx - offset;
-                  queueFaderPitchBend(channelIdx, val);
-               }
-            }
-         });
+         // Live fader-follow (pushing this value to the hardware fader as
+         // it changes) was confirmed non-functional on this hardware - see
+         // sendPitchBend below for why. This observer is kept anyway
+         // purely to satisfy markInterested() for the .value().get() calls
+         // refreshFaders() makes (mode switch / bank-flip fader sync,
+         // which IS confirmed working) - removing it would break that.
+         sendItem.value().addValueObserver(function (val) {});
 
          sendItem.displayedValue().addValueObserver(function (dispVal) {
             if (currentMode === MODE_SENDS) {
@@ -419,10 +417,9 @@ function init() {
       })(s);
    }
 
-   // Master Track Volume Observer
-   masterTrack.volume().value().addValueObserver(function (value) {
-      queueFaderPitchBend(8, value); // Channel 9 (0xE8) for Master Fader
-   });
+   // Master Track Volume Observer - kept only for markInterested(), see the
+   // comment on the send observer above.
+   masterTrack.volume().value().addValueObserver(function (value) {});
 
    // Device Parameter Observers (For Custom Device Remote Control Mode)
    for (var j = 0; j < 8; j++) {
@@ -443,11 +440,9 @@ function init() {
             }
          });
 
-         param.value().addValueObserver(function (value) {
-            if (currentMode === MODE_DEVICE && isFlipped) {
-               queueFaderPitchBend(paramIndex, value);
-            }
-         });
+         // Kept only for markInterested(), see the comment on the send
+         // observer in setupChannelStripObservers.
+         param.value().addValueObserver(function (value) {});
       })(j);
    }
 
@@ -491,7 +486,6 @@ function init() {
    // Flush display initially
    updateModeLEDs();
    host.scheduleTask(displayFlushTask, 100);
-   host.scheduleTask(faderFlushTask, 200);
 
    println("Midiplus UP Controller Script Ready.");
 }
@@ -520,16 +514,14 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
             }
          });
 
-         // Track Volume Observer - live-updates the fader while it's showing
-         // track volume, which (per the FLIP overlay) is both MIXER-unflipped
-         // and DEVICE-unflipped. Queued/throttled rather than sent directly -
-         // see queueFaderPitchBend/faderFlushTask.
-         track.volume().value().addValueObserver(function (value) {
-            if (!isFlipped && (currentMode === MODE_MIXER || currentMode === MODE_DEVICE) &&
-                isViewingReturns === isReturnsBank) {
-               queueFaderPitchBend(index, value);
-            }
-         });
+         // Track Volume Observer - live push-to-fader was confirmed
+         // non-functional on this hardware (isolated single sends from a
+         // scheduleTask context never reach it, even throttled and
+         // flushed - only sends made synchronously inside onMidi() while
+         // handling an incoming message work, e.g. refreshFaders() on
+         // mode switch / bank-flip). Kept registered purely for
+         // markInterested() - see the comment on the send observer above.
+         track.volume().value().addValueObserver(function (value) {});
 
          track.volume().displayedValue().addValueObserver(function (dispVal) {
             if (currentMode === MODE_MIXER && !isFlipped && isViewingReturns === isReturnsBank) {
@@ -538,12 +530,9 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
             }
          });
 
-         // Track Pan Observer
-         track.pan().value().addValueObserver(function (value) {
-            if (currentMode === MODE_MIXER && isFlipped && isViewingReturns === isReturnsBank) {
-               queueFaderPitchBend(index, value);
-            }
-         });
+         // Track Pan Observer - same as volume above, kept only for
+         // markInterested().
+         track.pan().value().addValueObserver(function (value) {});
 
          // Track Meter Observer - real MCU protocol per Ableton's own
          // driver (ChannelStrip.py): meter level (0-12) is sent as a
@@ -986,23 +975,6 @@ function onMidi(status, data1, data2) {
       if (data1 === 73) {
          isAltPressed = isPressed;
          midiOut.sendMidi(0x90, 73, isAltPressed ? 127 : 0);
-         if (isPressed) {
-            // TEMPORARY DIAGNOSTIC (piggybacked on ALT's press, doesn't
-            // affect its normal modifier behavior): sends a single,
-            // isolated pitch-bend to fader 2 (channel 1) via a deferred
-            // scheduleTask, completely separate from any observer or
-            // rapid stream, to isolate whether the fader-follow issue is
-            // about message RATE or about the scheduleTask/observer
-            // EXECUTION CONTEXT itself. Alternates target each press so
-            // it's easy to see whether it's actually landing correctly.
-            var diagnosticTarget = (Date.now() % 2 === 0) ? 0.0 : 1.0;
-            println("Diagnostic: scheduling single isolated pitch-bend to channel 1, target: " + diagnosticTarget);
-            host.scheduleTask(function () {
-               println("Diagnostic: sending now");
-               sendPitchBend(1, diagnosticTarget);
-               host.requestFlush();
-            }, 500);
-         }
          return;
       }
 
@@ -1650,39 +1622,24 @@ function sendPitchBend(channel, normalizedValue) {
    midiOut.sendMidi(0xE0 + channel, lsb, msb);
 }
 
-// Live value observers (volume/pan/send/macro) can fire dozens of times a
-// second during a mouse drag - confirmed on hardware via debug log that
-// the observer callbacks and their sendPitchBend() calls were all firing
-// correctly with valid values, yet the motorized fader never actually
-// moved, while the SAME sendPitchBend() call works fine when refreshFaders()
-// sends one message per channel as a one-shot burst (mode switch, bank
-// flip). Strongly suggests this hardware can't keep up with / drops a
-// flood of rapid pitch-bend messages to the same channel. Queuing only the
-// latest value per channel and flushing on a timer (faderFlushTask, same
-// throttling shape as displayFlushTask below) caps the rate without
-// changing refreshFaders()'s already-working one-shot bursts.
-var pendingFaderPitchBend = [null, null, null, null, null, null, null, null, null];
-
-function queueFaderPitchBend(channel, normalizedValue) {
-   pendingFaderPitchBend[channel] = normalizedValue;
-}
-
-function faderFlushTask() {
-   for (var i = 0; i < 9; i++) {
-      if (pendingFaderPitchBend[i] !== null) {
-         // TEMPORARY DEBUG: confirms the flush loop actually runs and
-         // computes the expected MIDI bytes - remove once diagnosed.
-         var debugVal14 = Math.max(0, Math.min(16383, Math.round(pendingFaderPitchBend[i] * 16383)));
-         println("faderFlushTask sending - channel: " + i + ", value: " + pendingFaderPitchBend[i] +
-            ", status: 0x" + (0xE0 + i).toString(16) + ", lsb: " + (debugVal14 & 0x7F) +
-            ", msb: " + ((debugVal14 >> 7) & 0x7F));
-         sendPitchBend(i, pendingFaderPitchBend[i]);
-         pendingFaderPitchBend[i] = null;
-         host.requestFlush();
-      }
-   }
-   host.scheduleTask(faderFlushTask, 200);
-}
+// Live fader-follow (pushing volume/pan/send/macro changes to the
+// motorized fader as they happen, e.g. from a mouse drag or automation)
+// was investigated extensively and confirmed NOT achievable on this
+// hardware: even a single isolated sendPitchBend() call, deferred via
+// host.scheduleTask() and followed by host.requestFlush(), never reached
+// the fader - ruling out message flooding, throttling, and flush timing
+// as the cause. The one thing that reliably works is sendPitchBend()
+// called synchronously from inside onMidi() while handling an incoming
+// controller message (that's what refreshFaders() does, triggered on
+// mode switches / bank-flip / FLIP toggle) - output sent from a
+// scheduleTask or value-observer callback (i.e. NOT during onMidi()'s own
+// call stack) appears to never reach this hardware, regardless of
+// formatting or timing. There's no way to route a mouse/automation-driven
+// change through onMidi(), since no MIDI is incoming from the controller
+// in that case, so this isn't fixable in software. The various volume/pan/
+// send/macro value observers are still registered (see
+// setupChannelStripObservers etc.) purely to satisfy markInterested() for
+// the .value().get() calls refreshFaders() makes - don't remove those.
 
 // Render MCU LCD Display SysEx Messages
 // SysEx Format: F0 00 00 66 14 12 <offset> <ASCII text...> F7
