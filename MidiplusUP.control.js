@@ -1279,15 +1279,23 @@ function handleButtonPress(note) {
          host.showPopupNotification("Back To Arrangement");
          break;
 
-      case 81: // DRAW -> Select the Time Selection arranger tool (keyboard
-               // shortcut "2" in Bitwig; "1" is Point Select, the default).
-               // No direct Application method for arranger tool switching
-               // exists, so this goes through the action registry instead -
-               // see safeInvokeAction. Note: there's also no API for
-               // reading/writing the arranger's time-selection range itself,
-               // so the wheel can't be wired up to grow/shrink a selection
-               // from here - only the tool switch is achievable.
-         safeInvokeAction("Time Selection Tool", "Select Time Tool");
+      case 81: // DRAW -> TEMPORARY DIAGNOSTIC: "Time Selection Tool" (the
+               // guessed action id) wasn't found, so instead of guessing
+               // again this dumps every real action whose name contains
+               // "tool" to the console - press DRAW once and paste the
+               // output back so the real ids for the six arranger tools
+               // (keyboard shortcuts 1-6) can be wired up for real.
+         var allActions = application.getActions();
+         var toolActionCount = 0;
+         for (var actionIdx = 0; actionIdx < allActions.length; actionIdx++) {
+            var actionName = allActions[actionIdx].getName();
+            if (actionName.toLowerCase().indexOf("tool") !== -1) {
+               println("Action: \"" + actionName + "\" (id: \"" + allActions[actionIdx].getId() + "\")");
+               toolActionCount++;
+            }
+         }
+         println("Found " + toolActionCount + " actions containing \"tool\" out of " + allActions.length + " total.");
+         host.showPopupNotification("Dumped " + toolActionCount + " tool actions to console");
          break;
 
       case 82: // MARKER -> Add Cue Marker at Playhead
