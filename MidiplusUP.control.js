@@ -72,7 +72,7 @@ var isScrubToggled = false;
 // many powers of two almost instantly. Tune the threshold if it feels too
 // fast/slow in practice.
 var loopScaleAccumulator = 0;
-var LOOP_SCALE_THRESHOLD = 32;
+var LOOP_SCALE_THRESHOLD = 16;
 
 // RETURNS (note 51): swap the 8 channel strips between the main track bank
 // and the effect ("return") track bank.
