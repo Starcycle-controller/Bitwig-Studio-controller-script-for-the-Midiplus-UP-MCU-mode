@@ -72,6 +72,8 @@ var isWheelPressed = false;
 // its panel), but held state is also tracked here so the jog wheel can
 // step through devices while it's held - see isPluginHeld below.
 var isPluginHeld = false;
+var pluginDeviceStepAccumulator = 0;
+var PLUGIN_DEVICE_STEP_MESSAGES = 4;
 
 // ZOOM (100) and SCRUB (101) are TOGGLE buttons in the real protocol (press
 // to flip state, not held-while-down like SHIFT/OPTION/CTRL/ALT).
@@ -668,11 +670,17 @@ function onMidi(status, data1, data2) {
 
       if (isPluginHeld) {
          // PLUGIN held + Jog Wheel: step to the next/previous device on the
-         // selected track, one per message.
-         if (backwards) {
-            cursorDevice.selectPrevious();
-         } else {
-            cursorDevice.selectNext();
+         // selected track, once every PLUGIN_DEVICE_STEP_MESSAGES wheel
+         // messages (raw messages arrive far more often than one per
+         // physical detent).
+         pluginDeviceStepAccumulator++;
+         if (pluginDeviceStepAccumulator >= PLUGIN_DEVICE_STEP_MESSAGES) {
+            pluginDeviceStepAccumulator = 0;
+            if (backwards) {
+               cursorDevice.selectPrevious();
+            } else {
+               cursorDevice.selectNext();
+            }
          }
          return;
       }
@@ -775,6 +783,7 @@ function onMidi(status, data1, data2) {
       if (data1 === 43) {
          isPluginHeld = isPressed;
          if (!isPressed) {
+            pluginDeviceStepAccumulator = 0;
             return;
          }
       }
