@@ -151,6 +151,14 @@ function activeTrackBank() {
    return isViewingReturns ? effectTrackBank : trackBank;
 }
 
+// Length of one bar in beats (quarter notes) under the project's current
+// time signature - e.g. 4/4 -> 4, 6/8 -> 3. Transport.incPosition() and
+// arrangerLoopStart()/Duration() are all denominated in beats, not bars, so
+// jog-wheel bar-jump/loop-shift math needs this conversion.
+function getBeatsPerBar() {
+   return transport.timeSignature().numerator().get() * (4.0 / transport.timeSignature().denominator().get());
+}
+
 function activeLedState() {
    return isViewingReturns ? returnsLedState : mainLedState;
 }
@@ -206,11 +214,14 @@ function init() {
    application = host.createApplication();
    arranger = host.createArranger();
 
-   // Read on-demand (not observed) by END, and by the CTRL+PUNCH IN/OUT
-   // loop-start/end handlers, so they need markInterested() or .get() throws.
+   // Read on-demand (not observed) by END, CTRL+PUNCH IN/OUT, and the jog
+   // wheel's bar-jump/loop-shift handling, so they need markInterested() or
+   // .get() throws.
    transport.getPosition().markInterested();
    transport.arrangerLoopStart().markInterested();
    transport.arrangerLoopDuration().markInterested();
+   transport.timeSignature().numerator().markInterested();
+   transport.timeSignature().denominator().markInterested();
 
    // Setup Observers for both the main track bank and the returns bank -
    // only the currently-active one (per isViewingReturns) writes to the
@@ -605,9 +616,9 @@ function onMidi(status, data1, data2) {
 
    // 3. Jog / Scroll Wheel (CC 60 on Channel 1: 0xB0)
    // Default: smooth, un-quantized scrub through the arranger timeline.
-   // CTRL held = nudge tempo instead; SCRUB toggle (note 101) = finer
-   // sensitivity for precise positioning; ALT halves whichever step is
-   // currently active.
+   // CTRL held = nudge tempo instead; SHIFT held = shift the arranger loop
+   // by whole bars; SCRUB toggle (note 101) = jump the playhead by whole
+   // bars instead of scrubbing smoothly; ALT halves the default scrub step.
    if (msgType === 0xB0 && data1 === 60) {
       // Same sign-magnitude fix as the encoders above
       var backwards = data2 >= 64;
@@ -620,7 +631,30 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      var step = Math.abs(rawStep) * (isScrubToggled ? 0.01 : 0.05);
+      if (isShiftPressed) {
+         // SHIFT + Jog Wheel: move the whole loop region by one bar per
+         // message, keeping its length unchanged.
+         var loopBeatsPerBar = getBeatsPerBar();
+         var oldLoopStart = transport.arrangerLoopStart().get();
+         var newLoopStart = backwards ? oldLoopStart - loopBeatsPerBar : oldLoopStart + loopBeatsPerBar;
+         transport.arrangerLoopStart().set(Math.max(0, newLoopStart));
+         return;
+      }
+
+      if (isScrubToggled) {
+         // Jump exactly one bar per wheel message, regardless of how hard
+         // it was spun - "increments" of a whole bar, landing precisely on
+         // the bar line (incPosition's own snap=true only quantizes to the
+         // nearest beat, not the bar, so the target position is computed
+         // directly instead).
+         var beatsPerBar = getBeatsPerBar();
+         var currentBar = Math.round(transport.getPosition().get() / beatsPerBar);
+         var targetBar = backwards ? currentBar - 1 : currentBar + 1;
+         transport.getPosition().set(Math.max(0, targetBar) * beatsPerBar);
+         return;
+      }
+
+      var step = Math.abs(rawStep) * 0.05;
       if (isAltPressed) {
          step /= 2.0;
       }
