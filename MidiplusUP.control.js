@@ -65,6 +65,8 @@ var isAltPressed = false;     // Note 73
 // afterwards doesn't also toggle the expanded view.
 var ctrlPressStartTime = 0;
 var ctrlUsedForCombo = false;
+// Default; overridden live from the Controller Preferences panel setting
+// created in init() below (see ctrlHoldTimeSetting).
 var CTRL_LONG_PRESS_MS = 500;
 
 // Physical jog wheel push/click, confirmed via the RAW Note-On debug log
@@ -257,6 +259,18 @@ function init() {
    // Toggled on-demand (not observed) by CTRL's long-press handling above,
    // so needs markInterested() or .toggle()/.get() throws.
    cursorDevice.isExpanded().markInterested();
+
+   // User-configurable CTRL long-press duration (Controller Preferences
+   // panel in Bitwig Studio -> this controller -> "Timing" category).
+   // addRawValueObserver fires immediately with the initial value and again
+   // any time the user edits it live, so CTRL_LONG_PRESS_MS always reflects
+   // the current setting without needing a restart.
+   var ctrlHoldTimeSetting = host.getPreferences().getNumberSetting(
+      "CTRL Hold Time (Expanded Device View)", "Timing", 200, 2000, 10, "ms", 500);
+   ctrlHoldTimeSetting.markInterested();
+   ctrlHoldTimeSetting.addRawValueObserver(function(value) {
+      CTRL_LONG_PRESS_MS = value;
+   });
 
    // Remote Controls (8 Macros for selected device)
    remoteControls = cursorDevice.createCursorRemoteControlsPage(8);
