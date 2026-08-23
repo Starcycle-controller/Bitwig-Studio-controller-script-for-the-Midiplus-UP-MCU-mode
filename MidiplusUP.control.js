@@ -59,6 +59,14 @@ var isOptionPressed = false;  // Note 71
 var isControlPressed = false; // Note 72
 var isAltPressed = false;     // Note 73
 
+// CTRL long-press-to-toggle-expanded-view tracking (see the CTRL block in
+// onMidi and cursorDevice.isExpanded() below). ctrlUsedForCombo is set true
+// as soon as CTRL is used to modify the jog wheel, so releasing it
+// afterwards doesn't also toggle the expanded view.
+var ctrlPressStartTime = 0;
+var ctrlUsedForCombo = false;
+var CTRL_LONG_PRESS_MS = 500;
+
 // Physical jog wheel push/click, confirmed via the RAW Note-On debug log
 // to be note 87 on this hardware - not a real PUNCH IN button, despite 87
 // being PUNCH IN's note in the standard Mackie Control protocol (Ableton's
@@ -237,6 +245,10 @@ function init() {
    // Initialize Cursor Track & Send Bank (16 Send slots for focused track)
    cursorTrack = host.createCursorTrack("MIDIPLUS_CURSOR_TRACK", "Cursor Track", 16, 0, true);
    cursorDevice = cursorTrack.createCursorDevice("MIDIPLUS_CURSOR_DEVICE", "Cursor Device", 0, CursorDeviceFollowMode.FIRST_INSTRUMENT_OR_DEVICE);
+
+   // Toggled on-demand (not observed) by CTRL's long-press handling above,
+   // so needs markInterested() or .toggle()/.get() throws.
+   cursorDevice.isExpanded().markInterested();
 
    // Remote Controls (8 Macros for selected device)
    remoteControls = cursorDevice.createCursorRemoteControlsPage(8);
@@ -662,7 +674,30 @@ function onMidi(status, data1, data2) {
       var rawStep = backwards ? -(data2 - 64) : data2;
 
       if (isControlPressed) {
-         // CTRL + Jog Wheel: Nudge Tempo (fine with ALT held)
+         // Using CTRL to modify the wheel means a long-press expanded-view
+         // toggle shouldn't also fire when it's released - see the CTRL
+         // block above.
+         ctrlUsedForCombo = true;
+
+         if (currentMode === MODE_DEVICE) {
+            // CTRL + Jog Wheel in Device mode: step to the next/previous
+            // device on the chain, once every PLUGIN_DEVICE_STEP_MESSAGES
+            // messages (shares the accumulator with the PLUGIN-held combo -
+            // same action, either gesture works).
+            pluginDeviceStepAccumulator++;
+            if (pluginDeviceStepAccumulator >= PLUGIN_DEVICE_STEP_MESSAGES) {
+               pluginDeviceStepAccumulator = 0;
+               if (backwards) {
+                  cursorDevice.selectPrevious();
+               } else {
+                  cursorDevice.selectNext();
+               }
+            }
+            return;
+         }
+
+         // CTRL + Jog Wheel (outside Device mode): Nudge Tempo (fine with
+         // ALT held)
          var tempoStep = isAltPressed ? 0.1 : 1.0;
          transport.tempo().incRaw(rawStep * tempoStep);
          return;
@@ -756,10 +791,21 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // CTRL Button (Note 72)
+      // CTRL Button (Note 72) - a standalone LONG press (held without also
+      // turning the jog wheel) toggles the expanded device view while in
+      // Device mode. Still tracked as a modifier for other combos (tempo
+      // nudge, CTRL+PUNCH IN/OUT, CTRL+jog device navigation) regardless of
+      // hold duration - see ctrlUsedForCombo below.
       if (data1 === 72) {
          isControlPressed = isPressed;
          midiOut.sendMidi(0x90, 72, isControlPressed ? 127 : 0);
+         if (isPressed) {
+            ctrlPressStartTime = Date.now();
+            ctrlUsedForCombo = false;
+         } else if (!ctrlUsedForCombo && currentMode === MODE_DEVICE &&
+                    (Date.now() - ctrlPressStartTime) >= CTRL_LONG_PRESS_MS) {
+            cursorDevice.isExpanded().toggle();
+         }
          return;
       }
 
@@ -920,13 +966,13 @@ function handleButtonPress(note) {
          break;
 
       case 43: // PLUG-IN / DEVICE -> jump to the first device on the
-               // selected track, open its panel, and show its expanded
-               // device view. Hold + jog wheel steps through devices
-               // instead (see isPluginHeld).
+               // selected track and open its panel (does NOT touch the
+               // expanded device view - that's CTRL long-press, see the
+               // CTRL block in onMidi). Hold + jog wheel steps through
+               // devices instead (see isPluginHeld).
          currentMode = MODE_DEVICE;
          cursorDevice.selectFirst();
          cursorDevice.isWindowOpen().set(true);
-         cursorDevice.isExpanded().set(true);
          host.showPopupNotification("Device: First Plugin");
          updateModeLEDs();
          refreshDisplayText();
