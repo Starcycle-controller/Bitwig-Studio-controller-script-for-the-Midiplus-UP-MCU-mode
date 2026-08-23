@@ -1255,8 +1255,13 @@ function handleButtonPress(note) {
          host.showPopupNotification("Back To Arrangement");
          break;
 
-      // Note 81 (DRAW) has no equivalent anywhere in Bitwig's Controller API
-      // (no "draw mode" concept exists), so it's left unbound.
+      case 81: // DRAW -> Toggle Automation Editor. There's no "draw mode" or
+               // automation-lane API in Bitwig's Controller API (no way to
+               // select/expand a specific track's automation lane), so this
+               // is the closest available equivalent.
+         application.toggleAutomationEditor();
+         host.showPopupNotification("Toggle Automation Editor");
+         break;
 
       case 82: // MARKER -> Add Cue Marker at Playhead
          transport.addCueMarkerAtPlaybackPosition();
