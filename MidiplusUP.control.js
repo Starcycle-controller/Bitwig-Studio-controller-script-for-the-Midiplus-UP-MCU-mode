@@ -1341,8 +1341,9 @@ function handleButtonPress(note) {
                // shows the clip launcher + switches to the Mix panel layout,
                // and the jog wheel selects/launches scenes instead of its
                // usual transport scrub (see the jog wheel handler and note
-               // 87's press handler). Second press exits back to Mixer mode,
-               // same toggle pattern as PLUGIN/SEND.
+               // 87's press handler). Second press exits back to Mixer mode
+               // AND back to the Arrange panel layout, same toggle pattern
+               // as PLUGIN/SEND.
          if (currentMode !== MODE_SCENE) {
             currentMode = MODE_SCENE;
             sceneCursorIndex = 0;
@@ -1356,6 +1357,11 @@ function handleButtonPress(note) {
             host.showPopupNotification("Mode: Scene Launch");
          } else {
             currentMode = MODE_MIXER;
+            try {
+               application.setPanelLayout("ARRANGE");
+            } catch (e) {
+               println("Error setting panel layout to ARRANGE: " + e);
+            }
             host.showPopupNotification("Mode: Mixer (Track Volume / Pan)");
          }
          updateModeLEDs();
