@@ -105,8 +105,9 @@ var isScrubToggled = false;
 // halving/doubling is exponential, so ticks are accumulated here and only
 // trigger a halve/double once LOOP_SCALE_THRESHOLD worth has built up -
 // otherwise a single flick of the wheel could shrink or grow the loop by
-// many powers of two almost instantly. Tune the threshold if it feels too
-// fast/slow in practice.
+// many powers of two almost instantly.
+// Default; overridden live from the Controller Preferences panel setting
+// created in init() below (see loopScaleThresholdSetting).
 var loopScaleAccumulator = 0;
 var LOOP_SCALE_THRESHOLD = 16;
 
@@ -272,6 +273,16 @@ function init() {
    ctrlHoldTimeSetting.markInterested();
    ctrlHoldTimeSetting.addRawValueObserver(function(value) {
       CTRL_LONG_PRESS_MS = value;
+   });
+
+   // User-configurable wheel-tick threshold for OPTION + Jog Wheel's
+   // loop-length halve/double (see loopScaleAccumulator above) - lower
+   // values double/halve the loop faster per flick of the wheel.
+   var loopScaleThresholdSetting = host.getPreferences().getNumberSetting(
+      "Loop Halve/Double Wheel Ticks", "Timing", 2, 64, 1, "ticks", 16);
+   loopScaleThresholdSetting.markInterested();
+   loopScaleThresholdSetting.addRawValueObserver(function(value) {
+      LOOP_SCALE_THRESHOLD = value;
    });
 
    // Remote Controls (8 Macros for selected device)
