@@ -83,6 +83,14 @@ var isPluginHeld = false;
 var pluginDeviceStepAccumulator = 0;
 var PLUGIN_DEVICE_STEP_MESSAGES = 4;
 
+// BANK PREV/NEXT Buttons (Notes 46/47): a press still reaches
+// handleButtonPress() for their own bank-paging action, but held state is
+// also tracked (either one) so the jog wheel can page through the current
+// device's remote-control pages while held - see isBankHeld below.
+var isBankHeld = false;
+var bankPageStepAccumulator = 0;
+var BANK_PAGE_STEP_MESSAGES = 4;
+
 // ZOOM (100) and SCRUB (101) are TOGGLE buttons in the real protocol (press
 // to flip state, not held-while-down like SHIFT/OPTION/CTRL/ALT).
 var isZoomToggled = false;
@@ -590,6 +598,11 @@ function onMidi(status, data1, data2) {
             // Sends Mode: Faders 1-8 control Sends on focused track
             var sendTargetIndex = (sendBankPage * 8) + channel;
             cursorTrack.sendBank().getItemAt(sendTargetIndex).set(normalizedVal);
+         } else if (currentMode === MODE_DEVICE) {
+            // Plugin mode: faders always mirror the device encoders (the
+            // current device's remote-control/macro bank), regardless of
+            // FLIP - there's no track volume/pan to fall back to here.
+            remoteControls.getParameter(channel).set(normalizedVal);
          } else if (!isFlipped) {
             // Standard Mixer Fader -> Track Volume (or Tool Gain in isToolVolumeMode)
             if (currentMode === MODE_MIXER && isToolVolumeMode) {
@@ -601,18 +614,14 @@ function onMidi(status, data1, data2) {
                activeTrackBank().getItemAt(channel).volume().set(normalizedVal);
             }
          } else {
-            // Flipped Fader behavior
-            if (currentMode === MODE_MIXER) {
-               if (isToolVolumeMode) {
-                  var panParam = getToolParam(channel, 1);
-                  if (panParam) {
-                     panParam.set(normalizedVal);
-                  }
-               } else {
-                  activeTrackBank().getItemAt(channel).pan().set(normalizedVal);
+            // Flipped Fader behavior (MIXER only - DEVICE is handled above)
+            if (isToolVolumeMode) {
+               var panParam = getToolParam(channel, 1);
+               if (panParam) {
+                  panParam.set(normalizedVal);
                }
-            } else if (currentMode === MODE_DEVICE) {
-               remoteControls.getParameter(channel).set(normalizedVal);
+            } else {
+               activeTrackBank().getItemAt(channel).pan().set(normalizedVal);
             }
          }
       } else if (channel === 8) {
@@ -715,6 +724,22 @@ function onMidi(status, data1, data2) {
                cursorDevice.selectPrevious();
             } else {
                cursorDevice.selectNext();
+            }
+         }
+         return;
+      }
+
+      if (isBankHeld) {
+         // BANK PREV/NEXT held + Jog Wheel: page through the current
+         // device's remote-control pages, once every
+         // BANK_PAGE_STEP_MESSAGES wheel messages.
+         bankPageStepAccumulator++;
+         if (bankPageStepAccumulator >= BANK_PAGE_STEP_MESSAGES) {
+            bankPageStepAccumulator = 0;
+            if (backwards) {
+               remoteControls.selectPreviousPage(true);
+            } else {
+               remoteControls.selectNextPage(true);
             }
          }
          return;
@@ -830,6 +855,17 @@ function onMidi(status, data1, data2) {
          isPluginHeld = isPressed;
          if (!isPressed) {
             pluginDeviceStepAccumulator = 0;
+            return;
+         }
+      }
+
+      // BANK PREV/NEXT Buttons (Notes 46/47) - track hold state (either
+      // one) for the jog wheel device-page navigation combo; same
+      // fall-through-on-press pattern as PLUGIN above.
+      if (data1 === 46 || data1 === 47) {
+         isBankHeld = isPressed;
+         if (!isPressed) {
+            bankPageStepAccumulator = 0;
             return;
          }
       }
@@ -1285,6 +1321,8 @@ function refreshFaders() {
       if (currentMode === MODE_SENDS) {
          var sendIdx = (sendBankPage * 8) + i;
          sendPitchBend(i, cursorTrack.sendBank().getItemAt(sendIdx).value().get());
+      } else if (currentMode === MODE_DEVICE) {
+         sendPitchBend(i, remoteControls.getParameter(i).value().get());
       } else if (!isFlipped) {
          if (currentMode === MODE_MIXER && isToolVolumeMode) {
             var gainParam = getToolParam(i, 0);
@@ -1293,15 +1331,11 @@ function refreshFaders() {
             sendPitchBend(i, activeTrackBank().getItemAt(i).volume().value().get());
          }
       } else {
-         if (currentMode === MODE_MIXER) {
-            if (isToolVolumeMode) {
-               var panParam = getToolParam(i, 1);
-               sendPitchBend(i, panParam ? panParam.value().get() : 0.5);
-            } else {
-               sendPitchBend(i, activeTrackBank().getItemAt(i).pan().value().get());
-            }
-         } else if (currentMode === MODE_DEVICE) {
-            sendPitchBend(i, remoteControls.getParameter(i).value().get());
+         if (isToolVolumeMode) {
+            var panParam = getToolParam(i, 1);
+            sendPitchBend(i, panParam ? panParam.value().get() : 0.5);
+         } else {
+            sendPitchBend(i, activeTrackBank().getItemAt(i).pan().value().get());
          }
       }
    }
