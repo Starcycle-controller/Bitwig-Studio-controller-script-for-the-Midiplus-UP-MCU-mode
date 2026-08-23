@@ -69,16 +69,15 @@ var ctrlUsedForCombo = false;
 // created in init() below (see ctrlHoldTimeSetting).
 var CTRL_LONG_PRESS_MS = 500;
 
-// Physical jog wheel push/click AND the hardware's PUNCH IN button are the
-// same note (87) on this unit - confirmed via the RAW Note-On debug log
-// both times (matches the standard Mackie Control protocol, where 87 really
-// is PUNCH IN's note). Dual-purpose like PLUGIN/BANK/CTRL: held while
-// pressed, it drives the jog wheel's bar-jump scrub (same as toggling
-// SCRUB); a plain tap (release without having turned the wheel in between)
-// toggles Punch-In recording instead - wheelPushUsedForCombo distinguishes
-// the two, same pattern as ctrlUsedForCombo above.
+// Physical jog wheel push/click, note 87 on this hardware (also the
+// standard Mackie Control protocol's PUNCH IN note - it was briefly wired
+// up as a Punch-In toggle on release, but this hardware re-sends Note-On 87
+// unreliably while held whenever another button is pressed alongside it,
+// making press/release tracking too flaky for a tap-to-toggle action - so
+// that's been dropped). Pure momentary hold modifier: while held, the jog
+// wheel pans the arranger timeline left/right by whole bars instead of the
+// default quarter-note scrub (same jump-target math as toggling SCRUB).
 var isWheelPressed = false;
-var wheelPushUsedForCombo = false;
 
 // PLUGIN Button (Note 43): a press still reaches handleButtonPress() for
 // its own action (jump to the first device on the selected track and open
@@ -608,19 +607,6 @@ function onMidi(status, data1, data2) {
    var msgType = status & 0xF0;
    var channel = status & 0x0F;
 
-   // If the wheel push (note 87) is currently held, treat ANY other MIDI
-   // activity as the wheel having been used in a combo gesture, so
-   // releasing it afterward doesn't also toggle Punch-In (see
-   // wheelPushUsedForCombo above). This has to be a catch-all rather than
-   // just watching for CC 60: several modifier+wheel combos on this
-   // hardware substitute repeated Note-On messages for OTHER buttons
-   // instead of sending wheel CC at all (e.g. CTRL+wheel fires repeated
-   // CHANNEL PREV/NEXT notes - see case 48/49), so no single message type
-   // reliably means "the wheel moved" once a modifier is added.
-   if (isWheelPressed && !(data1 === 87 && (msgType === 0x90 || msgType === 0x80))) {
-      wheelPushUsedForCombo = true;
-   }
-
    // 1. Motorized Pitchbend Faders (14-bit resolution)
    if (msgType === 0xE0) {
       var val14 = (data2 << 7) | data1;
@@ -805,11 +791,15 @@ function onMidi(status, data1, data2) {
       }
 
       if (isScrubToggled || isWheelPressed) {
-         // Jump exactly one bar per wheel message, regardless of how hard
-         // it was spun - "increments" of a whole bar, landing precisely on
-         // the bar line (incPosition's own snap=true only quantizes to the
-         // nearest beat, not the bar, so the target position is computed
-         // directly instead).
+         // "Pan Mode": jump exactly one bar per wheel message, regardless of
+         // how hard it was spun - "increments" of a whole bar, landing
+         // precisely on the bar line (incPosition's own snap=true only
+         // quantizes to the nearest beat, not the bar, so the target
+         // position is computed directly instead). There's no API to pan
+         // the arranger's visible timeframe independently of the playhead
+         // (confirmed - same limitation as horizontal zoom), so this moves
+         // the playhead itself; with Follow Playback on, the visible
+         // timeline pans along with it.
          var beatsPerBar = getBeatsPerBar();
          var currentBar = Math.round(transport.getPosition().get() / beatsPerBar);
          var targetBar = backwards ? currentBar - 1 : currentBar + 1;
@@ -875,27 +865,9 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // Jog Wheel Push / PUNCH IN (Note 87 - see isWheelPressed above)
+      // Jog Wheel Push / Pan Mode (Note 87 - see isWheelPressed above)
       if (data1 === 87) {
-         if (isPressed) {
-            // This hardware re-sends Note-On 87 (still while physically
-            // held) whenever another button is pressed alongside it -
-            // confirmed via the RAW Note-On debug log showing repeated 87
-            // presses interspersed with SHIFT/OPTION/CTRL/ALT. Only reset
-            // the combo-use flag on a genuine fresh press (not already
-            // held), so a repeat assertion doesn't wipe out combo use that
-            // already happened earlier in the same hold.
-            if (!isWheelPressed) {
-               wheelPushUsedForCombo = false;
-            }
-            isWheelPressed = true;
-         } else {
-            isWheelPressed = false;
-            if (!wheelPushUsedForCombo) {
-               transport.isPunchInEnabled().toggle();
-               host.showPopupNotification("Toggle Punch-In Recording");
-            }
-         }
+         isWheelPressed = isPressed;
          return;
       }
 
@@ -1291,9 +1263,8 @@ function handleButtonPress(note) {
          transport.isArrangerLoopEnabled().toggle();
          break;
 
-      // Note 87 (PUNCH IN / jog wheel push) is fully handled in onMidi's
-      // modifier-button section, not here - see isWheelPressed and
-      // wheelPushUsedForCombo above.
+      // Note 87 (jog wheel push / Pan Mode) is fully handled in onMidi's
+      // modifier-button section, not here - see isWheelPressed above.
 
       case 88: // PUNCH OUT (CTRL+PO: set loop end from playhead)
          if (isControlPressed) {
