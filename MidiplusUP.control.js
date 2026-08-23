@@ -511,11 +511,6 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          track.isGroup().markInterested();
          track.isGroupExpanded().markInterested();
 
-         // Read on-demand (not observed) by the encoder push-click volume
-         // reset (notes 32-39) in handleButtonPress, so needs
-         // markInterested() too.
-         track.trackType().markInterested();
-
          // Track Name Observer
          track.name().addValueObserver(function (name) {
             if (currentMode === MODE_MIXER && isViewingReturns === isReturnsBank) {
@@ -1098,16 +1093,12 @@ function handleButtonPress(note) {
       // Encoder Push Click (Reset Parameter)
       var encIdx = note - 32;
       if (currentMode === MODE_MIXER) {
-         // Reverted to a plain .reset() (back to unity/0dB) - the
-         // dB-targeting attempts (-10dB for non-group tracks) caused real
-         // problems on hardware across three different implementations
-         // (wrong convergence, then broken automation, then a script
-         // freeze likely from Bitwig ramping the parameter and firing the
-         // observer many times per .set()) and were reverted rather than
-         // risk a fourth broken iteration. See git history if revisiting.
-         var resetTrack = activeTrackBank().getItemAt(encIdx);
-         resetTrack.pan().reset();
-         resetTrack.volume().reset();
+         // Pan only - centers the pan, nothing else. A volume-touching
+         // version of this (reset to unity, then an attempted -10dB/0dB
+         // target) caused real problems on hardware across several
+         // implementations and was reverted; see git history if revisiting
+         // a volume-reset feature here.
+         activeTrackBank().getItemAt(encIdx).pan().reset();
       } else if (currentMode === MODE_SENDS) {
          var resetSendIdx = (sendBankPage * 8) + encIdx;
          cursorTrack.sendBank().getItemAt(resetSendIdx).reset();
