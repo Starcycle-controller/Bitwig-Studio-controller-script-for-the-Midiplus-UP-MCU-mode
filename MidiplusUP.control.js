@@ -608,6 +608,19 @@ function onMidi(status, data1, data2) {
    var msgType = status & 0xF0;
    var channel = status & 0x0F;
 
+   // If the wheel push (note 87) is currently held, treat ANY other MIDI
+   // activity as the wheel having been used in a combo gesture, so
+   // releasing it afterward doesn't also toggle Punch-In (see
+   // wheelPushUsedForCombo above). This has to be a catch-all rather than
+   // just watching for CC 60: several modifier+wheel combos on this
+   // hardware substitute repeated Note-On messages for OTHER buttons
+   // instead of sending wheel CC at all (e.g. CTRL+wheel fires repeated
+   // CHANNEL PREV/NEXT notes - see case 48/49), so no single message type
+   // reliably means "the wheel moved" once a modifier is added.
+   if (isWheelPressed && !(data1 === 87 && (msgType === 0x90 || msgType === 0x80))) {
+      wheelPushUsedForCombo = true;
+   }
+
    // 1. Motorized Pitchbend Faders (14-bit resolution)
    if (msgType === 0xE0) {
       var val14 = (data2 << 7) | data1;
@@ -702,15 +715,6 @@ function onMidi(status, data1, data2) {
       // Same sign-magnitude fix as the encoders above
       var backwards = data2 >= 64;
       var rawStep = backwards ? -(data2 - 64) : data2;
-
-      if (isWheelPressed) {
-         // The wheel was turned during this hold - regardless of which
-         // modifier branch below actually handles it (SHIFT, CTRL, etc. all
-         // take priority over the plain wheel-push bar-jump branch) - so
-         // releasing it shouldn't also toggle Punch-In. See
-         // wheelPushUsedForCombo above.
-         wheelPushUsedForCombo = true;
-      }
 
       if (isControlPressed) {
          // Using CTRL to modify the wheel means a long-press expanded-view
