@@ -920,11 +920,13 @@ function handleButtonPress(note) {
          break;
 
       case 43: // PLUG-IN / DEVICE -> jump to the first device on the
-               // selected track and open its panel. Hold + jog wheel steps
-               // through devices instead (see isPluginHeld).
+               // selected track, open its panel, and show its expanded
+               // device view. Hold + jog wheel steps through devices
+               // instead (see isPluginHeld).
          currentMode = MODE_DEVICE;
          cursorDevice.selectFirst();
          cursorDevice.isWindowOpen().set(true);
+         cursorDevice.isExpanded().set(true);
          host.showPopupNotification("Device: First Plugin");
          updateModeLEDs();
          refreshDisplayText();
