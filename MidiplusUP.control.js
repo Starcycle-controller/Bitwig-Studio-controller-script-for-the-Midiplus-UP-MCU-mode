@@ -1,6 +1,18 @@
 // Midiplus UP Bitwig Controller Script (MCU Engine + Ableton Live Overlay Template)
 // Author: Antigravity
 // API Version: 25
+//
+// Note numbers below are sourced from Ableton's own shipped "MackieControl"
+// remote script (consts.py / Transport.py / SoftwareController.py /
+// ChannelStripController.py - identical SID values in the Live 9 and Live 12
+// releases), since the Midiplus UP's "Live" control mode implements the
+// standard Mackie Control protocol that Ableton's built-in driver expects
+// (see the Midiplus UP manual, section 6.2: "set Control Surface 1 to
+// Mackie Control"). Where the manual documents a Live-only function
+// (RETURNS, SMPTE/BEATS, DRAW, MARKER, PUNCH IN/OUT, HOME/END, ...) but
+// this script's Bitwig behavior differs from Ableton's, that's a deliberate
+// Bitwig-appropriate adaptation, not an attempt at 1:1 parity - only the
+// physical button -> note number mapping needs to match the hardware.
 
 loadAPI(25);
 
@@ -32,8 +44,21 @@ var currentMode = MODE_MIXER;
 var sendBankPage = 0; // 0 = Sends 1-8, 1 = Sends 9-16
 var isFlipped = false;
 
-// Hardware Modifier States
-var isShiftPressed = false;
+// Hardware Modifier States (note numbers confirmed against Ableton's own
+// MackieControl driver - see file header)
+var isShiftPressed = false;   // Note 70
+var isOptionPressed = false;  // Note 71
+var isControlPressed = false; // Note 72
+var isAltPressed = false;     // Note 73
+
+// ZOOM (100) and SCRUB (101) are TOGGLE buttons in the real protocol (press
+// to flip state, not held-while-down like SHIFT/OPTION/CTRL/ALT).
+var isZoomToggled = false;
+var isScrubToggled = false;
+
+// RETURNS (note 51): swap the 8 channel strips between the main track bank
+// and the effect ("return") track bank.
+var isViewingReturns = false;
 
 // Safely invoke a named Bitwig application action.
 // getAction() can return null if the action isn't available in the
@@ -139,13 +164,10 @@ function invokeAction(actionName, popupText) {
       return false;
    }
 }
-var isOptionPressed = false;
-var isAltPressed = false;
-var isZoomPressed = false;
-var isChannelPressed = false;
 
 // Host Objects
 var trackBank = null;
+var effectTrackBank = null; // "Returns" bank, shown when isViewingReturns is true
 var masterTrack = null;
 var cursorTrack = null;
 var cursorDevice = null;
@@ -155,12 +177,32 @@ var application = null;
 var arranger = null;
 var midiOut = null;
 
+// Cached per-bank LED state (main vs returns), since both banks' observers
+// run all the time but only the active bank's state should light the 32
+// shared Rec/Solo/Mute/Select LEDs.
+var mainLedState = { arm: [false, false, false, false, false, false, false, false],
+                      solo: [false, false, false, false, false, false, false, false],
+                      mute: [false, false, false, false, false, false, false, false],
+                      select: [false, false, false, false, false, false, false, false] };
+var returnsLedState = { arm: [false, false, false, false, false, false, false, false],
+                         solo: [false, false, false, false, false, false, false, false],
+                         mute: [false, false, false, false, false, false, false, false],
+                         select: [false, false, false, false, false, false, false, false] };
+
 // Display State Caches (8 channels x 7 chars)
 var topRowText = ["       ", "       ", "       ", "       ", "       ", "       ", "       ", "       "];
 var bottomRowText = ["       ", "       ", "       ", "       ", "       ", "       ", "       ", "       "];
 
 // Display Refresh Throttle Flag
 var displayNeedsUpdate = true;
+
+function activeTrackBank() {
+   return isViewingReturns ? effectTrackBank : trackBank;
+}
+
+function activeLedState() {
+   return isViewingReturns ? returnsLedState : mainLedState;
+}
 
 function init() {
    println("Initializing Midiplus UP Bitwig Controller Script...");
@@ -177,13 +219,16 @@ function init() {
    // Initialize Main Track Bank (8 tracks, 16 sends, 8 scenes)
    trackBank = host.createMainTrackBank(8, MAX_SENDS, 8);
 
+   // Initialize Effect ("Returns") Track Bank - shown via the RETURNS button
+   effectTrackBank = host.createEffectTrackBank(8, MAX_SENDS, 8);
+
    // Initialize Master Track
    masterTrack = host.createMasterTrack(0);
 
    // Initialize Cursor Track & Send Bank (16 Send slots for focused track)
    cursorTrack = host.createCursorTrack("MIDIPLUS_CURSOR_TRACK", "Cursor Track", 16, 0, true);
    cursorDevice = cursorTrack.createCursorDevice("MIDIPLUS_CURSOR_DEVICE", "Cursor Device", 0, CursorDeviceFollowMode.FIRST_INSTRUMENT_OR_DEVICE);
-   
+
    // Remote Controls (8 Macros for selected device)
    remoteControls = cursorDevice.createCursorRemoteControlsPage(8);
 
@@ -192,59 +237,11 @@ function init() {
    application = host.createApplication();
    arranger = host.createArranger();
 
-   // Setup Observers for Main 8 Tracks
-   for (var i = 0; i < 8; i++) {
-      (function (index) {
-         var track = trackBank.getItemAt(index);
-
-         // Track Name Observer
-         track.name().addValueObserver(function (name) {
-            if (currentMode === MODE_MIXER) {
-               topRowText[index] = formatString(name, 7);
-               displayNeedsUpdate = true;
-            }
-         });
-
-         // Track Volume Observer
-         track.volume().value().addValueObserver(function (value) {
-            if (currentMode === MODE_MIXER && !isFlipped) {
-               sendPitchBend(index, value);
-            }
-         });
-
-         track.volume().displayedValue().addValueObserver(function (dispVal) {
-            if (currentMode === MODE_MIXER && !isFlipped) {
-               bottomRowText[index] = formatString(dispVal, 7);
-               displayNeedsUpdate = true;
-            }
-         });
-
-         // Track Pan Observer
-         track.pan().value().addValueObserver(function (value) {
-            if (currentMode === MODE_MIXER && isFlipped) {
-               sendPitchBend(index, value);
-            }
-         });
-
-         // Track Button State Observers (LED Feedback)
-         track.arm().addValueObserver(function (isArmed) {
-            midiOut.sendMidi(0x90, 0 + index, isArmed ? 127 : 0); // Rec Arm LED
-         });
-
-         track.solo().addValueObserver(function (isSoloed) {
-            midiOut.sendMidi(0x90, 8 + index, isSoloed ? 127 : 0); // Solo LED
-         });
-
-         track.mute().addValueObserver(function (isMuted) {
-            midiOut.sendMidi(0x90, 16 + index, isMuted ? 127 : 0); // Mute LED
-         });
-
-         track.addIsSelectedInMixerObserver(function (isSelected) {
-            midiOut.sendMidi(0x90, 24 + index, isSelected ? 127 : 0); // Select LED
-         });
-
-      })(i);
-   }
+   // Setup Observers for both the main track bank and the returns bank -
+   // only the currently-active one (per isViewingReturns) writes to the
+   // shared display caches / LEDs.
+   setupChannelStripObservers(trackBank, mainLedState, false);
+   setupChannelStripObservers(effectTrackBank, returnsLedState, true);
 
    // Setup Observers for 16 Sends on Cursor Track (For Fader Send Control Mode)
    for (var s = 0; s < MAX_SENDS; s++) {
@@ -337,9 +334,6 @@ function init() {
 
    // Cursor Track Name Observer
    cursorTrack.name().addValueObserver(function (trackName) {
-      if (isChannelPressed) {
-         host.showPopupNotification("Selected Track: " + trackName);
-      }
       if (currentMode === MODE_SENDS) {
          refreshDisplayText();
          refreshFaders();
@@ -358,6 +352,93 @@ function init() {
    host.scheduleTask(displayFlushTask, 100);
 
    println("Midiplus UP Controller Script Ready.");
+}
+
+// Wires up the Name/Volume/Pan/Arm/Solo/Mute/Select observers for one of the
+// two 8-track banks (main tracks or return tracks). `ledState` is the cache
+// this bank's Arm/Solo/Mute/Select observers update; only the currently
+// active bank (isViewingReturns === isReturnsBank) actually pushes MIDI LED
+// updates or display text, so the two banks don't fight over the shared
+// hardware state while the other one is in the background.
+function setupChannelStripObservers(bank, ledState, isReturnsBank) {
+   for (var i = 0; i < 8; i++) {
+      (function (index) {
+         var track = bank.getItemAt(index);
+
+         // Track Name Observer
+         track.name().addValueObserver(function (name) {
+            if (currentMode === MODE_MIXER && isViewingReturns === isReturnsBank) {
+               topRowText[index] = formatString(name, 7);
+               displayNeedsUpdate = true;
+            }
+         });
+
+         // Track Volume Observer
+         track.volume().value().addValueObserver(function (value) {
+            if (currentMode === MODE_MIXER && !isFlipped && isViewingReturns === isReturnsBank) {
+               sendPitchBend(index, value);
+            }
+         });
+
+         track.volume().displayedValue().addValueObserver(function (dispVal) {
+            if (currentMode === MODE_MIXER && !isFlipped && isViewingReturns === isReturnsBank) {
+               bottomRowText[index] = formatString(dispVal, 7);
+               displayNeedsUpdate = true;
+            }
+         });
+
+         // Track Pan Observer
+         track.pan().value().addValueObserver(function (value) {
+            if (currentMode === MODE_MIXER && isFlipped && isViewingReturns === isReturnsBank) {
+               sendPitchBend(index, value);
+            }
+         });
+
+         // Track Button State Observers (LED Feedback) - cached per-bank,
+         // only sent to hardware while this bank is the active one.
+         track.arm().addValueObserver(function (isArmed) {
+            ledState.arm[index] = isArmed;
+            if (isViewingReturns === isReturnsBank) {
+               midiOut.sendMidi(0x90, 0 + index, isArmed ? 127 : 0); // Rec Arm LED
+            }
+         });
+
+         track.solo().addValueObserver(function (isSoloed) {
+            ledState.solo[index] = isSoloed;
+            if (isViewingReturns === isReturnsBank) {
+               midiOut.sendMidi(0x90, 8 + index, isSoloed ? 127 : 0); // Solo LED
+            }
+         });
+
+         track.mute().addValueObserver(function (isMuted) {
+            ledState.mute[index] = isMuted;
+            if (isViewingReturns === isReturnsBank) {
+               midiOut.sendMidi(0x90, 16 + index, isMuted ? 127 : 0); // Mute LED
+            }
+         });
+
+         track.addIsSelectedInMixerObserver(function (isSelected) {
+            ledState.select[index] = isSelected;
+            if (isViewingReturns === isReturnsBank) {
+               midiOut.sendMidi(0x90, 24 + index, isSelected ? 127 : 0); // Select LED
+            }
+         });
+
+      })(i);
+   }
+}
+
+// Re-sends the cached Arm/Solo/Mute/Select LED state for whichever bank is
+// currently active - used after toggling RETURNS so the hardware LEDs catch
+// up to the bank that's now actually mapped to the 8 channel strips.
+function refreshChannelStripLEDs() {
+   var ledState = activeLedState();
+   for (var i = 0; i < 8; i++) {
+      midiOut.sendMidi(0x90, 0 + i, ledState.arm[i] ? 127 : 0);
+      midiOut.sendMidi(0x90, 8 + i, ledState.solo[i] ? 127 : 0);
+      midiOut.sendMidi(0x90, 16 + i, ledState.mute[i] ? 127 : 0);
+      midiOut.sendMidi(0x90, 24 + i, ledState.select[i] ? 127 : 0);
+   }
 }
 
 // Scheduled task for LCD Display Refresh (throttled to avoid MIDI flooding)
@@ -386,11 +467,11 @@ function onMidi(status, data1, data2) {
             cursorTrack.sendBank().getItemAt(sendTargetIndex).set(normalizedVal);
          } else if (!isFlipped) {
             // Standard Mixer Fader -> Track Volume
-            trackBank.getItemAt(channel).volume().set(normalizedVal);
+            activeTrackBank().getItemAt(channel).volume().set(normalizedVal);
          } else {
             // Flipped Fader behavior
             if (currentMode === MODE_MIXER) {
-               trackBank.getItemAt(channel).pan().set(normalizedVal);
+               activeTrackBank().getItemAt(channel).pan().set(normalizedVal);
             } else if (currentMode === MODE_DEVICE) {
                remoteControls.getParameter(channel).set(normalizedVal);
             }
@@ -408,14 +489,14 @@ function onMidi(status, data1, data2) {
       // MCU V-Pot relative encoding is sign-magnitude, NOT two's complement:
       // 1-63 = increment by that amount, 65-127 = decrement by (value - 64)
       var rawDelta = data2 < 64 ? data2 : -(data2 - 64);
-      
+
       // If SHIFT is held, use fine-grain adjustments (0.2x scaling)
       var delta = isShiftPressed ? (rawDelta * 0.2) : rawDelta;
       var resolution = isShiftPressed ? 512 : 128;
 
       if (!isFlipped) {
          if (currentMode === MODE_MIXER) {
-            trackBank.getItemAt(encoderIndex).pan().inc(delta, resolution);
+            activeTrackBank().getItemAt(encoderIndex).pan().inc(delta, resolution);
          } else if (currentMode === MODE_SENDS) {
             var encSendIdx = (sendBankPage * 8) + encoderIndex;
             cursorTrack.sendBank().getItemAt(encSendIdx).inc(delta, resolution);
@@ -424,44 +505,43 @@ function onMidi(status, data1, data2) {
          }
       } else {
          // Flipped Encoder -> Track Volume
-         trackBank.getItemAt(encoderIndex).volume().inc(delta, resolution);
+         activeTrackBank().getItemAt(encoderIndex).volume().inc(delta, resolution);
       }
       return;
    }
 
    // 3. Jog / Scroll Wheel (CC 60 on Channel 1: 0xB0)
+   // Behavior pattern follows Ableton's real MackieControl.Transport
+   // handle_jog_wheel_rotation(): CTRL = tempo nudge, ALT = quarter step,
+   // SCRUB toggle = fine scrub vs coarse jump, doubled while playing.
    if (msgType === 0xB0 && data1 === 60) {
       // Same sign-magnitude fix as the encoders above
-      var jogDelta = data2 < 64 ? data2 : -(data2 - 64);
+      var backwards = data2 >= 64;
+      var rawStep = backwards ? -(data2 - 64) : data2;
 
-      if (isChannelPressed) {
-         // CHANNEL + Jog Wheel: Scroll / Select Active Track Directly!
-         if (jogDelta > 0) {
-            cursorTrack.selectNext();
-         } else {
-            cursorTrack.selectPrevious();
-         }
-         refreshDisplayText();
-         refreshFaders();
+      if (isControlPressed) {
+         // CTRL + Jog Wheel: Nudge Tempo (fine with ALT held)
+         var tempoStep = isAltPressed ? 0.1 : 1.0;
+         transport.tempo().incRaw(rawStep * tempoStep);
          return;
-      } else if (isAltPressed || isZoomPressed) {
-         // ALT or ZOOM held + Jog Wheel: Zoom Timeline In / Out
-         if (jogDelta > 0) {
-            invokeAction("Zoom In Arranger");
-         } else {
-            invokeAction("Zoom Out Arranger");
-         }
-      } else if (isShiftPressed) {
-         // SHIFT + Jog Wheel: Mark / Adjust Region End (Expand/Shrink Arranger Selection)
-         transport.arrangerLoopDuration().inc(jogDelta, 128);
-         host.showPopupNotification("Mark Time Region (Loop Duration)");
-      } else if (isOptionPressed) {
-         // OPTION + Jog Wheel: Move Section Start Position
-         transport.arrangerLoopStart().inc(jogDelta, 128);
-         host.showPopupNotification("Move Region Start");
+      }
+
+      var step = Math.max(1.0, Math.abs(rawStep) / 2.0);
+      if (transport.isPlaying().get()) {
+         step *= 4.0;
+      }
+      if (isAltPressed) {
+         step /= 4.0;
+      }
+      if (backwards) {
+         step = -step;
+      }
+
+      if (isScrubToggled) {
+         // Fine scrub - small fixed increments regardless of computed step
+         transport.incPosition(backwards ? -0.05 : 0.05, false);
       } else {
-         // Standard Jog Wheel: Move Playhead
-         transport.incPosition(jogDelta * 0.25, true);
+         transport.incPosition(step * 0.25, true);
       }
       return;
    }
@@ -473,10 +553,10 @@ function onMidi(status, data1, data2) {
          println("RAW Note-On received - Note: " + data1); // DEBUG: catches modifier buttons too
       }
 
-      // SHIFT Button (Note 54 or Note 70)
-      if (data1 === 54 || data1 === 70) {
+      // SHIFT Button (Note 70)
+      if (data1 === 70) {
          isShiftPressed = isPressed;
-         midiOut.sendMidi(0x90, data1, isShiftPressed ? 127 : 0);
+         midiOut.sendMidi(0x90, 70, isShiftPressed ? 127 : 0);
          return;
       }
 
@@ -487,38 +567,37 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // ALT Button (Note 73 or Note 57)
-      if (data1 === 73 || data1 === 57) {
-         isAltPressed = isPressed;
-         midiOut.sendMidi(0x90, data1, isAltPressed ? 127 : 0);
+      // CTRL Button (Note 72)
+      if (data1 === 72) {
+         isControlPressed = isPressed;
+         midiOut.sendMidi(0x90, 72, isControlPressed ? 127 : 0);
          return;
       }
 
-      // ZOOM Button (Note 100, Note 85)
-      if (data1 === 100 || data1 === 85) {
-         isZoomPressed = isPressed;
-         midiOut.sendMidi(0x90, data1, isZoomPressed ? 127 : 0);
+      // ALT Button (Note 73)
+      if (data1 === 73) {
+         isAltPressed = isPressed;
+         midiOut.sendMidi(0x90, 73, isAltPressed ? 127 : 0);
+         return;
+      }
+
+      // ZOOM Button (Note 100) - toggles zoom mode for the cursor arrows
+      // (96-99); it is NOT a held modifier in the real protocol.
+      if (data1 === 100) {
          if (isPressed) {
-            if (isShiftPressed) {
-               invokeAction("Zoom Arranger to Fit", "Zoom To Fit All Tracks");
-            } else {
-               invokeAction("Zoom Arranger to Selection", "Zoom To Selected Region");
-            }
+            isZoomToggled = !isZoomToggled;
+            midiOut.sendMidi(0x90, 100, isZoomToggled ? 127 : 0);
          }
          return;
       }
 
-      // CHAN / CHANNEL Button (Note 48, Note 49) - Track Modifier
-      // BUG FIX: this was missing a `return`, unlike every other modifier
-      // (SHIFT/OPTION/ALT/ZOOM) above. Without it, every CHANNEL press also
-      // fell through into handleButtonPress(), which used to bind notes
-      // 48/49 to "nudge track left/right" (case 48/49, now removed below
-      // since it's identical to the SHIFT+BANK PREV/NEXT nudge on notes
-      // 46/47) - so holding CHANNEL was simultaneously toggling the modifier
-      // AND nudging the track bank on every press.
-      if (data1 === 48 || data1 === 49) {
-         isChannelPressed = isPressed;
-         midiOut.sendMidi(0x90, data1, isChannelPressed ? 127 : 0);
+      // SCRUB Button (Note 101) - toggles fine-scrub mode for the Jog Wheel;
+      // also not a held modifier.
+      if (data1 === 101) {
+         if (isPressed) {
+            isScrubToggled = !isScrubToggled;
+            midiOut.sendMidi(0x90, 101, isScrubToggled ? 127 : 0);
+         }
          return;
       }
 
@@ -532,33 +611,34 @@ function onMidi(status, data1, data2) {
 // Ableton Live MCU Overlay Button Processing
 function handleButtonPress(note) {
    println("Button pressed - Note: " + note); // DEBUG: remove once all mappings are confirmed
-   // Track Channel Strip Buttons (0 - 31)
+   // Track Channel Strip Buttons (0 - 31) - always act on whichever bank
+   // (main tracks or returns) is currently active.
    if (note >= 0 && note <= 7) {
       // Rec Arm 1-8
-      trackBank.getItemAt(note).arm().toggle();
+      activeTrackBank().getItemAt(note).arm().toggle();
       return;
    }
    if (note >= 8 && note <= 15) {
       // Solo 1-8
-      trackBank.getItemAt(note - 8).solo().toggle();
+      activeTrackBank().getItemAt(note - 8).solo().toggle();
       return;
    }
    if (note >= 16 && note <= 23) {
       // Mute 1-8
-      trackBank.getItemAt(note - 16).mute().toggle();
+      activeTrackBank().getItemAt(note - 16).mute().toggle();
       return;
    }
    if (note >= 24 && note <= 31) {
       // Select 1-8
-      trackBank.getItemAt(note - 24).selectInMixer();
-      cursorTrack.selectChannel(trackBank.getItemAt(note - 24));
+      activeTrackBank().getItemAt(note - 24).selectInMixer();
+      cursorTrack.selectChannel(activeTrackBank().getItemAt(note - 24));
       return;
    }
    if (note >= 32 && note <= 39) {
       // Encoder Push Click (Reset Parameter)
       var encIdx = note - 32;
       if (currentMode === MODE_MIXER) {
-         trackBank.getItemAt(encIdx).pan().reset();
+         activeTrackBank().getItemAt(encIdx).pan().reset();
       } else if (currentMode === MODE_SENDS) {
          var resetSendIdx = (sendBankPage * 8) + encIdx;
          cursorTrack.sendBank().getItemAt(resetSendIdx).reset();
@@ -651,40 +731,61 @@ function handleButtonPress(note) {
          }
          break;
 
-      case 46: // BANK PREV (<)
+      case 46: // BANK PREV (<) -> jump to bank 0 with SHIFT, else page back
          if (isShiftPressed) {
-            trackBank.scrollBackwards(); // Shift + Bank = Nudge 1 track left
-            host.showPopupNotification("Nudge Track Left");
+            activeTrackBank().scrollPosition().set(0);
+            host.showPopupNotification("Jump to First Bank");
          } else if (currentMode === MODE_DEVICE) {
             remoteControls.selectPreviousPage(true);
             host.showPopupNotification("Device Page Previous");
          } else {
-            trackBank.selectPreviousPage();
+            activeTrackBank().selectPreviousPage();
             host.showPopupNotification("Track Bank Left");
          }
          refreshDisplayText();
          refreshFaders();
          break;
 
-      case 47: // BANK NEXT (>)
+      case 47: // BANK NEXT (>) -> jump to last bank with SHIFT, else page forward
          if (isShiftPressed) {
-            trackBank.scrollForwards(); // Shift + Bank = Nudge 1 track right
-            host.showPopupNotification("Nudge Track Right");
+            var maxOffsetBank = Math.max(0, activeTrackBank().itemCount().get() - 8);
+            activeTrackBank().scrollPosition().set(maxOffsetBank);
+            host.showPopupNotification("Jump to Last Bank");
          } else if (currentMode === MODE_DEVICE) {
             remoteControls.selectNextPage(true);
             host.showPopupNotification("Device Page Next");
          } else {
-            trackBank.selectNextPage();
+            activeTrackBank().selectNextPage();
             host.showPopupNotification("Track Bank Right");
          }
          refreshDisplayText();
          refreshFaders();
          break;
 
-      // Notes 48/49 used to have a duplicate "CHAN PREV/NEXT" nudge case
-      // here, but they're now consumed as the CHANNEL modifier (with a
-      // `return`) above and are unreachable in this switch. The same nudge
-      // is already available via SHIFT + BANK PREV/NEXT (notes 46/47).
+      case 48: // CHANNEL PREV (<) -> nudge 1 channel back, or jump to first with SHIFT
+         if (isShiftPressed) {
+            activeTrackBank().scrollPosition().set(0);
+            host.showPopupNotification("Jump to First Channel");
+         } else {
+            activeTrackBank().scrollBackwards();
+            host.showPopupNotification("Nudge Channel Left");
+         }
+         refreshDisplayText();
+         refreshFaders();
+         break;
+
+      case 49: // CHANNEL NEXT (>) -> nudge 1 channel forward, or jump to last with SHIFT
+         if (isShiftPressed) {
+            var maxOffsetCh = Math.max(0, activeTrackBank().itemCount().get() - 8);
+            activeTrackBank().scrollPosition().set(maxOffsetCh);
+            host.showPopupNotification("Jump to Last Channel");
+         } else {
+            activeTrackBank().scrollForwards();
+            host.showPopupNotification("Nudge Channel Right");
+         }
+         refreshDisplayText();
+         refreshFaders();
+         break;
 
       case 50: // FLIP -> Swap Faders and Encoders
          isFlipped = !isFlipped;
@@ -693,19 +794,37 @@ function handleButtonPress(note) {
          refreshFaders();
          break;
 
-      case 51: // DETAIL -> Toggle Detail Editor / Automation (CLIP/FX is the separate note 75)
-      case 53: // DETAIL alternate note
-         if (isShiftPressed) {
-            invokeAction("Show Automation Editor", "Toggle Automation Editor Panel");
-         } else {
-            safeCall(application, "toggleNoteEditor", "Toggle Detail Editor Panel");
+      case 51: // RETURNS -> swap the 8 channel strips to/from the Return Tracks bank
+         isViewingReturns = !isViewingReturns;
+         midiOut.sendMidi(0x90, 51, isViewingReturns ? 127 : 0);
+         host.showPopupNotification(isViewingReturns ? "Viewing Return Tracks" : "Viewing Tracks");
+         refreshChannelStripLEDs();
+         if (currentMode === MODE_MIXER) {
+            refreshDisplayText();
+            refreshFaders();
          }
          break;
 
-      case 52: // BROWSER -> Hide/Show Browser (Draw and Duplicate were previously
-               // incorrectly guessed onto this same note - laut Handbuch sind
-               // BROWSER und DRAW getrennte Tasten, DRAW-Note noch nicht bestätigt)
-         invokeAction("Toggle Browser Panel", "Toggle Browser");
+      // Note 52 is the generic MCU "Name/Value display" toggle - no
+      // meaningful equivalent surfaced in Bitwig's API, left unbound.
+
+      case 53: // SMPTE/BEATS -> toggle the transport time display format
+         invokeAction("Toggle Time Signature Display", "Toggle Time Display Format");
+         break;
+
+      // F1-F8 (notes 54-61) and F9-F16 (notes 62-69): Ableton's own driver
+      // no-ops on all of these (SoftwareController.handle_function_key_switch_ids
+      // is a no-op), and the Midiplus manual confirms "the other buttons
+      // with no label are not available in Live" - so they're intentionally
+      // left unbound here rather than guessing fictional behavior for them.
+
+      case 74: // SESS/ARR -> Toggle Clip Launcher / Arranger View
+         toggleBooleanCandidate(
+            arranger,
+            ["isClipLauncherVisible", "getClipLauncherVisible", "clipLauncherVisible", "isClipLauncherSectionVisible"],
+            "Toggle Clip Launcher",
+            "Toggle Session / Arranger View"
+         );
          break;
 
       case 75: // CLIP/FX -> Toggle Device / Clip View (confirmed note via debug log)
@@ -720,7 +839,29 @@ function handleButtonPress(note) {
          ], "Toggle Device / Clip View");
          break;
 
-      case 58: // B.T.A. (Back To Arrangement)
+      case 76: // UNDO
+         application.undo();
+         host.showPopupNotification("Undo");
+         break;
+
+      case 77: // BROWSER -> Hide/Show Browser
+         invokeAction("Toggle Browser Panel", "Toggle Browser");
+         break;
+
+      case 78: // DETAIL -> Hide/Show Detail View
+         if (isShiftPressed) {
+            invokeAction("Show Automation Editor", "Toggle Automation Editor Panel");
+         } else {
+            safeCall(application, "toggleNoteEditor", "Toggle Detail Editor Panel");
+         }
+         break;
+
+      case 79: // REDO
+         application.redo();
+         host.showPopupNotification("Redo");
+         break;
+
+      case 80: // B.T.A. (Back To Arrangement)
          for (var btaIdx = 0; btaIdx < 8; btaIdx++) {
             trackBank.getItemAt(btaIdx).returnToArrangement();
          }
@@ -728,55 +869,15 @@ function handleButtonPress(note) {
          host.showPopupNotification("Back To Arrangement");
          break;
 
-      case 59: // S CLEAR (Solo Clear) -> If SHIFT held, do M CLEAR (Mute Clear)
-      case 80:
-         if (isShiftPressed) {
-            for (var mIdx1 = 0; mIdx1 < 8; mIdx1++) {
-               trackBank.getItemAt(mIdx1).mute().set(false);
-            }
-            host.showPopupNotification("Mute Clear (Unmute All Tracks)");
-         } else {
-            for (var sIdx = 0; sIdx < 8; sIdx++) {
-               trackBank.getItemAt(sIdx).solo().set(false);
-            }
-            host.showPopupNotification("Solo Clear (Unsolo All Tracks)");
-         }
+      case 81: // DRAW -> Toggle Draw Mode
+         invokeAction("Draw Mode", "Toggle Draw Mode");
          break;
 
-      case 81: // M CLEAR (Mute Clear) -> Unmute all tracks in Bitwig
-         for (var mIdx2 = 0; mIdx2 < 8; mIdx2++) {
-            trackBank.getItemAt(mIdx2).mute().set(false);
-         }
-         host.showPopupNotification("Mute Clear (Unmute All Tracks)");
+      case 82: // MARKER -> Add/Remove Cue Marker at Playhead
+         invokeAction("Insert Cue Marker Here", "Add Cue Marker at Playhead");
          break;
 
-      case 76: // UNDO (this hardware sends this note for the UNDO button)
-         application.undo();
-         host.showPopupNotification("Undo");
-         break;
-
-      case 79: // REDO (this hardware sends this note for the REDO button)
-         application.redo();
-         host.showPopupNotification("Redo");
-         break;
-
-      case 60: // UNDO (or REDO if SHIFT is held) - alternate/legacy mapping, kept as fallback
-         if (isShiftPressed) {
-            application.redo();
-            host.showPopupNotification("Redo");
-         } else {
-            application.undo();
-            host.showPopupNotification("Undo");
-         }
-         break;
-
-      case 61: // REDO -> Redo in Bitwig - alternate/legacy mapping, kept as fallback
-         application.redo();
-         host.showPopupNotification("Redo");
-         break;
-
-      case 62: // FOLLOW (this hardware sends this note for the FOLLOW button)
-      case 83: // MASTER alternative note
+      case 83: // FOLLOW
          if (isShiftPressed) {
             transport.isMetronomeEnabled().toggle();
             host.showPopupNotification("Toggle Metronome");
@@ -785,110 +886,93 @@ function handleButtonPress(note) {
          }
          break;
 
-      case 64: // PUNCH IN
-         transport.isPunchInEnabled().toggle();
-         host.showPopupNotification("Toggle Punch-In Recording");
+      // Notes 84/85 ("jump to previous/next cue marker" in Ableton's driver)
+      // are left unbound - Bitwig doesn't expose a simple equivalent action
+      // name here to verify against, unlike the other notes on this list.
+
+      case 86: // LOOP
+         transport.isArrangerLoopEnabled().toggle();
          break;
 
-      case 65: // PUNCH OUT
-         transport.isPunchOutEnabled().toggle();
-         host.showPopupNotification("Toggle Punch-Out Recording");
+      case 87: // PUNCH IN (CTRL+PI: set loop start from playhead)
+         if (isControlPressed) {
+            var oldLoopStart = transport.arrangerLoopStart().get();
+            var newLoopStart = transport.getPosition().get();
+            transport.arrangerLoopStart().set(newLoopStart);
+            transport.arrangerLoopDuration().set(transport.arrangerLoopDuration().get() + (oldLoopStart - newLoopStart));
+            host.showPopupNotification("Set Loop Start from Playhead");
+         } else {
+            transport.isPunchInEnabled().toggle();
+            host.showPopupNotification("Toggle Punch-In Recording");
+         }
          break;
 
-      case 82: // HOME -> Jump Playhead to Beginning of Project (1.1.1)
+      case 88: // PUNCH OUT (CTRL+PO: set loop end from playhead)
+         if (isControlPressed) {
+            var loopStart = transport.arrangerLoopStart().get();
+            var curPos = transport.getPosition().get();
+            if (curPos > loopStart) {
+               transport.arrangerLoopDuration().set(curPos - loopStart);
+            }
+            host.showPopupNotification("Set Loop End from Playhead");
+         } else {
+            transport.isPunchOutEnabled().toggle();
+            host.showPopupNotification("Toggle Punch-Out Recording");
+         }
+         break;
+
+      case 89: // HOME -> Jump Playhead to Beginning of Project (1.1.1)
          transport.getPosition().set(0);
          host.showPopupNotification("Jump to Start (Home)");
          break;
 
-      // BUG: case 85 (END) below is currently unreachable - note 85 is also
-      // claimed as an alternate ZOOM note in onMidi() (search "isZoomPressed"),
-      // which returns before handleButtonPress() is ever called. Confirm the
-      // real END note via the "RAW Note-On received" debug log and either
-      // remap ZOOM's alternate note or END's note once known.
-      case 85: // END -> Jump Playhead to End of Loop Region
+      case 90: // END -> Jump Playhead to end of the arranger loop (approximates
+               // Ableton's "last event in the project", which Bitwig doesn't
+               // expose directly)
          transport.getPosition().set(transport.arrangerLoopDuration().get());
          host.showPopupNotification("Jump to Loop End");
          break;
 
-      // Session View / Clip Launcher Navigation Arrows (Left, Right, Up, Down)
-      case 96: // LEFT ARROW -> Select Left Clip / Track
-         safeCall(application, "arrowKeyLeft");
-         refreshDisplayText();
-         refreshFaders();
-         break;
-
-      case 97: // RIGHT ARROW -> Select Right Clip / Track
-         safeCall(application, "arrowKeyRight");
-         refreshDisplayText();
-         refreshFaders();
-         break;
-
-      case 98: // UP ARROW -> Select Upper Clip / Scene
-         safeCall(application, "arrowKeyUp");
-         break;
-
-      case 99: // DOWN ARROW -> Select Lower Clip / Scene
-         safeCall(application, "arrowKeyDown");
-         break;
-
-      // Top 5 Unlabeled Quick-Access Buttons (F1 - F5): Dedicated MIDI / MPE Expression Quick-Keys
-      // BUG: case 54 (F1) below is currently unreachable - note 54 is also
-      // one of the two SHIFT notes in onMidi() (search "isShiftPressed"),
-      // which returns before handleButtonPress() is ever called. Confirm F1's
-      // real note via the "RAW Note-On received" debug log.
-      case 54: // Top Button 1 (F1) -> Note Chance % Attribute
-         safeCall(application, "toggleNoteEditor", "MIDI Note Expression: CHANCE %");
-         break;
-      case 55: // Top Button 2 (F2) -> Note Velocity Attribute
-         safeCall(application, "toggleNoteEditor", "MIDI Note Expression: VELOCITY");
-         break;
-      case 56: // Top Button 3 (F3) -> MPE Pressure (Aftertouch)
-         safeCall(application, "toggleNoteEditor", "MIDI MPE Expression: PRESSURE");
-         break;
-      // BUG: case 57 (F4) below is currently unreachable - note 57 is also
-      // one of the two ALT notes in onMidi() (search "isAltPressed"), which
-      // returns before handleButtonPress() is ever called. Confirm F4's real
-      // note via the "RAW Note-On received" debug log.
-      case 57: // Top Button 4 (F4) -> MPE Timbre / Slide (Y-Axis)
-         safeCall(application, "toggleNoteEditor", "MIDI MPE Expression: TIMBRE / SLIDE");
-         break;
-      case 63: // Top Button 5 (F5) -> MPE Pitch Bend / Tuning
-      case 67:
-         safeCall(application, "toggleNoteEditor", "MIDI MPE Expression: PITCH BEND / TUNING");
-         break;
-
-      case 84: // possible SCRUB/alternate note (kept as fallback, unconfirmed)
-      case 74: // SESS/ARR -> Toggle Clip Launcher / Arranger View (confirmed via debug log)
-         toggleBooleanCandidate(
-            arranger,
-            ["isClipLauncherVisible", "getClipLauncherVisible", "clipLauncherVisible", "isClipLauncherSectionVisible"],
-            "Toggle Clip Launcher",
-            "Toggle Session / Arranger View"
-         );
-         break;
-
-      // Jog Push / Bounce / Zoom Actions
-      case 101: // JOG WHEEL PUSH
-         if (isAltPressed || isOptionPressed || isZoomPressed) {
-            invokeAction("Zoom Arranger to Selection", "Zoom To Selected Region");
-         } else if (isShiftPressed) {
-            invokeAction("Bounce In Place (Post-Fader)", "Bounce In Place");
+      // Cursor Arrows (96-99): navigate normally, or zoom while ZOOM (100)
+      // is toggled on - matches Ableton's Transport.__on_cursor_*_pressed()
+      // pattern (zoom vs scroll depending on the zoom-toggle state).
+      case 96: // LEFT ARROW
+         if (isZoomToggled) {
+            invokeAction("Zoom Out Arranger", "Zoom Out (Horizontal)");
          } else {
-            invokeAction("Bounce\u2026", "Bounce Selected Time Region Window");
+            safeCall(application, "arrowKeyLeft");
+         }
+         refreshDisplayText();
+         refreshFaders();
+         break;
+
+      case 97: // RIGHT ARROW
+         if (isZoomToggled) {
+            invokeAction("Zoom In Arranger", "Zoom In (Horizontal)");
+         } else {
+            safeCall(application, "arrowKeyRight");
+         }
+         refreshDisplayText();
+         refreshFaders();
+         break;
+
+      case 98: // UP ARROW
+         if (isZoomToggled) {
+            invokeAction("Increase Selected Track Height", "Zoom In (Track Height)");
+         } else {
+            safeCall(application, "arrowKeyUp");
+         }
+         break;
+
+      case 99: // DOWN ARROW
+         if (isZoomToggled) {
+            invokeAction("Decrease Selected Track Height", "Zoom Out (Track Height)");
+         } else {
+            safeCall(application, "arrowKeyDown");
          }
          break;
 
       // Transport Buttons
-      case 86: // LOOP
-         transport.isArrangerLoopEnabled().toggle();
-         break;
-      case 89: // MARKER / BOUNCE -> Add Cue Marker at Playhead (Shift: Bounce)
-         if (isShiftPressed) {
-            invokeAction("Bounce\u2026", "Bounce Window");
-         } else {
-            invokeAction("Insert Cue Marker Here", "Add Cue Marker at Playhead");
-         }
-         break;
       case 91: // REWIND
          transport.rewind();
          break;
@@ -922,10 +1006,10 @@ function refreshFaders() {
          var sendIdx = (sendBankPage * 8) + i;
          sendPitchBend(i, cursorTrack.sendBank().getItemAt(sendIdx).value().get());
       } else if (!isFlipped) {
-         sendPitchBend(i, trackBank.getItemAt(i).volume().value().get());
+         sendPitchBend(i, activeTrackBank().getItemAt(i).volume().value().get());
       } else {
          if (currentMode === MODE_MIXER) {
-            sendPitchBend(i, trackBank.getItemAt(i).pan().value().get());
+            sendPitchBend(i, activeTrackBank().getItemAt(i).pan().value().get());
          } else if (currentMode === MODE_DEVICE) {
             sendPitchBend(i, remoteControls.getParameter(i).value().get());
          }
@@ -942,7 +1026,7 @@ function refreshDisplayText() {
          topRowText[i] = formatString(sendItem.name().get() || ("Send " + (sendIdx + 1)), 7);
          bottomRowText[i] = formatString(sendItem.displayedValue().get(), 7);
       } else if (currentMode === MODE_MIXER) {
-         var track = trackBank.getItemAt(i);
+         var track = activeTrackBank().getItemAt(i);
          topRowText[i] = formatString(track.name().get(), 7);
          bottomRowText[i] = formatString(track.volume().displayedValue().get(), 7);
       } else if (currentMode === MODE_DEVICE) {
@@ -959,10 +1043,10 @@ function sendPitchBend(channel, normalizedValue) {
    if (normalizedValue === undefined || normalizedValue === null) normalizedValue = 0;
    var val14 = Math.round(normalizedValue * 16383);
    val14 = Math.max(0, Math.min(16383, val14));
-   
+
    var lsb = val14 & 0x7F;
    var msb = (val14 >> 7) & 0x7F;
-   
+
    midiOut.sendMidi(0xE0 + channel, lsb, msb);
 }
 
