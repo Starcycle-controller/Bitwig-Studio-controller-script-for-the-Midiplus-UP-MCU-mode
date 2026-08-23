@@ -1284,10 +1284,20 @@ function handleButtonPress(note) {
 
       // Transport Buttons
       case 91: // REWIND
-         transport.rewind();
+         if (currentMode === MODE_DEVICE) {
+            // Plugin mode: same device-select target as PLUGIN/CTRL-held
+            // jog and the LEFT/RIGHT arrow buttons above.
+            cursorDevice.selectPrevious();
+         } else {
+            transport.rewind();
+         }
          break;
       case 92: // FAST FORWARD
-         transport.fastForward();
+         if (currentMode === MODE_DEVICE) {
+            cursorDevice.selectNext();
+         } else {
+            transport.fastForward();
+         }
          break;
       case 93: // STOP
          transport.stop();
