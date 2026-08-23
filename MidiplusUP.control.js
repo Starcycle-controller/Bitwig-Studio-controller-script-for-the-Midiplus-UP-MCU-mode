@@ -986,6 +986,23 @@ function onMidi(status, data1, data2) {
       if (data1 === 73) {
          isAltPressed = isPressed;
          midiOut.sendMidi(0x90, 73, isAltPressed ? 127 : 0);
+         if (isPressed) {
+            // TEMPORARY DIAGNOSTIC (piggybacked on ALT's press, doesn't
+            // affect its normal modifier behavior): sends a single,
+            // isolated pitch-bend to fader 2 (channel 1) via a deferred
+            // scheduleTask, completely separate from any observer or
+            // rapid stream, to isolate whether the fader-follow issue is
+            // about message RATE or about the scheduleTask/observer
+            // EXECUTION CONTEXT itself. Alternates target each press so
+            // it's easy to see whether it's actually landing correctly.
+            var diagnosticTarget = (Date.now() % 2 === 0) ? 0.0 : 1.0;
+            println("Diagnostic: scheduling single isolated pitch-bend to channel 1, target: " + diagnosticTarget);
+            host.scheduleTask(function () {
+               println("Diagnostic: sending now");
+               sendPitchBend(1, diagnosticTarget);
+               host.requestFlush();
+            }, 500);
+         }
          return;
       }
 
@@ -1316,23 +1333,8 @@ function handleButtonPress(note) {
          }
          break;
 
-      case 52: // TEMPORARY DIAGNOSTIC (normally the generic MCU "Name/Value
-               // display" toggle - no meaningful equivalent surfaced in
-               // Bitwig's API, otherwise left unbound): sends a single,
-               // isolated pitch-bend to fader 2 (channel 1) via a deferred
-               // scheduleTask, completely separate from any observer or
-               // rapid stream, to isolate whether the fader-follow issue is
-               // about message RATE or about the scheduleTask/observer
-               // EXECUTION CONTEXT itself. Alternates target each press so
-               // it's easy to see whether it's actually landing correctly.
-         var diagnosticTarget = (Date.now() % 2 === 0) ? 0.0 : 1.0;
-         println("Diagnostic: scheduling single isolated pitch-bend to channel 1, target: " + diagnosticTarget);
-         host.scheduleTask(function () {
-            println("Diagnostic: sending now");
-            sendPitchBend(1, diagnosticTarget);
-            host.requestFlush();
-         }, 500);
-         break;
+      // Note 52 is the generic MCU "Name/Value display" toggle - no
+      // meaningful equivalent surfaced in Bitwig's API, left unbound.
 
       case 53: // SMPTE/BEATS -> repurposed as Automation Write toggle (the
                // time-display-format concept it's named for has no Bitwig
