@@ -60,10 +60,6 @@ var isScrubToggled = false;
 // and the effect ("return") track bank.
 var isViewingReturns = false;
 
-// Safely invoke a named Bitwig application action.
-// getAction() can return null if the action isn't available in the
-// current context (e.g. "Zoom Arranger to Selection" with no active
-// time selection) - this avoids crashing the whole script in that case.
 // Safely call a zero-argument method on an object (e.g. application.duplicate()).
 // Prevents an unknown/incorrect API method name from crashing the whole script.
 function safeCall(obj, methodName, popupText) {
@@ -81,86 +77,6 @@ function safeCall(obj, methodName, popupText) {
    } catch (e) {
       println("Error calling \"" + methodName + "\": " + e);
       host.showPopupNotification((popupText || methodName) + " (error)");
-      return false;
-   }
-}
-
-// Try several possible real getter/method names for a boolean toggle value
-// (Bitwig API method names for panel visibility aren't always the same as
-// the display name in Settings > Shortcuts). Falls back to invokeAction()
-// with the given action name if none of the direct methods exist.
-function toggleBooleanCandidate(obj, methodNames, fallbackActionName, popupText) {
-   for (var i = 0; i < methodNames.length; i++) {
-      var m = methodNames[i];
-      try {
-         if (typeof obj[m] === "function") {
-            var val = obj[m]();
-            if (val && typeof val.toggle === "function") {
-               val.toggle();
-               if (popupText) { host.showPopupNotification(popupText); }
-               println("Used direct method: " + m + "()");
-               return true;
-            }
-         }
-      } catch (e) {
-         // try next candidate
-      }
-   }
-   println("No direct method found among: " + methodNames.join(", ") + " - falling back to action");
-   return invokeAction(fallbackActionName, popupText);
-}
-
-// Try a list of candidates in order (mix of direct boolean-toggle methods on
-// different objects, or getAction() names) - stops at first success.
-// Each candidate is either {obj, method} for a direct SettableBooleanValue
-// getter, or {action} for an application action name.
-function tryCandidates(candidates, popupText) {
-   for (var i = 0; i < candidates.length; i++) {
-      var c = candidates[i];
-      try {
-         if (c.method) {
-            if (typeof c.obj[c.method] === "function") {
-               var val = c.obj[c.method]();
-               if (val && typeof val.toggle === "function") {
-                  val.toggle();
-                  if (popupText) { host.showPopupNotification(popupText); }
-                  println("Used direct method: " + c.method + "()");
-                  return true;
-               }
-            }
-         } else if (c.action) {
-            var action = application.getAction(c.action);
-            if (action) {
-               action.invoke();
-               if (popupText) { host.showPopupNotification(popupText); }
-               println("Used action: \"" + c.action + "\"");
-               return true;
-            }
-         }
-      } catch (e) {
-         // try next candidate
-      }
-   }
-   println("No working candidate found for: " + popupText);
-   host.showPopupNotification((popupText || "Action") + " (not available)");
-   return false;
-}
-
-function invokeAction(actionName, popupText) {
-   try {
-      var action = application.getAction(actionName);
-      if (action === null || action === undefined) {
-         println("Action not available right now: " + actionName);
-         host.showPopupNotification((popupText || actionName) + " (not available right now)");
-         return false;
-      }
-      action.invoke();
-      if (popupText) {
-         host.showPopupNotification(popupText);
-      }
-      return true;
-   } catch (e) {
-      println("Error invoking action \"" + actionName + "\": " + e);
       return false;
    }
 }
@@ -652,7 +568,7 @@ function handleButtonPress(note) {
    switch (note) {
       case 40: // TRACK / I/O -> Toggle Track Mixer / Track Inspector I/O Panel
          if (currentMode === MODE_MIXER || isShiftPressed) {
-            invokeAction("Toggle Inspector Panel", "Toggle Track Inspector / I/O Panel");
+            safeCall(application, "toggleInspector", "Toggle Track Inspector / I/O Panel");
          } else {
             currentMode = MODE_MIXER;
             host.showPopupNotification("Mode: Mixer (Volume / Pan)");
@@ -808,9 +724,9 @@ function handleButtonPress(note) {
       // Note 52 is the generic MCU "Name/Value display" toggle - no
       // meaningful equivalent surfaced in Bitwig's API, left unbound.
 
-      case 53: // SMPTE/BEATS -> toggle the transport time display format
-         invokeAction("Toggle Time Signature Display", "Toggle Time Display Format");
-         break;
+      // Note 53 (SMPTE/BEATS) has no equivalent surfaced in Bitwig's
+      // Controller API (no time-display-format toggle found on Transport),
+      // so it's left unbound rather than guessing an action string.
 
       // F1-F8 (notes 54-61) and F9-F16 (notes 62-69): Ableton's own driver
       // no-ops on all of these (SoftwareController.handle_function_key_switch_ids
@@ -819,24 +735,12 @@ function handleButtonPress(note) {
       // left unbound here rather than guessing fictional behavior for them.
 
       case 74: // SESS/ARR -> Toggle Clip Launcher / Arranger View
-         toggleBooleanCandidate(
-            arranger,
-            ["isClipLauncherVisible", "getClipLauncherVisible", "clipLauncherVisible", "isClipLauncherSectionVisible"],
-            "Toggle Clip Launcher",
-            "Toggle Session / Arranger View"
-         );
+         arranger.isClipLauncherVisible().toggle();
+         host.showPopupNotification("Toggle Session / Arranger View");
          break;
 
       case 75: // CLIP/FX -> Toggle Device / Clip View (confirmed note via debug log)
-         tryCandidates([
-            { obj: arranger, method: "isDevicesVisible" },
-            { obj: arranger, method: "getDevicesVisible" },
-            { obj: arranger, method: "isClipLauncherVisible" },
-            { action: "Show Device Panel" },
-            { action: "Toggle Device Panel" },
-            { action: "Toggle Clip Editor Panel" },
-            { action: "Toggle Detail Editor Panel" }
-         ], "Toggle Device / Clip View");
+         safeCall(application, "toggleDevices", "Toggle Device / Clip View");
          break;
 
       case 76: // UNDO
@@ -845,12 +749,12 @@ function handleButtonPress(note) {
          break;
 
       case 77: // BROWSER -> Hide/Show Browser
-         invokeAction("Toggle Browser Panel", "Toggle Browser");
+         safeCall(application, "toggleBrowserVisibility", "Toggle Browser");
          break;
 
       case 78: // DETAIL -> Hide/Show Detail View
          if (isShiftPressed) {
-            invokeAction("Show Automation Editor", "Toggle Automation Editor Panel");
+            safeCall(application, "toggleAutomationEditor", "Toggle Automation Editor Panel");
          } else {
             safeCall(application, "toggleNoteEditor", "Toggle Detail Editor Panel");
          }
@@ -869,12 +773,12 @@ function handleButtonPress(note) {
          host.showPopupNotification("Back To Arrangement");
          break;
 
-      case 81: // DRAW -> Toggle Draw Mode
-         invokeAction("Draw Mode", "Toggle Draw Mode");
-         break;
+      // Note 81 (DRAW) has no equivalent anywhere in Bitwig's Controller API
+      // (no "draw mode" concept exists), so it's left unbound.
 
-      case 82: // MARKER -> Add/Remove Cue Marker at Playhead
-         invokeAction("Insert Cue Marker Here", "Add Cue Marker at Playhead");
+      case 82: // MARKER -> Add Cue Marker at Playhead
+         transport.addCueMarkerAtPlaybackPosition();
+         host.showPopupNotification("Add Cue Marker at Playhead");
          break;
 
       case 83: // FOLLOW
@@ -882,13 +786,20 @@ function handleButtonPress(note) {
             transport.isMetronomeEnabled().toggle();
             host.showPopupNotification("Toggle Metronome");
          } else {
-            invokeAction("View follows playhead", "Toggle Follow Playhead (Auto-Scroll)");
+            arranger.isPlaybackFollowEnabled().toggle();
+            host.showPopupNotification("Toggle Follow Playhead (Auto-Scroll)");
          }
          break;
 
-      // Notes 84/85 ("jump to previous/next cue marker" in Ableton's driver)
-      // are left unbound - Bitwig doesn't expose a simple equivalent action
-      // name here to verify against, unlike the other notes on this list.
+      case 84: // Jump to Previous Cue Marker
+         transport.jumpToPreviousCueMarker();
+         host.showPopupNotification("Jump to Previous Cue Marker");
+         break;
+
+      case 85: // Jump to Next Cue Marker
+         transport.jumpToNextCueMarker();
+         host.showPopupNotification("Jump to Next Cue Marker");
+         break;
 
       case 86: // LOOP
          transport.isArrangerLoopEnabled().toggle();
@@ -938,7 +849,7 @@ function handleButtonPress(note) {
       // pattern (zoom vs scroll depending on the zoom-toggle state).
       case 96: // LEFT ARROW
          if (isZoomToggled) {
-            invokeAction("Zoom Out Arranger", "Zoom Out (Horizontal)");
+            safeCall(application, "zoomOut", "Zoom Out (Horizontal)");
          } else {
             safeCall(application, "arrowKeyLeft");
          }
@@ -948,7 +859,7 @@ function handleButtonPress(note) {
 
       case 97: // RIGHT ARROW
          if (isZoomToggled) {
-            invokeAction("Zoom In Arranger", "Zoom In (Horizontal)");
+            safeCall(application, "zoomIn", "Zoom In (Horizontal)");
          } else {
             safeCall(application, "arrowKeyRight");
          }
@@ -958,7 +869,7 @@ function handleButtonPress(note) {
 
       case 98: // UP ARROW
          if (isZoomToggled) {
-            invokeAction("Increase Selected Track Height", "Zoom In (Track Height)");
+            safeCall(arranger, "zoomInLaneHeightsSelected", "Zoom In (Track Height)");
          } else {
             safeCall(application, "arrowKeyUp");
          }
@@ -966,7 +877,7 @@ function handleButtonPress(note) {
 
       case 99: // DOWN ARROW
          if (isZoomToggled) {
-            invokeAction("Decrease Selected Track Height", "Zoom Out (Track Height)");
+            safeCall(arranger, "zoomOutLaneHeightsSelected", "Zoom Out (Track Height)");
          } else {
             safeCall(application, "arrowKeyDown");
          }
