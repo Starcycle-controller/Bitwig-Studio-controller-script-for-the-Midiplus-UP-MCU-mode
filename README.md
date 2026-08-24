@@ -139,29 +139,42 @@ Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
 toggled by SMPTE/BEATS - see note 53; the orange/default state, 54-61,
 still directly selects device 1-8 and isn't affected by this) is
 configurable per-key via 8 dropdowns, **F1 Function (Green State)**
-through **F8 Function (Green State)**, each offering the same list:
-`None`, `Duplicate`, `Consolidate`, `Cut`, `Copy`, `Paste`, `Delete`,
-`Rename`, `Select All`, `Select None`, `Undo`, `Redo`. Defaults: F1 =
-`Duplicate`, F2 = `Consolidate`, F3-F8 = `None`. Every press shows a
-Bitwig popup naming the action that just ran (e.g. `Duplicate`), same as
-the `Device N` popup the orange/default state already shows - so it's
-always visible which function fired, not just a silent side effect.
+through **F8 Function (Green State)**, each offering the same list -
+`None`, plus every key of `FKEY_FUNCTIONS` in the code (currently 37
+entries: `Duplicate`/`Cut`/`Copy`/`Paste`/`Delete`/`Rename`/`Select All`/
+`Select None`/`Undo`/`Redo`/`Consolidate`, all 22 of Bitwig's own
+**Editing** category actions, all 11 of its **File** category actions,
+and `Select item at cursor` from its **Selection** category - see
+`bitwig-actions-reference.txt` for the full names). Defaults: F1 =
+`Duplicate`, F2 = `Consolidate`, F3-F8 = `None`.
 
-Everything except `Consolidate` calls a dedicated, typed `Application`
-method (`application.duplicate()`, `.cut()`, `.remove()` for Delete,
-etc.) - guaranteed correct, not guessed, straight from the Controller API
-Javadoc. **`Consolidate` has no dedicated method anywhere in the
-Controller API** (checked `Application`/`Track`/`Clip`/`Arranger` - none
-of them have it), so it goes through `safeInvokeAction(CONSOLIDATE_ACTION_ID,
-"Consolidate")` (the same generic `application.getAction(id).invoke()`
-helper DRAW's tool-cycling uses for its own real, confirmed action ids -
-see `ARRANGER_TOOL_ACTIONS`). First guess (`"consolidate_time_selection"`,
-snake_case matching DRAW's ids) was wrong - **confirmed via a one-time
-console diagnostic** (temporarily logging every real action whose id/name
-contained "consolidat") that the real id is just the plain word
-`"Consolidate"`. Bitwig's action ids aren't consistently snake_case
-across the board, apparently - `CONSOLIDATE_ACTION_ID = "Consolidate"` is
-now confirmed correct and the diagnostic has been removed.
+Every press shows the action name **twice**: as a Bitwig on-screen popup
+(`host.showPopupNotification`, same as the orange state's `Device N`
+popup) *and* as a momentary LCD popup on that F-key's own channel strip
+(`showBottomRowPopup`, truncated to 7 characters like every other LCD
+popup, then reverting to normal track info after the usual timeout) - so
+it's visible both on-screen and on the hardware which function just ran.
+
+Ten entries (`Duplicate` through `Redo`) call a dedicated, typed
+`Application` method (`application.duplicate()`, `.cut()`, `.remove()`
+for Delete, etc.) - guaranteed correct, not guessed, straight from the
+Controller API Javadoc. Everything else (`Consolidate` and all 33 Editing/
+File actions) has no dedicated method anywhere in the Controller API, so
+it goes through `safeInvokeAction(actionId, null)` (the same generic
+`application.getAction(id).invoke()` helper DRAW's tool-cycling uses for
+its own real, confirmed action ids - see `ARRANGER_TOOL_ACTIONS`) with
+every `actionId` copied verbatim from `bitwig-actions-reference.txt`, not
+guessed - unlike Consolidate's first attempt (`"consolidate_time_selection"`,
+a wrong snake_case guess before the real id, the plain word
+`"Consolidate"`, was console-confirmed - see git history). **Not yet
+tested on hardware** for the 33 newly-added actions - if any of them
+don't fire, check the console for a `safeInvokeAction`
+"unavailable"/error log naming the id that failed.
+
+Worth noting before assigning it: `Quit` is in the list because it's a
+real Bitwig action and was explicitly requested, but binding it to an
+F-key means one wrong press quits Bitwig outright - no confirmation
+dialog stands in the way from a script-invoked action.
 
 The request was for each dropdown to remove an already-picked function
 from the other 7 (so you can't double-assign one), but **Bitwig's
@@ -405,6 +418,34 @@ was still in Live mode, is confirmed still correct.
 | CC 16-23 | Rotary encoders 1-8 | Mode-dependent (pan/send/macro), SHIFT = fine adjust |
 | CC 60 | Jog wheel | Arranger scrub, or bar/loop/tempo nudge with modifiers held, or scene navigation in `MODE_SCENE` |
 | Pitch bend ch 0-7 / 8 | Faders 1-8 / Master | See Architecture above |
+
+### Jog wheel modifier combos
+
+In priority order (each returns before the next is checked, so only one
+applies per turn): `MODE_SCENE` active (move the scene cursor) > **SHIFT+OPTION**
+(adjust the last-clicked GUI parameter, see below) > CTRL (device-mode:
+step devices; otherwise: nudge tempo, fine with ALT) > PLUG-INS held (step
+devices) > BANK held (page remote-control pages) > OPTION alone (halve/
+double loop length) > SHIFT alone (shift loop by a bar) > SCRUB toggle or
+wheel press (jump by a bar) > default (scrub, ALT halves the step size).
+
+**SHIFT+OPTION + Jog Wheel** adjusts whatever parameter was last clicked
+in Bitwig's own GUI - click any knob/slider/fader once in Bitwig
+(`host.createLastClickedParameter()`, `lastClickedParamValue.inc(rawStep,
+128)`), then hold SHIFT+OPTION and turn the wheel to dial it in without
+touching the mouse again. **Not literal continuous mouseover** - the
+Controller API only exposes "last clicked" (confirmed against the
+`LastClickedParameter` Javadoc: `.parameter()` tracks whatever was most
+recently clicked, not live hover position), not a per-frame "what's under
+the cursor right now" feed - but functionally close for the requested
+workflow: click once to arm a control, then adjust freely with the wheel.
+Shows the parameter's name as a Bitwig popup on every turn so it's always
+clear what's currently armed. OPT alone was already bound (loop halve/
+double) when this was requested, so this needed a still-free combo -
+SHIFT+OPTION together weren't previously used for anything (each
+single-modifier branch only checks its own flag and returns, so a
+combined check has to come first, ahead of them, to not get swallowed -
+see the code). Not yet tested on hardware.
 
 ### Jog-wheel "mode" buttons (CURSOR / SCROLL / ZOOM / MASTER / MARKER /
 NUDGE / BANK / CHANNEL, per the manual's "Multi-Purpose Jog Wheel Section")

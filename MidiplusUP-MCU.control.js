@@ -73,6 +73,16 @@ var isOptionPressed = false;  // Note 71
 var isControlPressed = false; // Note 72
 var isAltPressed = false;     // Note 73
 
+// SHIFT+OPTION + Jog Wheel adjusts whichever parameter was last clicked
+// in Bitwig's own GUI - see the wheel handler in onMidi(). Both created
+// once in init() via host.createLastClickedParameter() - lastClickedParam
+// is an ObjectProxy (like CursorTrack/CursorDevice elsewhere in this
+// file), so it and the Parameter it hands back both stay valid as stable
+// references that automatically retarget under the hood, rather than
+// needing to be re-fetched on every use.
+var lastClickedParam = null;
+var lastClickedParamValue = null;
+
 // Each of the 4 modifier buttons above also tracks whether it was "used"
 // to modify another action (a jog-wheel combo, mostly) while held - see
 // setUsedForCombo()/wasUsedForCombo() below. This gates the *standalone
@@ -141,49 +151,84 @@ function closeOtherDeviceWindowsIfConfigured() {
 
 // Green-state F1-F8 (notes 62-69, see case 62-69 below) - configurable
 // "editing function" keys, set via the 8 "F1-F8 Function (Green State)"
-// Controller Preferences dropdowns in init(). Shows a Bitwig popup naming
-// the action every time one fires (e.g. "Duplicate"), same as the
-// "Device N" popup the orange/default F-key state already shows - so
-// it's always visible which function just ran. Everything below except
-// Consolidate goes through a dedicated, typed Application method
-// (guaranteed correct, not guessed) - Consolidate has no such method in
-// the Controller API (confirmed: not in Track/Clip/Arranger/Application),
-// so it goes through the generic application.getAction(id)/invoke()
-// mechanism instead - see CONSOLIDATE_ACTION_ID below (confirmed correct
-// on hardware, console-verified).
-var FKEY_FUNCTION_NAMES = [
-   "None", "Duplicate", "Consolidate", "Cut", "Copy", "Paste", "Delete",
-   "Rename", "Select All", "Select None", "Undo", "Redo"
-];
+// Controller Preferences dropdowns in init(). Every press shows the
+// action name both as a Bitwig on-screen popup (host.showPopupNotification,
+// same as the orange state's "Device N" popup) AND as a momentary LCD
+// popup on that F-key's own channel strip (showBottomRowPopup, truncated
+// to 7 characters like every other LCD popup) - see invokeFKeyFunction().
+//
+// Entries with a `method` call a dedicated, typed Application method
+// (guaranteed correct, not guessed). Entries with an `actionId` have no
+// such method in the Controller API, so they go through the generic
+// application.getAction(id)/invoke() mechanism (safeInvokeAction())
+// instead - every actionId below is copied verbatim from
+// bitwig-actions-reference.txt (the full captured+verified action list),
+// not guessed, unlike Consolidate's id originally was (see git history).
+var FKEY_FUNCTIONS = {
+   "Duplicate": { method: "duplicate" },
+   "Cut": { method: "cut" },
+   "Copy": { method: "copy" },
+   "Paste": { method: "paste" },
+   "Delete": { method: "remove" },
+   "Rename": { method: "rename" },
+   "Select All": { method: "selectAll" },
+   "Select None": { method: "selectNone" },
+   "Undo": { method: "undo" },
+   "Redo": { method: "redo" },
+   "Consolidate": { actionId: "Consolidate" },
+   // Editing category (bitwig-actions-reference.txt).
+   "Activate": { actionId: "Activate" },
+   "Deactivate": { actionId: "Deactivate" },
+   "Duplicate as Alias": { actionId: "Duplicate Reference" },
+   "Flatten as Track Automation": { actionId: "unwrap" },
+   "Group": { actionId: "Group" },
+   "Ungroup": { actionId: "Ungroup" },
+   "Paste as Alias": { actionId: "Paste Reference" },
+   "Switch between Object and Time Selection": { actionId: "switch_between_event_and_time_selection" },
+   "Toggle Active/Mute State": { actionId: "Toggle Active" },
+   "Toggle Hold": { actionId: "toggle_hold" },
+   "Toggle On / Off": { actionId: "toggle_on_off" },
+   "Turn On": { actionId: "turn_on" },
+   "Turn Off": { actionId: "turn_off" },
+   "Wrap as Automation Clip": { actionId: "wrap" },
+   // File category (bitwig-actions-reference.txt).
+   "New Project": { actionId: "New" },
+   "Open...": { actionId: "Open" },
+   "Save": { actionId: "Save" },
+   "Save as...": { actionId: "Save as" },
+   "Close": { actionId: "Close" },
+   "Quit": { actionId: "Quit" },
+   "New From Template...": { actionId: "new_from_template" },
+   "Save as Template...": { actionId: "save_as_template" },
+   "Save to Library...": { actionId: "add_to_library" },
+   "Import Wavetables...": { actionId: "import_wavetables" },
+   "Import Impulses...": { actionId: "import_impulses" },
+   // Selection category.
+   "Select item at cursor": { actionId: "select_item_at_cursor" }
+};
 
-// Confirmed via the console diagnostic (see init() history - now removed
-// since this is settled): the real action id is the plain word
-// "Consolidate", not a snake_case id like DRAW's tool actions use -
-// Bitwig's action ids aren't consistently snake_case across the board.
-var CONSOLIDATE_ACTION_ID = "Consolidate";
+// Explicit ordered list (rather than Object.keys(FKEY_FUNCTIONS), whose
+// key order isn't guaranteed in every JS engine) for the dropdown option
+// lists - "None" first, then FKEY_FUNCTIONS' entries in the order above.
+var FKEY_FUNCTION_NAMES = ["None"].concat(Object.keys(FKEY_FUNCTIONS));
 
-function invokeFKeyFunction(name) {
+function invokeFKeyFunction(name, fkeyIndex) {
    if (name === "None") {
       return;
    }
-   if (name === "Consolidate") {
-      safeInvokeAction(CONSOLIDATE_ACTION_ID, "Consolidate");
+   host.showPopupNotification(name);
+   showBottomRowPopup(fkeyIndex, name);
+
+   var entry = FKEY_FUNCTIONS[name];
+   if (!entry) {
       return;
    }
-   host.showPopupNotification(name);
-   switch (name) {
-      case "Duplicate": application.duplicate(); break;
-      case "Cut": application.cut(); break;
-      case "Copy": application.copy(); break;
-      case "Paste": application.paste(); break;
-      case "Delete": application.remove(); break;
-      case "Rename": application.rename(); break;
-      case "Select All": application.selectAll(); break;
-      case "Select None": application.selectNone(); break;
-      case "Undo": application.undo(); break;
-      case "Redo": application.redo(); break;
-      default:
-         break;
+   if (entry.method) {
+      application[entry.method]();
+   } else if (entry.actionId) {
+      // Popups already shown above - don't pass popupText here, or
+      // safeInvokeAction would show a redundant duplicate on success.
+      safeInvokeAction(entry.actionId, null);
    }
 }
 
@@ -775,6 +820,13 @@ function init() {
    // Remote Controls (8 Macros for selected device)
    remoteControls = cursorDevice.createCursorRemoteControlsPage(8);
 
+   // Last-clicked-in-GUI parameter (see SHIFT+OPTION + Jog Wheel in the
+   // wheel handler above) - id is used for persistent state, per the
+   // Javadoc, so keep it stable across versions.
+   lastClickedParam = host.createLastClickedParameter("lastClickedParam", "Mouseover Parameter");
+   lastClickedParamValue = lastClickedParam.parameter();
+   lastClickedParamValue.name().markInterested();
+
    // Transport & Application Controls
    transport = host.createTransport();
    application = host.createApplication();
@@ -1240,6 +1292,27 @@ function onMidi(status, data1, data2) {
             var selectedSceneName = selectedScene.name().get() || ("Scene " + (sceneCursorIndex + 1));
             host.showPopupNotification("Scene " + (sceneCursorIndex + 1) + ": " + selectedSceneName);
          }
+         return;
+      }
+
+      if (isShiftPressed && isOptionPressed) {
+         // SHIFT+OPTION + Jog Wheel: adjust whatever parameter was last
+         // clicked in Bitwig's own GUI (host.createLastClickedParameter(),
+         // see lastClickedParam above) - click any knob/slider once in
+         // Bitwig, then hold SHIFT+OPTION and turn the wheel to dial it in
+         // without touching the mouse again. Not true continuous
+         // mouseover - Bitwig's Controller API only exposes "last
+         // clicked", not live hover position (confirmed against the
+         // LastClickedParameter Javadoc) - but functionally close: click
+         // once to arm it, then adjust freely. Checked before OPTION's own
+         // solo branch below so the combo isn't swallowed by it - OPTION
+         // alone (loop halve/double) and SHIFT alone (shift loop by bar)
+         // are unaffected, both still fire normally when only one of the
+         // two is held.
+         shiftUsedForCombo = true;
+         optionUsedForCombo = true;
+         lastClickedParamValue.inc(rawStep, 128);
+         host.showPopupNotification(lastClickedParamValue.name().get());
          return;
       }
 
@@ -1724,7 +1797,7 @@ function handleButtonPressInner(note) {
          // "Function Keys" Controller Preferences category in init() -
          // rather than a fixed built-in action like the orange/default
          // state (case 54-61).
-         invokeFKeyFunction(fKeyFunctionAssignment[note - 62]);
+         invokeFKeyFunction(fKeyFunctionAssignment[note - 62], note - 62);
          break;
 
       case 45: // RETURNS -> swap the 8 channel strips to/from the Return
