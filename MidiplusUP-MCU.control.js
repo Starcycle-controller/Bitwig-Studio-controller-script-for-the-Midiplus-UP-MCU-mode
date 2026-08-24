@@ -485,6 +485,16 @@ var LOOP_SCALE_THRESHOLD = 16;
 // "wheel ticks per halve/double" granularity.
 var clipScaleAccumulator = 0;
 
+// SHIFT+CTRL + Jog Wheel's action is configurable (Controller Preferences
+// -> "Function Keys" category) - "Scale Clip Size" (default, right =
+// double/scale_time_double, left = halve/scale_time_half) or "Duplicate/
+// Delete Clip" (right = application.duplicate(), left =
+// application.remove() - deliberately paired as opposites, same as
+// grow/shrink elsewhere in this file; be aware turning the wrong way in
+// this mode deletes the selection, not just a harmless no-op).
+var SHIFT_CTRL_WHEEL_ACTIONS = ["Scale Clip Size", "Duplicate/Delete Clip"];
+var shiftCtrlWheelAction = "Scale Clip Size";
+
 // RETURNS (note 51): swap the 8 channel strips between the main track bank
 // and the effect ("return") track bank.
 var isViewingReturns = false;
@@ -821,6 +831,15 @@ function init() {
          });
       })(fkIdx);
    }
+
+   // What SHIFT+CTRL + Jog Wheel does - see SHIFT_CTRL_WHEEL_ACTIONS/
+   // shiftCtrlWheelAction above and the wheel handler in onMidi().
+   var shiftCtrlWheelActionSetting = host.getPreferences().getEnumSetting(
+      "SHIFT+CTRL Wheel Action", "Function Keys", SHIFT_CTRL_WHEEL_ACTIONS, shiftCtrlWheelAction);
+   shiftCtrlWheelActionSetting.markInterested();
+   shiftCtrlWheelActionSetting.addValueObserver(function (value) {
+      shiftCtrlWheelAction = value;
+   });
 
    // User-configurable wheel-tick threshold for OPTION + Jog Wheel's
    // loop-length halve/double (see loopScaleAccumulator above) - lower
@@ -1315,24 +1334,36 @@ function onMidi(status, data1, data2) {
       }
 
       if (isControlPressed && isShiftPressed) {
-         // SHIFT+CTRL + Jog Wheel: scale the selected clip's content -
-         // turn right doubles it (Bitwig's real "Scale 200%" action, id
-         // "scale_time_double"), turn left halves it ("Scale 50%", id
-         // "scale_time_half") - confirmed from bitwig-actions-reference.txt.
-         // Exponential per repeat, same as OPTION + Jog Wheel's loop halve/
-         // double, so it shares that same accumulate-then-fire throttling
-         // (clipScaleAccumulator/LOOP_SCALE_THRESHOLD above) rather than
-         // firing on every raw wheel message, which would compound far too
-         // fast. Replaces the previous "jump to first/last item" behavior
-         // per request. Checked before the plain CTRL branch so it isn't
-         // swallowed by it - CTRL alone (step next/previous) still fires
-         // normally when SHIFT isn't also held.
+         // SHIFT+CTRL + Jog Wheel: either scales the selected clip's
+         // content (default - turn right doubles it via Bitwig's real
+         // "Scale 200%" action, id "scale_time_double"; turn left halves
+         // it, "Scale 50%"/"scale_time_half") or duplicates/deletes it
+         // (turn right = application.duplicate(), turn left =
+         // application.remove()) - configurable via the "SHIFT+CTRL Wheel
+         // Action" Controller Preferences setting, see
+         // SHIFT_CTRL_WHEEL_ACTIONS/shiftCtrlWheelAction above. Both
+         // directions are exponential/repeat-accumulating in the scale
+         // case and additive (one duplicate/delete per threshold crossed)
+         // in the duplicate case, so both share the same accumulate-then-
+         // fire throttling (clipScaleAccumulator/LOOP_SCALE_THRESHOLD
+         // above) rather than firing on every raw wheel message. Checked
+         // before the plain CTRL branch so it isn't swallowed by it - CTRL
+         // alone (step next/previous) still fires normally when SHIFT
+         // isn't also held.
          ctrlUsedForCombo = true;
          shiftUsedForCombo = true;
          clipScaleAccumulator += Math.abs(rawStep);
          if (clipScaleAccumulator >= LOOP_SCALE_THRESHOLD) {
             clipScaleAccumulator -= LOOP_SCALE_THRESHOLD;
-            safeInvokeAction(backwards ? "scale_time_half" : "scale_time_double", null);
+            if (shiftCtrlWheelAction === "Duplicate/Delete Clip") {
+               if (backwards) {
+                  application.remove();
+               } else {
+                  application.duplicate();
+               }
+            } else {
+               safeInvokeAction(backwards ? "scale_time_half" : "scale_time_double", null);
+            }
          }
          return;
       }

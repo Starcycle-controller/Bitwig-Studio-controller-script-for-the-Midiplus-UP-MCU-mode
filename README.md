@@ -191,6 +191,13 @@ warning and shows a Bitwig popup naming which two keys collided. It
 doesn't prevent the duplicate, just flags it immediately instead of
 leaving it to be discovered by a key silently doing nothing.
 
+**SHIFT+CTRL Wheel Action** (also in the Function Keys category, since
+it's another configurable-action setting, even though it drives the jog
+wheel rather than an F-key) picks what SHIFT+CTRL + Jog Wheel does - see
+the full writeup under Jog wheel modifier combos below. `Scale Clip Size`
+(default) or `Duplicate/Delete Clip` (right = duplicate, left = delete -
+be aware turning the wrong way in this mode deletes the selection).
+
 ### Diagnostics settings (Controller Preferences panel)
 
 Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
@@ -439,19 +446,30 @@ below).
 
 **SHIFT+CTRL + Jog Wheel** (turn, as opposed to SHIFT+CTRL + Jog Wheel
 *Press* below - same two modifiers, different gesture, different action)
-scales the selected clip's content - turn right doubles it (Bitwig's
-real `"Scale 200%"` action, id `scale_time_double`), turn left halves it
-(`"Scale 50%"`, id `scale_time_half`), confirmed from
-`bitwig-actions-reference.txt`. Exponential per repeat like OPTION + Jog
-Wheel's loop halve/double, so it shares that same accumulate-then-fire
-throttling (`clipScaleAccumulator`, reuses `LOOP_SCALE_THRESHOLD`/the
-"Loop Halve/Double Wheel Ticks" setting rather than a separate constant)
-instead of firing on every raw wheel message, which would compound far
-too fast. Replaced the earlier "jump to first/last item" behavior (which
-worked, but this was requested instead) - the first/last-item actions
-are no longer bound anywhere, freed up if wanted again later. Checked
-before the plain-CTRL branch so it isn't swallowed by it. Not yet tested
-on hardware.
+does one of two things depending on the **SHIFT+CTRL Wheel Action**
+Controller Preferences setting (Function Keys category, see above):
+
+- `Scale Clip Size` (default) - turn right doubles the selected clip's
+  content (Bitwig's real `"Scale 200%"` action, id `scale_time_double`),
+  turn left halves it (`"Scale 50%"`, id `scale_time_half`), confirmed
+  from `bitwig-actions-reference.txt`.
+- `Duplicate/Delete Clip` - turn right duplicates the selection
+  (`application.duplicate()`), turn left deletes it
+  (`application.remove()`) - a deliberate opposite pairing, same as
+  grow/shrink elsewhere in this file, but be aware turning the wrong way
+  in this mode deletes the selection outright, not a harmless no-op.
+
+Both cases are repeat-accumulating (scaling is exponential per repeat,
+duplicate/delete is additive - one extra duplicate or one more delete per
+repeat), so both share the same accumulate-then-fire throttling
+(`clipScaleAccumulator`, reuses `LOOP_SCALE_THRESHOLD`/the "Loop Halve/
+Double Wheel Ticks" setting rather than a separate constant) instead of
+firing on every raw wheel message, which would compound (or delete) far
+too fast. This replaced an earlier "jump to first/last item" behavior
+(which worked, but this was requested instead) - those actions are no
+longer bound anywhere, freed up if wanted again later. Checked before
+the plain-CTRL branch so it isn't swallowed by it. Not yet tested on
+hardware.
 
 **CTRL + Jog Wheel** (outside `MODE_DEVICE`, where it still steps devices
 as before) now selects the next/previous arranger clip/item instead of
