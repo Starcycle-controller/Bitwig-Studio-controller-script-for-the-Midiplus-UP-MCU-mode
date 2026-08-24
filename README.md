@@ -157,12 +157,19 @@ channel:
   was before the press) - see `showBottomRowPopup()`. Works regardless of
   which mode is currently active (Mixer/Sends/Device), since Solo/Mute
   themselves aren't mode-specific.
+- **Switching modes** (TRACK/I/O, SEND, PLUG-INS/F1-F8, RETURNS) shows a
+  whole-strip announcement - `PLUGIN`/`SENDS`/`RETURNS`/`MIXER` repeated
+  across all 8 channels' bottom row - on entry to that mode and again when
+  it's left back to Mixer, via `showModePopup()`. Paging within Sends
+  (1-8 -> 9-16) doesn't re-announce, since that's not a mode change.
 
-Both share one per-channel debounce mechanism (`lcdOverrideGeneration`) so
-a popup and a pan-reveal on the same channel can't race each other, and
-Bitwig's `scheduleTask` has no way to cancel an earlier still-pending
-timer - each trigger bumps its channel's token, and a scheduled revert
-only actually happens if nothing bumped it again in the meantime.
+All three share one per-channel debounce mechanism (`lcdOverrideGeneration`)
+so they can't race each other, plus a separate single shared token
+(`modePopupGeneration`) for the whole-strip mode announcements specifically
+(so per-channel activity elsewhere doesn't cut it short). Bitwig's
+`scheduleTask` has no way to cancel an earlier still-pending timer - each
+trigger bumps the relevant token(s), and a scheduled revert only actually
+happens if nothing bumped it again in the meantime.
 
 ## Confirmed button map
 

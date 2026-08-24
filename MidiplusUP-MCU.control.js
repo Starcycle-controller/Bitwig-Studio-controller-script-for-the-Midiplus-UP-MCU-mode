@@ -202,6 +202,34 @@ function showBottomRowPopup(index, text) {
    }, LCD_OVERRIDE_TIMEOUT_MS);
 }
 
+// Whole-strip version of showBottomRowPopup() - shows `text` across all 8
+// channels' bottom row at once (a mode-change announcement, e.g. "PLUGIN"/
+// "SENDS"/"RETURNS"/"MIXER"), then reverts all 8 to whatever
+// refreshDisplayText() shows for the (by then already-changed) current
+// mode. Uses its own single shared token (modePopupGeneration) rather than
+// the per-channel one, so it isn't affected by - and doesn't need to
+// individually track - whatever per-channel popups happen to be pending;
+// it still bumps each channel's own token too, so any of THEIR pending
+// reverts become no-ops instead of firing mid-announcement and stomping it.
+var modePopupGeneration = 0;
+
+function showModePopup(text) {
+   modePopupGeneration++;
+   var myGeneration = modePopupGeneration;
+   for (var popupIdx = 0; popupIdx < 8; popupIdx++) {
+      isShowingPanTemporarily[popupIdx] = false;
+      bottomRowText[popupIdx] = formatString(text, 7);
+      lcdOverrideGeneration[popupIdx]++;
+   }
+   displayNeedsUpdate = true;
+   host.scheduleTask(function () {
+      if (modePopupGeneration !== myGeneration) {
+         return;
+      }
+      refreshDisplayText();
+   }, LCD_OVERRIDE_TIMEOUT_MS);
+}
+
 // Called on release of any of the 4 modifier buttons (see the SHIFT/
 // OPTION/CTRL/ALT blocks in onMidi below) - handles the two configurable
 // Plugin Mode standalone-tap actions (see the settings above). Both are
@@ -1395,6 +1423,7 @@ function handleButtonPressInner(note) {
             updateModeLEDs();
             refreshDisplayText();
             rebindFaders();
+            showModePopup("MIXER");
          }
          flashLed(40, 150);
          break;
@@ -1404,16 +1433,24 @@ function handleButtonPressInner(note) {
             currentMode = MODE_SENDS;
             sendBankPage = 0;
             host.showPopupNotification("Mode: Send Faders (Sends 1 - 8)");
+            updateModeLEDs();
+            refreshDisplayText();
+            rebindFaders();
+            showModePopup("SENDS");
          } else if (sendBankPage === 0) {
             sendBankPage = 1;
             host.showPopupNotification("Mode: Send Faders (Sends 9 - 16)");
+            updateModeLEDs();
+            refreshDisplayText();
+            rebindFaders();
          } else {
             currentMode = MODE_MIXER;
             host.showPopupNotification("Mode: Mixer (Track Volume / Pan)");
+            updateModeLEDs();
+            refreshDisplayText();
+            rebindFaders();
+            showModePopup("MIXER");
          }
-         updateModeLEDs();
-         refreshDisplayText();
-         rebindFaders();
          break;
 
       case 42: // PAN -> toggle TOOL_DEVICE_NAME Gain/Pan control (see isToolVolumeMode)
@@ -1478,14 +1515,19 @@ function handleButtonPressInner(note) {
             closeOtherDeviceWindowsIfConfigured();
             cursorDevice.isWindowOpen().set(true);
             host.showPopupNotification("Device: First Plugin");
+            updateModeLEDs();
+            refreshDisplayText();
+            rebindFaders();
+            showModePopup("PLUGIN");
          } else {
             currentMode = MODE_MIXER;
             cursorDevice.isWindowOpen().set(false);
             host.showPopupNotification("Mode: Mixer (Track Volume / Pan)");
+            updateModeLEDs();
+            refreshDisplayText();
+            rebindFaders();
+            showModePopup("MIXER");
          }
-         updateModeLEDs();
-         refreshDisplayText();
-         rebindFaders();
          break;
 
       case 54: case 55: case 56: case 57: case 58: case 59: case 60: case 61:
@@ -1495,7 +1537,8 @@ function handleButtonPressInner(note) {
          // on the selected track's device chain, entering Device mode if
          // not already active.
          var fkeyDeviceIdx = note - 54;
-         if (currentMode !== MODE_DEVICE) {
+         var wasAlreadyInDeviceMode = currentMode === MODE_DEVICE;
+         if (!wasAlreadyInDeviceMode) {
             currentMode = MODE_DEVICE;
             updateModeLEDs();
          }
@@ -1506,6 +1549,9 @@ function handleButtonPressInner(note) {
          closeOtherDeviceWindowsIfConfigured();
          cursorDevice.isWindowOpen().set(true);
          refreshDisplayText();
+         if (!wasAlreadyInDeviceMode) {
+            showModePopup("PLUGIN");
+         }
          rebindFaders();
          host.showPopupNotification("Device " + (fkeyDeviceIdx + 1));
          break;
@@ -1631,6 +1677,7 @@ function handleButtonPressInner(note) {
          if (currentMode === MODE_MIXER) {
             refreshDisplayText();
             rebindFaders();
+            showModePopup(isViewingReturns ? "RETURNS" : "MIXER");
          }
          break;
 
