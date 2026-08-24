@@ -9,12 +9,13 @@ real printed labels.
 **Current script version string:** `3.0.0-native-faders` (shown in Bitwig's
 Settings -> Controllers panel - check this after every reload to confirm
 Bitwig is actually running the current file, not a stale cached copy).
-**Bitwig action reference:** `bitwig-actions-reference.txt` - a captured
-dump of `application.getActionCategories()`/`getActions()` (id + display
-name per action, ~781 total, partial - see the file's own header). Check
-here before guessing an action id for `safeInvokeAction()`/
-`application.getAction()` (like the Consolidate F-key function needed,
-see Function Keys settings below) instead of a fresh diagnostic dump.
+**Bitwig action reference:** `bitwig-actions-reference.txt` - a complete,
+human-readable dump of `application.getActionCategories()`/`getActions()`
+(781 actions across 20 categories, verified complete against the dump's
+own total). Check here before guessing an action id for
+`safeInvokeAction()`/`application.getAction()` (like the Consolidate
+F-key function needed, see Function Keys settings below) instead of a
+fresh diagnostic dump.
 
 ## Status: faders fixed, button-assignment audit still open
 

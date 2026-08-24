@@ -780,30 +780,6 @@ function init() {
    application = host.createApplication();
    arranger = host.createArranger();
 
-   // TEMPORARY DIAGNOSTIC: dumps every action Bitwig exposes via
-   // getActionCategories()/getActions() to the console once at startup -
-   // requested again after the first attempt (one println() per ACTION,
-   // ~800+ lines) got its early portion truncated by the console's
-   // scrollback buffer. This version prints exactly ONE println() per
-   // CATEGORY (~20 total, each listing all of that category's actions
-   // semicolon-separated) instead of one per action, so the whole dump
-   // should fit easily even though individual lines get long. Remove
-   // this block once the console output has been captured (see
-   // bitwig-actions-reference.txt, which this is meant to complete/replace).
-   var allCategories = application.getActionCategories();
-   var totalActionCount = 0;
-   for (var catIdx = 0; catIdx < allCategories.length; catIdx++) {
-      var category = allCategories[catIdx];
-      var categoryActions = category.getActions();
-      var actionEntries = [];
-      for (var catActionIdx = 0; catActionIdx < categoryActions.length; catActionIdx++) {
-         actionEntries.push(categoryActions[catActionIdx].getId() + "/" + categoryActions[catActionIdx].getName());
-         totalActionCount++;
-      }
-      println("=== " + category.getName() + " (" + categoryActions.length + ") === " + actionEntries.join(" ;; "));
-   }
-   println("=== Total: " + totalActionCount + " actions across " + allCategories.length + " categories ===");
-
    // Read on-demand (not observed) by END, CTRL+PUNCH IN/OUT, and the jog
    // wheel's bar-jump/loop-shift handling, so they need markInterested() or
    // .get() throws.

@@ -1,458 +1,881 @@
-Bitwig Studio Controller API - application.getActionCategories()/getActions() dump
-====================================================================================
+Bitwig Studio Controller API - complete action reference
+==========================================================
 
 Captured via a temporary startup diagnostic in MidiplusUP-MCU.control.js
-(application.getActionCategories(), each category's getActions(), printing
-"id" / "name" per action - see git history for the diagnostic code, since
-removed once this was saved). Format per line: "id" / "Display Name".
+(application.getActionCategories(), each category's getActions()). Use
+this to look up the correct id for safeInvokeAction(id, popupText)/
+application.getAction(id).invoke() before guessing one - guessing wrong
+costs a guess-test-fix round trip on real hardware (as Consolidate did).
 
-PARTIAL DUMP - the console's scrollback buffer truncated the START of the
-output, so an unknown number of categories/actions before "Consolidate"
-below are missing (likely includes core Transport/Track/Device/Edit-type
-categories - re-run the diagnostic and capture output in smaller chunks,
-or immediately after reload before other console spam pushes it out, to
-fill this in later if needed).
+781 actions across 20 categories. Complete (unlike the
+first capture attempt, which got truncated by the console's scrollback
+buffer) - confirmed by the dump's own "Total" line matching the count here,
+and the capture starting right after the script's own "Initializing..."
+line and ending at "Script Ready".
 
-781 actions across 20 categories total (per the dump's own summary line) -
-this file only contains the categories that fit in the buffer (from partway
-through one category, through "Clip Launcher").
+Format: one action per line, "id" -> "Display Name" (as shown in Bitwig's
+own Commander/menus). Categories are Bitwig's own grouping, sorted
+alphabetically here; actions within each category are sorted by display
+name for easy scanning.
 
---------------------------------------------------------------------------
-(category name truncated/missing - partial list, picks up mid-category)
---------------------------------------------------------------------------
-"Consolidate" / "Consolidate"
-"reverse" / "Reverse"
-"reverse_pattern" / "Reverse Pattern"
-"scale_time" / "Scale..."
-"scale_time_double" / "Scale 200%"
-"scale_time_half" / "Scale 50%"
-"scale_each_double" / "Scale Each 200%"
-"scale_each_half" / "Scale Each 50%"
-"bounce_in_place" / "Bounce In Place (Pre-FX)"
-"bounce_in_place_pre_fader" / "Bounce In Place (Pre-Fader)"
-"bounce_in_place_post_fader" / "Bounce In Place (Post-Fader)"
-"bounce" / "Bounce..."
-"elevate_tempo" / "Apply Tempo Curve to Arranger"
-"elevate_fixed_tempo" / "Set Project Tempo"
-"expand" / "Expand..."
-"multiplex" / "Fold to Takes..."
-"select_start_of_selection_range" / "Select Start of Selection Range"
-"select_end_of_selection_range" / "Select End of Selection Range"
-"move_time_selection_one_step_earlier" / "Move Time Selection One Step Earlier"
-"move_time_selection_one_step_later" / "Move Time Selection One Step Later"
-"move_time_selection_one_event_earlier" / "Move Time Selection One Event Earlier"
-"move_time_selection_one_event_later" / "Move Time Selection One Event Later"
-"move_time_selection_to_first_item" / "Move Time Selection to First Item"
-"move_time_selection_to_last_item" / "Move Time Selection to Last Item"
-"extend_time_selection_range_to_previous_step" / "Extend Time Selection Range to Previous Step"
-"extend_time_selection_range_to_next_step" / "Extend Time Selection Range to Next Step"
-"extend_time_selection_range_to_previous_item" / "Extend Time Selection Range to Previous Item"
-"extend_time_selection_range_to_next_item" / "Extend Time Selection Range to Next Item"
-"extend_time_selection_range_to_first_item" / "Extend Time Selection Range to First Item"
-"extend_time_selection_range_to_last_item" / "Extend Time Selection Range to Last Item"
-"create_clip" / "Create Empty Clip"
-"fade_in" / "Fade In to Here"
-"fade_out" / "Fade Out from Here"
-"set_event_start" / "Set Object Start"
-"set_event_end" / "Set Object End"
-"double_content" / "Double Content"
-"transpose_semitone_down" / "Transpose a Semitone Down"
-"transpose_semitone_up" / "Transpose a Semitone Up"
-"transpose_octave_down" / "Transpose an Octave Down"
-"transpose_octave_up" / "Transpose an Octave Up"
-"increase_gain_1db" / "Gain +1dB"
-"increase_gain_6db" / "Gain +6dB"
-"reduce_gain_1db" / "Gain -1dB"
-"reduce_gain_6db" / "Gain -6dB"
-"slide_content_step_left" / "Slide Content Left"
-"slide_content_step_right" / "Slide Content Right"
-"Set Clip Start" / "Set Clip Start"
-"quantize" / "Quantize..."
-"quantize_again" / "Quantize"
-"quantize_audio" / "Quantize Audio..."
-"quantize_audio_again" / "Quantize Audio"
-"legato" / "Make Legato"
-"fixed_length" / "Quantize Length"
-"quantize_to_key" / "Quantize to Key"
-"Loop Selection" / "Loop Selected Region"
-"nudge_events_one_bar_earlier" / "Nudge Events Fine/Alternate Amount Backward"
-"nudge_events_one_step_earlier" / "Nudge Events One Step Backward"
-"nudge_events_one_bar_later" / "Nudge Events Fine/Alternate Amount Forward"
-"nudge_events_one_step_later" / "Nudge Events One Step Forward"
-"make_events_one_bar_shorter" / "Make Events Fine/Alternate Amount Shorter"
-"make_events_one_step_shorter" / "Make Events One Step Shorter"
-"make_events_one_bar_longer" / "Make Events Fine/Alternate Amount Longer"
-"make_events_one_step_longer" / "Make Events One Step Longer"
-"reset_fades" / "Reset Fades"
-"auto_fade" / "Auto-Fade"
-"auto_crossfade" / "Auto-Crossfade"
-"normalize" / "Normalize"
-"make_unique" / "Make Unique"
-"wrap_related_automation" / "Wrap Related Automation as Clips"
-"detect_tempo" / "Detect Event Tempo..."
-"stretch_to_tempo" / "Set Event Tempo..."
-"stretch_to_project_tempo" / "Set Event to current Project Tempo"
-"stretch_to_analyzed_tempo" / "Detect Event Tempo"
-"slide_to_previous_onset" / "Slide Waveform to Previous Onset"
-"slide_to_next_onset" / "Slide Waveform to Next Onset"
-"show_beat_grid" / "Show Beat Grid"
-"show_time_grid" / "Show Time Grid"
-"double_grid_size" / "Larger Beat Grid"
-"half_grid_size" / "Smaller Beat Grid"
-"toggle_snapping" / "Time Snapping"
-"toggle_object_snapping" / "Snap to Other Events"
-"toggle_absolute_grid_snapping" / "Snap to Beat Grid"
-"toggle_relative_grid_snapping" / "Snap Relative to Original Event"
-"toggle_adaptive_grid" / "Adaptive Beat Grid"
-"prev_grid_subdivision" / "Larger Beat Grid Subdivision"
-"next_grid_subdivision" / "Smaller Beat Grid Subdivision"
-"play_from_left_edge_of_current_editor" / "Play from Left Edge of Current Editor"
-"adjust_event_value_step_up" / "Adjust Value Step Up"
-"adjust_event_value_step_down" / "Adjust Value Step Down"
-"adjust_event_value_fine_step_up" / "Adjust Value Up (fine)"
-"adjust_event_value_fine_step_down" / "Adjust Value Down (fine)"
-"load_default_preset" / "Load Default Preset"
-"save_default_preset" / "Save as Default Preset"
-"show_in_finder" / "Show in Finder"
-"edit_file_meta_data" / "Edit File Metadata..."
-"show_insert_popup_browser" / "Insert from Library..."
-"launch" / "Launch"
-"merge_duplicate_patterns" / "Merge Duplicate Patterns"
-"slice_in_place" / "Slice In Place..."
-"slice_at_repeats" / "Slice At Repeats"
-"slice_to_drum_track" / "Slice to Drum Machine..."
-"slice_to_multi_sampler_track" / "Slice to Multisample..."
-"insert_silence" / "Insert Silence"
-"cut_and_pull" / "Cut Time"
-"paste_and_push" / "Paste Time"
-"duplicate_and_push" / "Duplicate Time"
-"delete_and_pull" / "Remove Time"
-"note_color_mode.clip" / "Color Notes by Clip"
-"note_color_mode.channel" / "Color Notes by Channel"
-"note_color_mode.pitch_class" / "Color Notes by Pitch Class"
-"note_color_mode.velocity" / "Color Notes by Velocity"
-"note_expression.clear.all" / "Clear all Expressions"
-"note_expression.clear.selected" / "Clear selected Expression"
-"toggle_plugin_device_window" / "Toggle Expanded Device View of Selected Device"
-"toggle_primary_device_window" / "Toggle Undocked Expanded Device View of Track's Primary Device"
-"convert_to_instrument_track" / "Convert to Instrument Track"
-"convert_to_audio_track" / "Convert to Audio Track"
-"convert_to_hybrid_track" / "Convert to Hybrid Track"
-"make_permanent" / "Add Automation Lane"
-"show_advanced_settings" / "Show Advanced Settings"
+----------------------------------------------------------------------
+Arranger (75)
+----------------------------------------------------------------------
+  arranger_zoom_to_fit_selection_or_previous   -> Horizontally Zoom Arranger to Fit Selection or Previous
+  insert_arranger_cue_marker_at_play_position  -> Insert Cue Marker Here
+  jump_backward_8_bars                         -> Jump Backward 8 Bars
+  jump_forward_8_bars                          -> Jump Forward 8 Bars
+  jump_to_beginning_of_arrangement             -> Jump to Beginning of Arrangement
+  jump_to_beginning_of_arranger_loop           -> Jump to Beginning of Arranger Loop
+  jump_to_beginning_of_arranger_window         -> Jump to Beginning of Arranger Window
+  jump_to_beginning_of_current_bar             -> Jump to Beginning of Current Bar
+  jump_to_beginning_of_next_bar                -> Jump to Beginning of Next Bar
+  jump_to_beginning_of_previous_bar            -> Jump to Beginning of Previous Bar
+  jump_to_end_of_arrangement                   -> Jump to End of Arrangement
+  jump_to_end_of_arranger_loop                 -> Jump to End of Arranger Loop
+  jump_to_next_cue_marker                      -> Jump to Next Cue Marker
+  jump_to_playback_start_time                  -> Jump to Playback Start Time
+  jump_to_previous_cue_marker                  -> Jump to Previous Cue Marker
+  launch_arranger_cue_marker1                  -> Launch Arranger Cue Marker 1
+  launch_arranger_cue_marker10                 -> Launch Arranger Cue Marker 10
+  launch_arranger_cue_marker11                 -> Launch Arranger Cue Marker 11
+  launch_arranger_cue_marker12                 -> Launch Arranger Cue Marker 12
+  launch_arranger_cue_marker13                 -> Launch Arranger Cue Marker 13
+  launch_arranger_cue_marker14                 -> Launch Arranger Cue Marker 14
+  launch_arranger_cue_marker15                 -> Launch Arranger Cue Marker 15
+  launch_arranger_cue_marker16                 -> Launch Arranger Cue Marker 16
+  launch_arranger_cue_marker17                 -> Launch Arranger Cue Marker 17
+  launch_arranger_cue_marker18                 -> Launch Arranger Cue Marker 18
+  launch_arranger_cue_marker19                 -> Launch Arranger Cue Marker 19
+  launch_arranger_cue_marker2                  -> Launch Arranger Cue Marker 2
+  launch_arranger_cue_marker20                 -> Launch Arranger Cue Marker 20
+  launch_arranger_cue_marker21                 -> Launch Arranger Cue Marker 21
+  launch_arranger_cue_marker22                 -> Launch Arranger Cue Marker 22
+  launch_arranger_cue_marker23                 -> Launch Arranger Cue Marker 23
+  launch_arranger_cue_marker24                 -> Launch Arranger Cue Marker 24
+  launch_arranger_cue_marker25                 -> Launch Arranger Cue Marker 25
+  launch_arranger_cue_marker26                 -> Launch Arranger Cue Marker 26
+  launch_arranger_cue_marker27                 -> Launch Arranger Cue Marker 27
+  launch_arranger_cue_marker28                 -> Launch Arranger Cue Marker 28
+  launch_arranger_cue_marker29                 -> Launch Arranger Cue Marker 29
+  launch_arranger_cue_marker3                  -> Launch Arranger Cue Marker 3
+  launch_arranger_cue_marker30                 -> Launch Arranger Cue Marker 30
+  launch_arranger_cue_marker31                 -> Launch Arranger Cue Marker 31
+  launch_arranger_cue_marker32                 -> Launch Arranger Cue Marker 32
+  launch_arranger_cue_marker33                 -> Launch Arranger Cue Marker 33
+  launch_arranger_cue_marker34                 -> Launch Arranger Cue Marker 34
+  launch_arranger_cue_marker35                 -> Launch Arranger Cue Marker 35
+  launch_arranger_cue_marker36                 -> Launch Arranger Cue Marker 36
+  launch_arranger_cue_marker37                 -> Launch Arranger Cue Marker 37
+  launch_arranger_cue_marker38                 -> Launch Arranger Cue Marker 38
+  launch_arranger_cue_marker39                 -> Launch Arranger Cue Marker 39
+  launch_arranger_cue_marker4                  -> Launch Arranger Cue Marker 4
+  launch_arranger_cue_marker40                 -> Launch Arranger Cue Marker 40
+  launch_arranger_cue_marker5                  -> Launch Arranger Cue Marker 5
+  launch_arranger_cue_marker6                  -> Launch Arranger Cue Marker 6
+  launch_arranger_cue_marker7                  -> Launch Arranger Cue Marker 7
+  launch_arranger_cue_marker8                  -> Launch Arranger Cue Marker 8
+  launch_arranger_cue_marker9                  -> Launch Arranger Cue Marker 9
+  launch_from_beginning_of_arrangement         -> Launch from Beginning of Arrangement
+  launch_from_beginning_of_arranger_loop       -> Launch from Beginning of Arranger Loop
+  launch_from_end_of_arrangement               -> Launch from End of Arrangement
+  launch_from_end_of_arranger_loop             -> Launch from End of Arranger Loop
+  launch_from_playback_start_time              -> Launch from Playback Start Time
+  launch_next_cue_marker                       -> Launch Next Cue Marker
+  launch_previous_cue_marker                   -> Launch Previous Cue Marker
+  toggle_automation_shown_for_all_tracks       -> Toggle Automation Lanes for All Tracks
+  toggle_automation_shown_for_selected_tracks  -> Toggle Automation Lanes for Selected Tracks
+  toggle_edit_automation                       -> Toggle Automation Mode
+  toggle_show_flying_automation_lane           -> Toggle Flying Automation Lane
+  arranger_zoom_to_fit                         -> Zoom Arranger to Fit
+  arranger_zoom_to_fit_selection_or_all        -> Zoom Arranger to Fit Selection or All
+  arranger_zoom_to_selection                   -> Zoom Arranger to Selection
+  arranger_zoom_in                             -> Zoom In Arranger
+  arranger_zoom_in_lane_heights_all            -> Zoom In Arranger Lane Heights (All Tracks)
+  arranger_zoom_in_lane_heights_selected       -> Zoom In Arranger Lane Heights (Selected Tracks)
+  arranger_zoom_out                            -> Zoom Out Arranger
+  arranger_zoom_out_lane_heights_all           -> Zoom Out Arranger Lane Heights (All Tracks)
+  arranger_zoom_out_lane_heights_selected      -> Zoom Out Arranger Lane Heights (Selected Tracks)
 
-=== Category: Help (5 actions) ===
-"show_help" / "Show Item Help"
-"help_user_guide" / "User Guide (English)..."
-"help_user_guide_jp" / "User Guide (Japanese)..."
-"help_user_guide_de" / "User Guide (German)..."
-"show_online_learning" / "Show Online Learning..."
+----------------------------------------------------------------------
+Browser (57)
+----------------------------------------------------------------------
+  add_music_location                        -> Add Music Location…
+  add_plugin_location                       -> Add Plug-in Location…
+  add_content_location                      -> Add Sound Content Location…
+  clear_focused_filter                      -> Clear Focused Filter
+  create_collection                         -> Create Collection…
+  edit_smart_collection                     -> Edit Smart Collection
+  focus_file_list                           -> Focus Browser File List
+  focus_file_overview                       -> Focus Browser Overview List
+  focus_browser_search_field                -> Focus Browser Search Field
+  focus_category_column                     -> Focus Category Column
+  focus_category_or_creator_column          -> Focus Category Or Creator Column
+  focus_creator_column                      -> Focus Creator Column
+  focus_device_column                       -> Focus Device Column
+  focus_file_kind_or_type_column            -> Focus File Kind Or Type Column
+  focus_filters                             -> Focus Filters
+  focus_location_column                     -> Focus Location Column
+  focus_tags_column                         -> Focus Tags Column
+  focus_vendor_column                       -> Focus Vendor Column
+  remove_from_collections                   -> Remove from all Collections
+  save_smart_collection                     -> Save Smart Collection…
+  save_snapshot                             -> Save Snapshot…
+  select_everything                         -> Select Everything
+  select_next_filter_column                 -> Select Next Filter Column
+  select_next_palette_item                  -> Select Next Palette Item
+  select_next_search_source                 -> Select Next Search Source
+  select_prev_filter_column                 -> Select Prev Filter Column
+  select_prev_palette_item                  -> Select Prev Palette Item
+  select_prev_search_source                 -> Select Previous Search Source
+  select_quick_source1                      -> Select Quick Source 1
+  select_quick_source2                      -> Select Quick Source 2
+  select_quick_source3                      -> Select Quick Source 3
+  select_quick_source4                      -> Select Quick Source 4
+  select_quick_source5                      -> Select Quick Source 5
+  select_quick_source6                      -> Select Quick Source 6
+  select_quick_source7                      -> Select Quick Source 7
+  select_quick_source8                      -> Select Quick Source 8
+  select_quick_source9                      -> Select Quick Source 9
+  select_quick_sub-source1                  -> Select Quick sub-source 1
+  select_quick_sub-source2                  -> Select Quick sub-source 2
+  select_quick_sub-source3                  -> Select Quick sub-source 3
+  select_quick_sub-source4                  -> Select Quick sub-source 4
+  select_quick_sub-source5                  -> Select Quick sub-source 5
+  show_presets_for_device                   -> Show Presets for Device
+  stop_showing_presets_for_device           -> Stop Showing Presets for Device
+  toggle_source_browser                     -> Toggle All Sources view
+  toggle_collection1                        -> Toggle Collection 1
+  toggle_collection2                        -> Toggle Collection 2
+  toggle_collection3                        -> Toggle Collection 3
+  toggle_collection4                        -> Toggle Collection 4
+  toggle_collection5                        -> Toggle Collection 5
+  toggle_collection6                        -> Toggle Collection 6
+  toggle_collection7                        -> Toggle Collection 7
+  toggle_collection8                        -> Toggle Collection 8
+  toggle_collection9                        -> Toggle Collection 9
+  toggle_favorite                           -> Toggle Favorite
+  toggle_preview_playback_of_selected_file  -> Toggle Preview Playback of Selected File
+  toggle_show_favorites                     -> Toggle Show Favorites
 
-=== Category: Dialogs (4 actions) ===
-"Cancel Dialog" / "Cancel Dialog"
-"Dialog: Yes" / "Yes"
-"Dialog: No" / "No"
-"Dialog: OK" / "OK"
+----------------------------------------------------------------------
+Clip Launcher (91)
+----------------------------------------------------------------------
+  Create Scene From Playing Launcher Clips  -> Add Scene from Playing Clips
+  launch_next_scene                         -> Launch Next Scene
+  launch_next_slot                          -> Launch Next Slot (relative to playing clip)
+  launch_prev_scene                         -> Launch Previous Scene
+  launch_prev_slot                          -> Launch Previous Slot (relative to playing clip)
+  launch_scene1                             -> Launch Scene 1
+  launch_scene10                            -> Launch Scene 10
+  launch_scene11                            -> Launch Scene 11
+  launch_scene12                            -> Launch Scene 12
+  launch_scene13                            -> Launch Scene 13
+  launch_scene14                            -> Launch Scene 14
+  launch_scene15                            -> Launch Scene 15
+  launch_scene16                            -> Launch Scene 16
+  launch_scene17                            -> Launch Scene 17
+  launch_scene18                            -> Launch Scene 18
+  launch_scene19                            -> Launch Scene 19
+  launch_scene2                             -> Launch Scene 2
+  launch_scene20                            -> Launch Scene 20
+  launch_scene21                            -> Launch Scene 21
+  launch_scene22                            -> Launch Scene 22
+  launch_scene23                            -> Launch Scene 23
+  launch_scene24                            -> Launch Scene 24
+  launch_scene25                            -> Launch Scene 25
+  launch_scene26                            -> Launch Scene 26
+  launch_scene27                            -> Launch Scene 27
+  launch_scene28                            -> Launch Scene 28
+  launch_scene29                            -> Launch Scene 29
+  launch_scene3                             -> Launch Scene 3
+  launch_scene30                            -> Launch Scene 30
+  launch_scene31                            -> Launch Scene 31
+  launch_scene32                            -> Launch Scene 32
+  launch_scene33                            -> Launch Scene 33
+  launch_scene34                            -> Launch Scene 34
+  launch_scene35                            -> Launch Scene 35
+  launch_scene36                            -> Launch Scene 36
+  launch_scene37                            -> Launch Scene 37
+  launch_scene38                            -> Launch Scene 38
+  launch_scene39                            -> Launch Scene 39
+  launch_scene4                             -> Launch Scene 4
+  launch_scene40                            -> Launch Scene 40
+  launch_scene5                             -> Launch Scene 5
+  launch_scene6                             -> Launch Scene 6
+  launch_scene7                             -> Launch Scene 7
+  launch_scene8                             -> Launch Scene 8
+  launch_scene9                             -> Launch Scene 9
+  launch_scene                              -> Launch Scene At Cursor
+  launch_slot1                              -> Launch Slot 1
+  launch_slot10                             -> Launch Slot 10
+  launch_slot11                             -> Launch Slot 11
+  launch_slot12                             -> Launch Slot 12
+  launch_slot13                             -> Launch Slot 13
+  launch_slot14                             -> Launch Slot 14
+  launch_slot15                             -> Launch Slot 15
+  launch_slot16                             -> Launch Slot 16
+  launch_slot17                             -> Launch Slot 17
+  launch_slot18                             -> Launch Slot 18
+  launch_slot19                             -> Launch Slot 19
+  launch_slot2                              -> Launch Slot 2
+  launch_slot20                             -> Launch Slot 20
+  launch_slot21                             -> Launch Slot 21
+  launch_slot22                             -> Launch Slot 22
+  launch_slot23                             -> Launch Slot 23
+  launch_slot24                             -> Launch Slot 24
+  launch_slot25                             -> Launch Slot 25
+  launch_slot26                             -> Launch Slot 26
+  launch_slot27                             -> Launch Slot 27
+  launch_slot28                             -> Launch Slot 28
+  launch_slot29                             -> Launch Slot 29
+  launch_slot3                              -> Launch Slot 3
+  launch_slot30                             -> Launch Slot 30
+  launch_slot31                             -> Launch Slot 31
+  launch_slot32                             -> Launch Slot 32
+  launch_slot33                             -> Launch Slot 33
+  launch_slot34                             -> Launch Slot 34
+  launch_slot35                             -> Launch Slot 35
+  launch_slot36                             -> Launch Slot 36
+  launch_slot37                             -> Launch Slot 37
+  launch_slot38                             -> Launch Slot 38
+  launch_slot39                             -> Launch Slot 39
+  launch_slot4                              -> Launch Slot 4
+  launch_slot40                             -> Launch Slot 40
+  launch_slot5                              -> Launch Slot 5
+  launch_slot6                              -> Launch Slot 6
+  launch_slot7                              -> Launch Slot 7
+  launch_slot8                              -> Launch Slot 8
+  launch_slot9                              -> Launch Slot 9
+  toggle_has_stop_button                    -> Remove/restore Stop Button
+  target_next_scene                         -> Scroll to Next Scene
+  target_prev_scene                         -> Scroll to Previous Scene
+  target_selected_scene                     -> Target Selected Scene
+  toggle_clip_launcher_overdub              -> Toggle Clip Launcher Overdub
 
-=== Category: Navigation (66 actions) ===
-"Enter Group" / "Enter Group"
-"Exit Group" / "Exit Group"
-"open_in_editor" / "Open in Editor"
-"Expand Item" / "Expand Item"
-"Collapse Item" / "Collapse Item"
-"Focus panel to the left" / "Focus panel to the left"
-"Focus panel to the right" / "Focus panel to the right"
-"Focus panel above" / "Focus panel above"
-"Focus panel below" / "Focus panel below"
-"Focus next panel" / "Focus next panel"
-"Focus previous panel" / "Focus previous panel"
-"Focus next field" / "Focus next field"
-"Focus previous field" / "Focus previous field"
-"Focus widget to the left" / "Focus widget to the left"
-"Focus widget to the right" / "Focus widget to the right"
-"Focus widget above" / "Focus widget above"
-"Focus widget below" / "Focus widget below"
-"Toggle expanded state" / "Toggle expanded state"
-"toggle_siblings_expanded_state" / "Toggle siblings expanded state"
-"toggle_children_expanded_state" / "Toggle children expanded state"
-"Select Next Project" / "Select Next Project"
-"Select Previous Project" / "Select Previous Project"
-"select_next_tab" / "Select Next Tab"
-"select_previous_tab" / "Select Previous Tab"
-"select_next_project_and_activate_audio_engine" / "Select Next Project and Activate Audio Engine"
-"select_prev_project_and_activate_audio_engine" / "Select Previous Project and Activate Audio Engine"
-"select_project1" / "Select Project 1"
-"select_project2" / "Select Project 2"
-"select_project3" / "Select Project 3"
-"select_project4" / "Select Project 4"
-"select_project5" / "Select Project 5"
-"select_project6" / "Select Project 6"
-"select_project7" / "Select Project 7"
-"select_project8" / "Select Project 8"
-"select_project9" / "Select Project 9"
-"select_project10" / "Select Project 10"
-"select_project11" / "Select Project 11"
-"select_project12" / "Select Project 12"
-"select_project13" / "Select Project 13"
-"select_project14" / "Select Project 14"
-"select_project15" / "Select Project 15"
-"select_project16" / "Select Project 16"
-"select_project17" / "Select Project 17"
-"select_project18" / "Select Project 18"
-"select_project19" / "Select Project 19"
-"select_project20" / "Select Project 20"
-"select_project_and_activate_audio_engine1" / "Select Project 1 and Activate Audio Engine"
-"select_project_and_activate_audio_engine2" / "Select Project 2 and Activate Audio Engine"
-"select_project_and_activate_audio_engine3" / "Select Project 3 and Activate Audio Engine"
-"select_project_and_activate_audio_engine4" / "Select Project 4 and Activate Audio Engine"
-"select_project_and_activate_audio_engine5" / "Select Project 5 and Activate Audio Engine"
-"select_project_and_activate_audio_engine6" / "Select Project 6 and Activate Audio Engine"
-"select_project_and_activate_audio_engine7" / "Select Project 7 and Activate Audio Engine"
-"select_project_and_activate_audio_engine8" / "Select Project 8 and Activate Audio Engine"
-"select_project_and_activate_audio_engine9" / "Select Project 9 and Activate Audio Engine"
-"select_project_and_activate_audio_engine10" / "Select Project 10 and Activate Audio Engine"
-"select_project_and_activate_audio_engine11" / "Select Project 11 and Activate Audio Engine"
-"select_project_and_activate_audio_engine12" / "Select Project 12 and Activate Audio Engine"
-"select_project_and_activate_audio_engine13" / "Select Project 13 and Activate Audio Engine"
-"select_project_and_activate_audio_engine14" / "Select Project 14 and Activate Audio Engine"
-"select_project_and_activate_audio_engine15" / "Select Project 15 and Activate Audio Engine"
-"select_project_and_activate_audio_engine16" / "Select Project 16 and Activate Audio Engine"
-"select_project_and_activate_audio_engine17" / "Select Project 17 and Activate Audio Engine"
-"select_project_and_activate_audio_engine18" / "Select Project 18 and Activate Audio Engine"
-"select_project_and_activate_audio_engine19" / "Select Project 19 and Activate Audio Engine"
-"select_project_and_activate_audio_engine20" / "Select Project 20 and Activate Audio Engine"
+----------------------------------------------------------------------
+Comping (2)
+----------------------------------------------------------------------
+  select_next_take      -> Select Next Take
+  select_previous_take  -> Select Previous Take
 
-=== Category: Search (1 actions) ===
-"invoke_searchfield_action" / "Invoke search-field action"
+----------------------------------------------------------------------
+Detail Editor (38)
+----------------------------------------------------------------------
+  toggle_audition_notes                            -> Audition Notes
+  toggle_auto_crossfades                           -> Automatic Crossfades
+  detail_editor_zoom_to_fit_selection_or_previous  -> Horizontally Zoom Detail Editor to Fit Selection or Previous
+  show_next_layers                                 -> Navigate to Next Editor Content
+  show_previous_layers                             -> Navigate to Previous Editor Content
+  show_audio_editor_mode                           -> Show Audio Editor
+  show_automation_editor_mode                      -> Show Automation Editor
+  show_comping_editor_mode                         -> Show Comping Editor
+  show_pattern_editor_mode                         -> Show Drum/Hybrid Editor
+  show_expression_editor_mode                      -> Show Expression Editor
+  select_next_detail_editor_mode                   -> Show next editor mode
+  show_piano_roll_editor_mode                      -> Show Piano Roll
+  select_previous_detail_editor_mode               -> Show previous editor mode
+  toggle_scale_snapping                            -> Snap to Key
+  toggle_note_editor_automation_section            -> Toggle Automation Lane
+  toggle_edit_audio_expression                     -> Toggle Edit Audio Expression
+  toggle_edit_audio_formant_expression             -> Toggle Edit Audio Formant
+  toggle_edit_audio_gain_expression                -> Toggle Edit Audio Gain
+  toggle_edit_audio_pan_expression                 -> Toggle Edit Audio Pan
+  toggle_edit_audio_transpose_expression           -> Toggle Edit Audio Transpose
+  toggle_edit_note_expression                      -> Toggle Edit Note Expression
+  toggle_edit_note_gain_expression                 -> Toggle Edit Note Gain
+  toggle_edit_note_pan_expression                  -> Toggle Edit Note Pan
+  toggle_edit_note_pressure_expression             -> Toggle Edit Note Pressure
+  toggle_edit_note_timbre_expression               -> Toggle Edit Note Timbre
+  toggle_edit_note_transpose_expression            -> Toggle Edit Note Transpose
+  toggle_edit_onsets                               -> Toggle Edit Onsets
+  toggle_edit_stretch                              -> Toggle Edit Stretch
+  toggle_layer_list_visibility                     -> Toggle Layer List
+  toggle_channel_list_visibility                   -> Toggle Note Channel Filter
+  toggle_note_editor_expression_section            -> Toggle Note Expression Lane
+  detail_editor_zoom_to_fit                        -> Zoom Detail Editor to Fit
+  detail_editor_zoom_to_fit_selection_or_all       -> Zoom Detail Editor to Fit Selection or All
+  detail_editor_zoom_to_selection                  -> Zoom Detail Editor to Selection
+  detail_editor_zoom_in                            -> Zoom In Detail Editor
+  detail_editor_zoom_in_lane_heights               -> Zoom In Detail Editor Lane Heights
+  detail_editor_zoom_out                           -> Zoom Out Detail Editor
+  detail_editor_zoom_out_lane_heights              -> Zoom Out Detail Editor Lane Heights
 
-=== Category: File (11 actions) ===
-"New" / "New Project"
-"Open" / "Open..."
-"Save" / "Save"
-"Save as" / "Save as..."
-"Close" / "Close"
-"Quit" / "Quit"
-"new_from_template" / "New From Template..."
-"save_as_template" / "Save as Template..."
-"add_to_library" / "Save to Library..."
-"import_wavetables" / "Import Wavetables..."
-"import_impulses" / "Import Impulses..."
+----------------------------------------------------------------------
+Dialogs (4)
+----------------------------------------------------------------------
+  Cancel Dialog  -> Cancel Dialog
+  Dialog: No     -> No
+  Dialog: OK     -> OK
+  Dialog: Yes    -> Yes
 
-=== Category: Selection (52 actions) ===
-"Select All" / "Select All"
-"Unselect All" / "Deselect All"
-"Select first item" / "Select first item"
-"Select last item" / "Select last item"
-"select_item_at_cursor" / "Select item at cursor"
-"move_selection_cursor_to_first_item" / "Move selection cursor to first item"
-"move_selection_cursor_to_last_item" / "Move selection cursor to last item"
-"move_selection_cursor_to_next_item" / "Move selection cursor to next item"
-"move_selection_cursor_to_previous_item" / "Move selection cursor to previous item"
-"Extend selection range to first item" / "Extend selection range to first item"
-"Extend selection range to last item" / "Extend selection range to last item"
-"Extend selection range to next item" / "Extend selection range to next item"
-"Extend selection range to previous item" / "Extend Selection Range to Previous Item"
-"Extend selection to first item" / "Extend selection to first item"
-"Extend selection to last item" / "Extend selection to last item"
-"Select previous item" / "Select Previous Item"
-"Select next item" / "Select Next Item"
-"Extend selection to next item" / "Extend Selection to Next Item"
-"Extend selection to previous item" / "Extend Selection to Previous Item"
-"Toggle selection of item at cursor" / "Toggle selection of item at cursor"
-"Select item in next lane" / "Select Item in Next Lane"
-"Select item in previous lane" / "Select Item in Previous Lane"
-"Select item in first lane" / "Select Item in First Lane"
-"Select item in last lane" / "Select Item in last Lane"
-"Move cursor to next lane" / "Move Cursor to Next Lane"
-"Move cursor to previous lane" / "Move Cursor to Previous Lane"
-"Move cursor to first lane" / "Move Cursor to First Lane"
-"Move cursor to last lane" / "Move Cursor to Last Lane"
-"Extend selection to next lane" / "Extend Selection to Next Lane"
-"Extend selection to previous lane" / "Extend Selection to Previous Lane"
-"Extend selection to first lane" / "Extend Selection to First Lane"
-"Extend selection to last lane" / "Extend Selection to Last Lane"
-"Extend selection range to next lane" / "Extend Selection Range to Next Lane"
-"Extend selection range to previous lane" / "Extend Selection Range to Previous Lane"
-"Extend selection range to first lane" / "Extend Selection Range to First Lane"
-"Extend selection range to last lane" / "Extend Selection Range to Last Lane"
-"Select item to left" / "Select item to left"
-"Select item to right" / "Select item to right"
-"Select item above" / "Select item above"
-"Select item below" / "Select item below"
-"Move selection cursor left" / "Move selection cursor left"
-"Move selection cursor right" / "Move selection cursor right"
-"Move selection cursor up" / "Move selection cursor up"
-"Move selection cursor down" / "Move selection cursor down"
-"Extend selection range to item to left" / "Extend selection range to item to left"
-"Extend selection range to item to right" / "Extend selection range to item to right"
-"Extend selection range to item above" / "Extend selection range to item above"
-"Extend selection range to item below" / "Extend selection range to item below"
-"Extend selection to item to left" / "Extend selection to item to left"
-"Extend selection to item to right" / "Extend selection to item to right"
-"Extend selection to item above" / "Extend selection to item above"
-"Extend selection to item below" / "Extend selection to item below"
+----------------------------------------------------------------------
+Editing (22)
+----------------------------------------------------------------------
+  Activate                                 -> Activate
+  Copy                                     -> Copy
+  Cut                                      -> Cut
+  Deactivate                               -> Deactivate
+  Delete                                   -> Delete
+  Duplicate                                -> Duplicate
+  Duplicate Reference                      -> Duplicate as Alias
+  unwrap                                   -> Flatten as Track Automation
+  Group                                    -> Group
+  Paste                                    -> Paste
+  Paste Reference                          -> Paste as Alias
+  Redo                                     -> Redo
+  Rename                                   -> Rename
+  switch_between_event_and_time_selection  -> Switch between Object and Time Selection
+  Toggle Active                            -> Toggle Active/Mute State
+  toggle_hold                              -> Toggle Hold
+  toggle_on_off                            -> Toggle On / Off
+  turn_off                                 -> Turn Off
+  turn_on                                  -> Turn On
+  Undo                                     -> Undo
+  Ungroup                                  -> Ungroup
+  wrap                                     -> Wrap as Automation Clip
 
-=== Category: Comping (2 actions) ===
-"select_previous_take" / "Select Previous Take"
-"select_next_take" / "Select Next Take"
+----------------------------------------------------------------------
+File (11)
+----------------------------------------------------------------------
+  Close              -> Close
+  import_impulses    -> Import Impulses...
+  import_wavetables  -> Import Wavetables...
+  new_from_template  -> New From Template...
+  New                -> New Project
+  Open               -> Open...
+  Quit               -> Quit
+  Save               -> Save
+  save_as_template   -> Save as Template...
+  Save as            -> Save as...
+  add_to_library     -> Save to Library...
 
-=== Category: Text Editing (26 actions) ===
-"Delete character to left of cursor" / "Delete character to left of cursor"
-"Delete character to right of cursor" / "Delete character to right of cursor"
-"Insert new line" / "Insert new line"
-"Commit text" / "Commit Text"
-"Reload" / "Reload"
-"stop_editing_text" / "Stop Editing Text"
-"Move cursor left" / "Move cursor left"
-"Move cursor right" / "Move cursor right"
-"Move cursor up" / "Move cursor up"
-"Move cursor down" / "Move cursor down"
-"Move cursor to start of document" / "Move cursor to start of document"
-"Move cursor to end of document" / "Move cursor to end of document"
-"Move cursor to start of line" / "Move Cursor to Start of Line"
-"Move cursor to end of line" / "Move Cursor to End of Line"
-"Move cursor word left" / "Move cursor word left"
-"Move cursor word right" / "Move cursor word right"
-"Move cursor and extend selection left" / "Move cursor and extend selection left"
-"Move cursor and extend selection right" / "Move cursor and extend selection right"
-"Move cursor and extend selection up" / "Move cursor and extend selection up"
-"Move cursor and extend selection down" / "Move cursor and extend selection down"
-"Move cursor and extend selection to start of document" / "Move cursor and extend selection to start of document"
-"Move cursor and extend selection to end of document" / "Move cursor and extend selection to end of document"
-"Move cursor and extend selection to start of line" / "Move cursor and extend selection to start of line"
-"Move cursor and extend selection to end of line" / "Move cursor and extend selection to end of line"
-"Move cursor and extend selection word left" / "Move cursor and extend selection word left"
-"Move cursor and extend selection word right" / "Move cursor and extend selection word right"
+----------------------------------------------------------------------
+General (157)
+----------------------------------------------------------------------
+  toggle_adaptive_grid                                     -> Adaptive Beat Grid
+  make_permanent                                           -> Add Automation Lane
+  adjust_event_value_fine_step_down                        -> Adjust Value Down (fine)
+  adjust_event_value_step_down                             -> Adjust Value Step Down
+  adjust_event_value_step_up                               -> Adjust Value Step Up
+  adjust_event_value_fine_step_up                          -> Adjust Value Up (fine)
+  elevate_tempo                                            -> Apply Tempo Curve to Arranger
+  select_audition_tool                                     -> Audition tool
+  auto_crossfade                                           -> Auto-Crossfade
+  auto_fade                                                -> Auto-Fade
+  bounce_in_place_post_fader                               -> Bounce In Place (Post-Fader)
+  bounce_in_place_pre_fader                                -> Bounce In Place (Pre-Fader)
+  bounce_in_place                                          -> Bounce In Place (Pre-FX)
+  bounce                                                   -> Bounce...
+  check_for_updates                                        -> Check for Updates...
+  note_expression.clear.all                                -> Clear all Expressions
+  note_expression.clear.selected                           -> Clear selected Expression
+  Click button                                             -> Click button
+  Collect and Save                                         -> Collect and Save...
+  note_color_mode.channel                                  -> Color Notes by Channel
+  note_color_mode.clip                                     -> Color Notes by Clip
+  note_color_mode.pitch_class                              -> Color Notes by Pitch Class
+  note_color_mode.velocity                                 -> Color Notes by Velocity
+  invoke_action                                            -> Commander...
+  Consolidate                                              -> Consolidate
+  convert_to_audio_track                                   -> Convert to Audio Track
+  convert_to_hybrid_track                                  -> Convert to Hybrid Track
+  convert_to_instrument_track                              -> Convert to Instrument Track
+  create_clip                                              -> Create Empty Clip
+  create_new_control_surface_project                       -> Create New Control Surface Project
+  cut_and_pull                                             -> Cut Time
+  stretch_to_analyzed_tempo                                -> Detect Event Tempo
+  detect_tempo                                             -> Detect Event Tempo...
+  disable_all_unused_sends                                 -> Disable All Unused Sends
+  double_content                                           -> Double Content
+  toggle_performance_profiler                              -> DSP Performance Graph
+  duplicate_and_push                                       -> Duplicate Time
+  edit_file_meta_data                                      -> Edit File Metadata...
+  select_erase_tool                                        -> Eraser tool
+  expand                                                   -> Expand...
+  extend_time_selection_range_to_first_item                -> Extend Time Selection Range to First Item
+  extend_time_selection_range_to_last_item                 -> Extend Time Selection Range to Last Item
+  extend_time_selection_range_to_next_item                 -> Extend Time Selection Range to Next Item
+  extend_time_selection_range_to_next_step                 -> Extend Time Selection Range to Next Step
+  extend_time_selection_range_to_previous_item             -> Extend Time Selection Range to Previous Item
+  extend_time_selection_range_to_previous_step             -> Extend Time Selection Range to Previous Step
+  fade_in                                                  -> Fade In to Here
+  fade_out                                                 -> Fade Out from Here
+  focus_or_toggle_browser_panel                            -> Focus/toggle Browser Panel
+  multiplex                                                -> Fold to Takes...
+  increase_gain_1db                                        -> Gain +1dB
+  increase_gain_6db                                        -> Gain +6dB
+  reduce_gain_1db                                          -> Gain -1dB
+  reduce_gain_6db                                          -> Gain -6dB
+  show_insert_popup_browser                                -> Insert from Library...
+  insert_silence                                           -> Insert Silence
+  install_package_file                                     -> Install Pack from File
+  select_cut_tool                                          -> Knife tool
+  double_grid_size                                         -> Larger Beat Grid
+  prev_grid_subdivision                                    -> Larger Beat Grid Subdivision
+  launch                                                   -> Launch
+  load_default_preset                                      -> Load Default Preset
+  Loop Selection                                           -> Loop Selected Region
+  make_events_one_bar_longer                               -> Make Events Fine/Alternate Amount Longer
+  make_events_one_bar_shorter                              -> Make Events Fine/Alternate Amount Shorter
+  make_events_one_step_longer                              -> Make Events One Step Longer
+  make_events_one_step_shorter                             -> Make Events One Step Shorter
+  legato                                                   -> Make Legato
+  make_unique                                              -> Make Unique
+  merge_duplicate_patterns                                 -> Merge Duplicate Patterns
+  move_time_selection_one_event_earlier                    -> Move Time Selection One Event Earlier
+  move_time_selection_one_event_later                      -> Move Time Selection One Event Later
+  move_time_selection_one_step_earlier                     -> Move Time Selection One Step Earlier
+  move_time_selection_one_step_later                       -> Move Time Selection One Step Later
+  move_time_selection_to_first_item                        -> Move Time Selection to First Item
+  move_time_selection_to_last_item                         -> Move Time Selection to Last Item
+  Next history entry                                       -> Next history entry
+  normalize                                                -> Normalize
+  nudge_events_one_bar_earlier                             -> Nudge Events Fine/Alternate Amount Backward
+  nudge_events_one_bar_later                               -> Nudge Events Fine/Alternate Amount Forward
+  nudge_events_one_step_earlier                            -> Nudge Events One Step Backward
+  nudge_events_one_step_later                              -> Nudge Events One Step Forward
+  paste_and_push                                           -> Paste Time
+  select_create_tool                                       -> Pencil tool
+  select_curve_pencil_tool                                 -> Pencil tool (in Curve Editor)
+  play_from_left_edge_of_current_editor                    -> Play from Left Edge of Current Editor
+  play_from_time_selection                                 -> Play from Time Selection
+  select_object_selection_tool                             -> Pointer tool
+  select_curve_pointer_tool                                -> Pointer tool (in Curve Editor)
+  Previous history entry                                   -> Previous history entry
+  select_curve_half_step_tool                              -> Pulse tool (in Curve Editor)
+  quantize_again                                           -> Quantize
+  quantize_audio_again                                     -> Quantize Audio
+  quantize_audio                                           -> Quantize Audio...
+  fixed_length                                             -> Quantize Length
+  quantize_to_key                                          -> Quantize to Key
+  quantize                                                 -> Quantize...
+  select_curve_saw_up_tool                                 -> Ramp tool (in Curve Editor)
+  delete_and_pull                                          -> Remove Time
+  reset_fades                                              -> Reset Fades
+  reverse                                                  -> Reverse
+  reverse_pattern                                          -> Reverse Pattern
+  save_default_preset                                      -> Save as Default Preset
+  select_curve_saw_down_tool                               -> Saw tool (in Curve Editor)
+  scale_time_double                                        -> Scale 200%
+  scale_time_half                                          -> Scale 50%
+  scale_each_double                                        -> Scale Each 200%
+  scale_each_half                                          -> Scale Each 50%
+  scale_time                                               -> Scale...
+  select_end_of_selection_range                            -> Select End of Selection Range
+  select_next_auto_complete_item                           -> Select Next Auto Complete Item
+  Select next track                                        -> Select Next Track
+  select_prev_auto_complete_item                           -> Select Previous Auto Complete Item
+  Select previous track                                    -> Select Previous Track
+  select_start_of_selection_range                          -> Select Start of Selection Range
+  Set Clip Start                                           -> Set Clip Start
+  stretch_to_tempo                                         -> Set Event Tempo...
+  stretch_to_project_tempo                                 -> Set Event to current Project Tempo
+  set_event_end                                            -> Set Object End
+  set_event_start                                          -> Set Object Start
+  elevate_fixed_tempo                                      -> Set Project Tempo
+  Preferences                                              -> Settings
+  show_advanced_settings                                   -> Show Advanced Settings
+  show_beat_grid                                           -> Show Beat Grid
+  show_controller_script_console                           -> Show Control Script Console
+  show_dashboard                                           -> Show Dashboard
+  show_in_finder                                           -> Show in Finder
+  show_time_grid                                           -> Show Time Grid
+  slice_at_repeats                                         -> Slice At Repeats
+  slice_in_place                                           -> Slice In Place...
+  slice_to_drum_track                                      -> Slice to Drum Machine...
+  slice_to_multi_sampler_track                             -> Slice to Multisample...
+  slide_content_step_left                                  -> Slide Content Left
+  slide_content_step_right                                 -> Slide Content Right
+  slide_to_next_onset                                      -> Slide Waveform to Next Onset
+  slide_to_previous_onset                                  -> Slide Waveform to Previous Onset
+  half_grid_size                                           -> Smaller Beat Grid
+  next_grid_subdivision                                    -> Smaller Beat Grid Subdivision
+  toggle_relative_grid_snapping                            -> Snap Relative to Original Event
+  toggle_absolute_grid_snapping                            -> Snap to Beat Grid
+  toggle_object_snapping                                   -> Snap to Other Events
+  Split                                                    -> Split
+  select_spray_tool                                        -> Spray Can tool
+  select_step_input_tool                                   -> Step Input tool
+  select_curve_step_tool                                   -> Step tool (in Curve Editor)
+  swap_normal_and_alt_default_clip_launcher_settings_action  -> Swap Main and ALT Default Clip Launcher Settings
+  select_time_selection_tool                               -> Time Selection tool
+  toggle_snapping                                          -> Time Snapping
+  toggle_computer_keyboard_note_input                      -> Toggle Computer Keyboard Note Input
+  toggle_plugin_device_window                              -> Toggle Expanded Device View of Selected Device
+  toggle_primary_device_window                             -> Toggle Undocked Expanded Device View of Track's Primary Device
+  transpose_semitone_down                                  -> Transpose a Semitone Down
+  transpose_semitone_up                                    -> Transpose a Semitone Up
+  transpose_octave_down                                    -> Transpose an Octave Down
+  transpose_octave_up                                      -> Transpose an Octave Up
+  select_curve_triangle_tool                               -> Triangle tool (in Curve Editor)
+  wrap_related_automation                                  -> Wrap Related Automation as Clips
 
-=== Category: Browser (57 actions) ===
-"focus_browser_search_field" / "Focus Browser Search Field"
-"select_next_search_source" / "Select Next Search Source"
-"select_prev_search_source" / "Select Previous Search Source"
-"select_prev_palette_item" / "Select Prev Palette Item"
-"select_next_palette_item" / "Select Next Palette Item"
-"select_prev_filter_column" / "Select Prev Filter Column"
-"select_next_filter_column" / "Select Next Filter Column"
-"toggle_source_browser" / "Toggle All Sources view"
-"show_presets_for_device" / "Show Presets for Device"
-"stop_showing_presets_for_device" / "Stop Showing Presets for Device"
-"toggle_preview_playback_of_selected_file" / "Toggle Preview Playback of Selected File"
-"focus_file_overview" / "Focus Browser Overview List"
-"focus_file_list" / "Focus Browser File List"
-"focus_filters" / "Focus Filters"
-"select_everything" / "Select Everything"
-"select_quick_source1" / "Select Quick Source 1"
-"select_quick_source2" / "Select Quick Source 2"
-"select_quick_source3" / "Select Quick Source 3"
-"select_quick_source4" / "Select Quick Source 4"
-"select_quick_source5" / "Select Quick Source 5"
-"select_quick_source6" / "Select Quick Source 6"
-"select_quick_source7" / "Select Quick Source 7"
-"select_quick_source8" / "Select Quick Source 8"
-"select_quick_source9" / "Select Quick Source 9"
-"select_quick_sub-source1" / "Select Quick sub-source 1"
-"select_quick_sub-source2" / "Select Quick sub-source 2"
-"select_quick_sub-source3" / "Select Quick sub-source 3"
-"select_quick_sub-source4" / "Select Quick sub-source 4"
-"select_quick_sub-source5" / "Select Quick sub-source 5"
-"focus_location_column" / "Focus Location Column"
-"focus_category_column" / "Focus Category Column"
-"focus_creator_column" / "Focus Creator Column"
-"focus_category_or_creator_column" / "Focus Category Or Creator Column"
-"focus_tags_column" / "Focus Tags Column"
-"focus_device_column" / "Focus Device Column"
-"focus_vendor_column" / "Focus Vendor Column"
-"focus_file_kind_or_type_column" / "Focus File Kind Or Type Column"
-"clear_focused_filter" / "Clear Focused Filter"
-"toggle_show_favorites" / "Toggle Show Favorites"
-"save_snapshot" / "Save Snapshot…"
-"create_collection" / "Create Collection…"
-"save_smart_collection" / "Save Smart Collection…"
-"edit_smart_collection" / "Edit Smart Collection"
-"add_content_location" / "Add Sound Content Location…"
-"add_music_location" / "Add Music Location…"
-"add_plugin_location" / "Add Plug-in Location…"
-"remove_from_collections" / "Remove from all Collections"
-"toggle_favorite" / "Toggle Favorite"
-"toggle_collection1" / "Toggle Collection 1"
-"toggle_collection2" / "Toggle Collection 2"
-"toggle_collection3" / "Toggle Collection 3"
-"toggle_collection4" / "Toggle Collection 4"
-"toggle_collection5" / "Toggle Collection 5"
-"toggle_collection6" / "Toggle Collection 6"
-"toggle_collection7" / "Toggle Collection 7"
-"toggle_collection8" / "Toggle Collection 8"
-"toggle_collection9" / "Toggle Collection 9"
+----------------------------------------------------------------------
+Help (5)
+----------------------------------------------------------------------
+  show_help             -> Show Item Help
+  show_online_learning  -> Show Online Learning...
+  help_user_guide       -> User Guide (English)...
+  help_user_guide_de    -> User Guide (German)...
+  help_user_guide_jp    -> User Guide (Japanese)...
 
-=== Category: Mixer (6 actions) ===
-"toggle_meter_section" / "Toggle Big Meters"
-"toggle_double_row_clip_height" / "Toggle Large Clip Height"
-"mixer_zoom_in_track_width_all" / "Mixer Zoom In (All Tracks)"
-"mixer_zoom_out_track_width_all" / "Mixer Zoom Out (All Tracks)"
-"mixer_zoom_in_track_width_selected" / "Mixer Zoom In (Selected Tracks)"
-"mixer_zoom_out_track_width_selected" / "Mixer Zoom Out (Selected Tracks)"
+----------------------------------------------------------------------
+Mixer (6)
+----------------------------------------------------------------------
+  mixer_zoom_in_track_width_all        -> Mixer Zoom In (All Tracks)
+  mixer_zoom_in_track_width_selected   -> Mixer Zoom In (Selected Tracks)
+  mixer_zoom_out_track_width_all       -> Mixer Zoom Out (All Tracks)
+  mixer_zoom_out_track_width_selected  -> Mixer Zoom Out (Selected Tracks)
+  toggle_meter_section                 -> Toggle Big Meters
+  toggle_double_row_clip_height        -> Toggle Large Clip Height
 
-=== Category: Window Management (6 actions) ===
-"increase_gui_scaling" / "Increase GUI Scaling"
-"decrease_gui_scaling" / "Decrease GUI Scaling"
-"Maximize window" / "Maximize window"
-"Minimize window" / "Minimize window"
-"Restore window" / "Restore window"
-"Full screen" / "Full screen"
+----------------------------------------------------------------------
+Multisample (11)
+----------------------------------------------------------------------
+  distribute_keys_equally      -> Distribute Key Equally
+  distribute_select_equally    -> Distribute Select Equally
+  distribute_velocity_equally  -> Distribute Velocity Equally
+  nudge_zone_down              -> Nudge Down
+  coarse_nudge_zone_down       -> Nudge Down (coarse)
+  nudge_zone_left              -> Nudge Left
+  coarse_nudge_zone_left       -> Nudge Left (coarse)
+  nudge_zone_right             -> Nudge Right
+  coarse_nudge_zone_right      -> Nudge Right (coarse)
+  nudge_zone_up                -> Nudge Up
+  coarse_nudge_zone_up         -> Nudge Up (coarse)
 
-=== Category: Detail Editor (38 actions) ===
-"detail_editor_zoom_in" / "Zoom In Detail Editor"
-"detail_editor_zoom_out" / "Zoom Out Detail Editor"
-"detail_editor_zoom_to_fit" / "Zoom Detail Editor to Fit"
-"detail_editor_zoom_to_selection" / "Zoom Detail Editor to Selection"
-"detail_editor_zoom_to_fit_selection_or_all" / "Zoom Detail Editor to Fit Selection or All"
-"detail_editor_zoom_to_fit_selection_or_previous" / "Horizontally Zoom Detail Editor to Fit Selection or Previous"
-"detail_editor_zoom_in_lane_heights" / "Zoom In Detail Editor Lane Heights"
-"detail_editor_zoom_out_lane_heights" / "Zoom Out Detail Editor Lane Heights"
-"show_previous_layers" / "Navigate to Previous Editor Content"
-"show_next_layers" / "Navigate to Next Editor Content"
-"select_previous_detail_editor_mode" / "Show previous editor mode"
-"select_next_detail_editor_mode" / "Show next editor mode"
-"show_piano_roll_editor_mode" / "Show Piano Roll"
-"show_pattern_editor_mode" / "Show Drum/Hybrid Editor"
-"show_expression_editor_mode" / "Show Expression Editor"
-"show_audio_editor_mode" / "Show Audio Editor"
-"show_comping_editor_mode" / "Show Comping Editor"
-"show_automation_editor_mode" / "Show Automation Editor"
-"toggle_layer_list_visibility" / "Toggle Layer List"
-"toggle_channel_list_visibility" / "Toggle Note Channel Filter"
-"toggle_note_editor_expression_section" / "Toggle Note Expression Lane"
-"toggle_note_editor_automation_section" / "Toggle Automation Lane"
-"toggle_edit_note_expression" / "Toggle Edit Note Expression"
-"toggle_edit_note_transpose_expression" / "Toggle Edit Note Transpose"
-"toggle_edit_note_pressure_expression" / "Toggle Edit Note Pressure"
-"toggle_edit_note_gain_expression" / "Toggle Edit Note Gain"
-"toggle_edit_note_pan_expression" / "Toggle Edit Note Pan"
-"toggle_edit_note_timbre_expression" / "Toggle Edit Note Timbre"
-"toggle_scale_snapping" / "Snap to Key"
-"toggle_edit_audio_expression" / "Toggle Edit Audio Expression"
-"toggle_edit_audio_transpose_expression" / "Toggle Edit Audio Transpose"
-"toggle_edit_audio_gain_expression" / "Toggle Edit Audio Gain"
-"toggle_edit_audio_pan_expression" / "Toggle Edit Audio Pan"
-"toggle_edit_audio_formant_expression" / "Toggle Edit Audio Formant"
-"toggle_edit_stretch" / "Toggle Edit Stretch"
-"toggle_edit_onsets" / "Toggle Edit Onsets"
-"toggle_audition_notes" / "Audition Notes"
-"toggle_auto_crossfades" / "Automatic Crossfades"
+----------------------------------------------------------------------
+Navigation (66)
+----------------------------------------------------------------------
+  Collapse Item                                  -> Collapse Item
+  Enter Group                                    -> Enter Group
+  Exit Group                                     -> Exit Group
+  Expand Item                                    -> Expand Item
+  Focus next field                               -> Focus next field
+  Focus next panel                               -> Focus next panel
+  Focus panel above                              -> Focus panel above
+  Focus panel below                              -> Focus panel below
+  Focus panel to the left                        -> Focus panel to the left
+  Focus panel to the right                       -> Focus panel to the right
+  Focus previous field                           -> Focus previous field
+  Focus previous panel                           -> Focus previous panel
+  Focus widget above                             -> Focus widget above
+  Focus widget below                             -> Focus widget below
+  Focus widget to the left                       -> Focus widget to the left
+  Focus widget to the right                      -> Focus widget to the right
+  open_in_editor                                 -> Open in Editor
+  Select Next Project                            -> Select Next Project
+  select_next_project_and_activate_audio_engine  -> Select Next Project and Activate Audio Engine
+  select_next_tab                                -> Select Next Tab
+  Select Previous Project                        -> Select Previous Project
+  select_prev_project_and_activate_audio_engine  -> Select Previous Project and Activate Audio Engine
+  select_previous_tab                            -> Select Previous Tab
+  select_project1                                -> Select Project 1
+  select_project_and_activate_audio_engine1      -> Select Project 1 and Activate Audio Engine
+  select_project10                               -> Select Project 10
+  select_project_and_activate_audio_engine10     -> Select Project 10 and Activate Audio Engine
+  select_project11                               -> Select Project 11
+  select_project_and_activate_audio_engine11     -> Select Project 11 and Activate Audio Engine
+  select_project12                               -> Select Project 12
+  select_project_and_activate_audio_engine12     -> Select Project 12 and Activate Audio Engine
+  select_project13                               -> Select Project 13
+  select_project_and_activate_audio_engine13     -> Select Project 13 and Activate Audio Engine
+  select_project14                               -> Select Project 14
+  select_project_and_activate_audio_engine14     -> Select Project 14 and Activate Audio Engine
+  select_project15                               -> Select Project 15
+  select_project_and_activate_audio_engine15     -> Select Project 15 and Activate Audio Engine
+  select_project16                               -> Select Project 16
+  select_project_and_activate_audio_engine16     -> Select Project 16 and Activate Audio Engine
+  select_project17                               -> Select Project 17
+  select_project_and_activate_audio_engine17     -> Select Project 17 and Activate Audio Engine
+  select_project18                               -> Select Project 18
+  select_project_and_activate_audio_engine18     -> Select Project 18 and Activate Audio Engine
+  select_project19                               -> Select Project 19
+  select_project_and_activate_audio_engine19     -> Select Project 19 and Activate Audio Engine
+  select_project2                                -> Select Project 2
+  select_project_and_activate_audio_engine2      -> Select Project 2 and Activate Audio Engine
+  select_project20                               -> Select Project 20
+  select_project_and_activate_audio_engine20     -> Select Project 20 and Activate Audio Engine
+  select_project3                                -> Select Project 3
+  select_project_and_activate_audio_engine3      -> Select Project 3 and Activate Audio Engine
+  select_project4                                -> Select Project 4
+  select_project_and_activate_audio_engine4      -> Select Project 4 and Activate Audio Engine
+  select_project5                                -> Select Project 5
+  select_project_and_activate_audio_engine5      -> Select Project 5 and Activate Audio Engine
+  select_project6                                -> Select Project 6
+  select_project_and_activate_audio_engine6      -> Select Project 6 and Activate Audio Engine
+  select_project7                                -> Select Project 7
+  select_project_and_activate_audio_engine7      -> Select Project 7 and Activate Audio Engine
+  select_project8                                -> Select Project 8
+  select_project_and_activate_audio_engine8      -> Select Project 8 and Activate Audio Engine
+  select_project9                                -> Select Project 9
+  select_project_and_activate_audio_engine9      -> Select Project 9 and Activate Audio Engine
+  toggle_children_expanded_state                 -> Toggle children expanded state
+  Toggle expanded state                          -> Toggle expanded state
+  toggle_siblings_expanded_state                 -> Toggle siblings expanded state
 
-=== Category: Clip Launcher (91 actions) ===
-"Create Scene From Playing Launcher Clips" / "Add Scene from Playing Clips"
-"toggle_clip_launcher_overdub" / "Toggle Clip Launcher Overdub"
-"target_selected_scene" / "Target Selected Scene"
-"target_prev_scene" / "Scroll to Previous Scene"
-"target_next_scene" / "Scroll to Next Scene"
-"launch_scene" / "Launch Scene At Cursor"
-"launch_next_scene" / "Launch Next Scene"
-"launch_prev_scene" / "Launch Previous Scene"
-"launch_next_slot" / "Launch Next Slot (relative to playing clip)"
-"launch_prev_slot" / "Launch Previous Slot (relative to playing clip)"
-"launch_scene1" through "launch_scene40" / "Launch Scene 1" through "Launch Scene 40"
-"launch_slot1" through "launch_slot40" / "Launch Slot 1" through "Launch Slot 40"
-"toggle_has_stop_button" / "Remove/restore Stop Button"
+----------------------------------------------------------------------
+Panel Management (48)
+----------------------------------------------------------------------
+  auto_zoom_track_height                          -> Auto Zoom Selected Track
+  focus_track_header_area                         -> Focus Track Header Area
+  focus_or_toggle_arranger                        -> Focus/toggle Arranger Timeline Panel
+  focus_or_toggle_clip_detail_editor              -> Focus/toggle Clip Editor Panel
+  focus_or_toggle_clip_launcher                   -> Focus/toggle Clip Launcher Panel
+  focus_or_toggle_device_panel                    -> Focus/toggle Device Panel
+  focus_or_toggle_inspector                       -> Focus/toggle Inspector Panel
+  focus_or_toggle_mixer                           -> Focus/toggle Mixer Panel
+  focus_or_toggle_onscreen_keyboard_panel         -> Focus/toggle On-screen Keyboard Panel
+  focus_or_toggle_song_panel                      -> Focus/toggle Project Panel
+  focus_or_toggle_studio_io                       -> Focus/toggle Studio Monitoring Panel
+  Select Next Mode                                -> Select Next Mode
+  Select next sub panel                           -> Select Next Sub-panel
+  Select Previous Mode                            -> Select Previous Mode
+  Select previous sub panel                       -> Select Previous Sub-panel
+  Select sub panel 1                              -> Select Sub-panel 1
+  Select sub panel 2                              -> Select Sub-panel 2
+  Select sub panel 3                              -> Select Sub-panel 3
+  Select sub panel 4                              -> Select Sub-panel 4
+  Show Crossfades                                 -> Show Crossfades
+  toggle_arranger_cue_marker_visibility           -> Show Cue Markers
+  Show Effect Tracks                              -> Show FX Tracks
+  Show Sends                                      -> Show Sends
+  toggle_real_time_ruler_visibility               -> Show Time Ruler
+  Show Track Inputs and Outputs                   -> Show Track I/O
+  Show Track Volume                               -> Show Track Volume
+  show_transport_lanes                            -> Show Transport Lanes
+  toggle_time_signature_marker_visibility         -> Show/hide Time Signature Markers
+  Switch to Mode 1                                -> Switch to Mode 1
+  Switch to Mode 2                                -> Switch to Mode 2
+  Switch to Mode 3                                -> Switch to Mode 3
+  Switch to Mode 4                                -> Switch to Mode 4
+  toggle_arranger_section                         -> Toggle Arranger Timeline Panel
+  toggle_arranger                                 -> Toggle Arranger Timeline Panel
+  toggle_browser_panel                            -> Toggle Browser Panel
+  toggle_clip_detail_editor                       -> Toggle Clip Editor Panel
+  toggle_clip_launcher                            -> Toggle Clip Launcher
+  toggle_device_panel                             -> Toggle Device Panel
+  Toggle maximized editing mode                   -> Toggle Edit View
+  toggle_file_browser_panel                       -> Toggle File Browser Panel
+  toggle_inspector                                -> Toggle Inspector Panel
+  toggle_mappings_browser_panel                   -> Toggle Mappings Panel
+  toggle_mixer                                    -> Toggle Mixer Panel
+  toggle_song_panel                               -> Toggle Project Panel
+  toggle_studio_io                                -> Toggle Studio Monitoring Panel
+  toggle_track_list                               -> Toggle Track List
+  Toggle Track Timeline vs. Clip Content Editing  -> Toggle Track-timeline vs. Clip-content Editing
+  toggle_deactivated_chains_visibility            -> Toggle Visibility of Deactivated Channels
 
-(dump ends here - Total: 781 actions across 20 categories, per the
-diagnostic's own summary line)
+----------------------------------------------------------------------
+Project (95)
+----------------------------------------------------------------------
+  Activate Engine For Project                      -> Activate Engine for Project
+  Create Audio Track                               -> Add Audio Track
+  Create Effect Track                              -> Add FX Track
+  Create Group Track                               -> Add Group Track
+  Create Instrument Track                          -> Add Instrument Track
+  Create Scene                                     -> Add Scene
+  Reset VU Meters                                  -> Clear All VU Meter Clipping & Peaks
+  Continue Play Transport                          -> Continue Play Transport
+  Continue Playback or Stop                        -> Continue Playback or Stop
+  decrease_tempo_one_bpm                           -> Decrease Tempo One Bpm
+  decrease_tempo_one_tenth_bpm                     -> Decrease Tempo One Tenth Bpm
+  delete_all_automation_owned_by_selection         -> Delete All Automation Owned by Selection
+  delete_all_project_automation                    -> Delete All Project Automation
+  Export Audio                                     -> Export Audio...
+  export_project                                   -> Export DAWproject…
+  export_midi                                      -> Export MIDI...
+  toggle_all_track_groups_expanded                 -> Fold/unfold All Group Tracks
+  toggle_top_level_track_groups_expanded           -> Fold/unfold Top Level Group Tracks
+  clear_arm                                        -> Global Arm Off
+  clear_mute                                       -> Global Mute Off
+  clear_solo                                       -> Global Solo Off
+  increase_tempo_one_bpm                           -> Increase Tempo One Bpm
+  increase_tempo_one_tenth_bpm                     -> Increase Tempo One Tenth Bpm
+  merge_duplicate_patterns_for_project             -> Merge Duplicate Patterns for Project
+  move_playback_start_time_one_step_backward       -> Move Playback Start Time One Step Backward
+  move_playback_start_time_one_step_forward        -> Move Playback Start Time One Step Forward
+  Play From Start or Stop Transport                -> Play from Start, or Stop Transport
+  Play or Pause Transport                          -> Play or Pause Transport
+  Play or Stop Transport                           -> Play or Stop Transport
+  Play Transport                                   -> Play Transport
+  Play Transport From Start                        -> Play Transport from Start
+  restore_automation_control                       -> Restore Automation Control
+  retrigger_playing_launcher_clips                 -> Retrigger playing Launcher clips
+  switch_playback_to_arranger_for_all_tracks       -> Return Playback to Arranger for All Tracks
+  switch_playback_to_arranger_for_selected_tracks  -> Return Playback to Arranger for Selected Tracks
+  select_track1                                    -> Select Track 1
+  select_track10                                   -> Select Track 10
+  select_track11                                   -> Select Track 11
+  select_track12                                   -> Select Track 12
+  select_track13                                   -> Select Track 13
+  select_track14                                   -> Select Track 14
+  select_track15                                   -> Select Track 15
+  select_track16                                   -> Select Track 16
+  select_track17                                   -> Select Track 17
+  select_track18                                   -> Select Track 18
+  select_track19                                   -> Select Track 19
+  select_track2                                    -> Select Track 2
+  select_track20                                   -> Select Track 20
+  select_track21                                   -> Select Track 21
+  select_track22                                   -> Select Track 22
+  select_track23                                   -> Select Track 23
+  select_track24                                   -> Select Track 24
+  select_track25                                   -> Select Track 25
+  select_track26                                   -> Select Track 26
+  select_track27                                   -> Select Track 27
+  select_track28                                   -> Select Track 28
+  select_track29                                   -> Select Track 29
+  select_track3                                    -> Select Track 3
+  select_track30                                   -> Select Track 30
+  select_track31                                   -> Select Track 31
+  select_track32                                   -> Select Track 32
+  select_track33                                   -> Select Track 33
+  select_track34                                   -> Select Track 34
+  select_track35                                   -> Select Track 35
+  select_track36                                   -> Select Track 36
+  select_track37                                   -> Select Track 37
+  select_track38                                   -> Select Track 38
+  select_track39                                   -> Select Track 39
+  select_track4                                    -> Select Track 4
+  select_track40                                   -> Select Track 40
+  select_track5                                    -> Select Track 5
+  select_track6                                    -> Select Track 6
+  select_track7                                    -> Select Track 7
+  select_track8                                    -> Select Track 8
+  select_track9                                    -> Select Track 9
+  start_master_recording                           -> Start Master Recording
+  stop_master_recording                            -> Stop Master Recording
+  stop_playback_of_all_tracks                      -> Stop Playback of All Tracks
+  stop_playback_of_selected_tracks                 -> Stop Playback of Selected Tracks
+  Stop Transport                                   -> Stop Transport
+  Tap Tempo                                        -> Tap Tempo
+  toggle_arranger_automation_write                 -> Toggle Arranger Automation Write
+  toggle_arranger_loop                             -> Toggle Arranger Loop
+  toggle_arranger_overdub                          -> Toggle Arranger Overdub
+  toggle_automation_lock                           -> Toggle Global Automation Behavior
+  toggle_groove                                    -> Toggle Groove
+  toggle_master_recording                          -> Toggle Master Recording
+  toggle_metronome                                 -> Toggle Metronome
+  toggle_punch_in                                  -> Toggle Punch-In
+  toggle_punch_out                                 -> Toggle Punch-Out
+  Toggle Record                                    -> Toggle Record
+  toggle_track_arm                                 -> Toggle Track Arm
+  toggle_track_mute                                -> Toggle Track Mute
+  toggle_track_solo                                -> Toggle Track Solo / Cue
+  toggle_playhead_follow                           -> View follows playhead
+
+----------------------------------------------------------------------
+Search (1)
+----------------------------------------------------------------------
+  invoke_searchfield_action  -> Invoke search-field action
+
+----------------------------------------------------------------------
+Selection (52)
+----------------------------------------------------------------------
+  Unselect All                             -> Deselect All
+  Extend selection range to first item     -> Extend selection range to first item
+  Extend selection range to first lane     -> Extend Selection Range to First Lane
+  Extend selection range to item above     -> Extend selection range to item above
+  Extend selection range to item below     -> Extend selection range to item below
+  Extend selection range to item to left   -> Extend selection range to item to left
+  Extend selection range to item to right  -> Extend selection range to item to right
+  Extend selection range to last item      -> Extend selection range to last item
+  Extend selection range to last lane      -> Extend Selection Range to Last Lane
+  Extend selection range to next item      -> Extend selection range to next item
+  Extend selection range to next lane      -> Extend Selection Range to Next Lane
+  Extend selection range to previous item  -> Extend Selection Range to Previous Item
+  Extend selection range to previous lane  -> Extend Selection Range to Previous Lane
+  Extend selection to first item           -> Extend selection to first item
+  Extend selection to first lane           -> Extend Selection to First Lane
+  Extend selection to item above           -> Extend selection to item above
+  Extend selection to item below           -> Extend selection to item below
+  Extend selection to item to left         -> Extend selection to item to left
+  Extend selection to item to right        -> Extend selection to item to right
+  Extend selection to last item            -> Extend selection to last item
+  Extend selection to last lane            -> Extend Selection to Last Lane
+  Extend selection to next item            -> Extend Selection to Next Item
+  Extend selection to next lane            -> Extend Selection to Next Lane
+  Extend selection to previous item        -> Extend Selection to Previous Item
+  Extend selection to previous lane        -> Extend Selection to Previous Lane
+  Move cursor to first lane                -> Move Cursor to First Lane
+  Move cursor to last lane                 -> Move Cursor to Last Lane
+  Move cursor to next lane                 -> Move Cursor to Next Lane
+  Move cursor to previous lane             -> Move Cursor to Previous Lane
+  Move selection cursor down               -> Move selection cursor down
+  Move selection cursor left               -> Move selection cursor left
+  Move selection cursor right              -> Move selection cursor right
+  move_selection_cursor_to_first_item      -> Move selection cursor to first item
+  move_selection_cursor_to_last_item       -> Move selection cursor to last item
+  move_selection_cursor_to_next_item       -> Move selection cursor to next item
+  move_selection_cursor_to_previous_item   -> Move selection cursor to previous item
+  Move selection cursor up                 -> Move selection cursor up
+  Select All                               -> Select All
+  Select first item                        -> Select first item
+  Select item above                        -> Select item above
+  select_item_at_cursor                    -> Select item at cursor
+  Select item below                        -> Select item below
+  Select item in first lane                -> Select Item in First Lane
+  Select item in last lane                 -> Select Item in last Lane
+  Select item in next lane                 -> Select Item in Next Lane
+  Select item in previous lane             -> Select Item in Previous Lane
+  Select item to left                      -> Select item to left
+  Select item to right                     -> Select item to right
+  Select last item                         -> Select last item
+  Select next item                         -> Select Next Item
+  Select previous item                     -> Select Previous Item
+  Toggle selection of item at cursor       -> Toggle selection of item at cursor
+
+----------------------------------------------------------------------
+Text Editing (26)
+----------------------------------------------------------------------
+  Commit text                                            -> Commit Text
+  Delete character to left of cursor                     -> Delete character to left of cursor
+  Delete character to right of cursor                    -> Delete character to right of cursor
+  Insert new line                                        -> Insert new line
+  Move cursor and extend selection down                  -> Move cursor and extend selection down
+  Move cursor and extend selection left                  -> Move cursor and extend selection left
+  Move cursor and extend selection right                 -> Move cursor and extend selection right
+  Move cursor and extend selection to end of document    -> Move cursor and extend selection to end of document
+  Move cursor and extend selection to end of line        -> Move cursor and extend selection to end of line
+  Move cursor and extend selection to start of document  -> Move cursor and extend selection to start of document
+  Move cursor and extend selection to start of line      -> Move cursor and extend selection to start of line
+  Move cursor and extend selection up                    -> Move cursor and extend selection up
+  Move cursor and extend selection word left             -> Move cursor and extend selection word left
+  Move cursor and extend selection word right            -> Move cursor and extend selection word right
+  Move cursor down                                       -> Move cursor down
+  Move cursor left                                       -> Move cursor left
+  Move cursor right                                      -> Move cursor right
+  Move cursor to end of document                         -> Move cursor to end of document
+  Move cursor to end of line                             -> Move Cursor to End of Line
+  Move cursor to start of document                       -> Move cursor to start of document
+  Move cursor to start of line                           -> Move Cursor to Start of Line
+  Move cursor up                                         -> Move cursor up
+  Move cursor word left                                  -> Move cursor word left
+  Move cursor word right                                 -> Move cursor word right
+  Reload                                                 -> Reload
+  stop_editing_text                                      -> Stop Editing Text
+
+----------------------------------------------------------------------
+Window Management (6)
+----------------------------------------------------------------------
+  decrease_gui_scaling  -> Decrease GUI Scaling
+  Full screen           -> Full screen
+  increase_gui_scaling  -> Increase GUI Scaling
+  Maximize window       -> Maximize window
+  Minimize window       -> Minimize window
+  Restore window        -> Restore window
+
+----------------------------------------------------------------------
+Zooming (8)
+----------------------------------------------------------------------
+  Zoom In                            -> Zoom In Horizontally
+  zoom_in_vertically                 -> Zoom In Vertically
+  Zoom Out                           -> Zoom Out Horizontally
+  zoom_out_vertically                -> Zoom Out Vertically
+  Zoom to Fit                        -> Zoom to Fit
+  Zoom to Selection                  -> Zoom to Fit Selection
+  zoom_to_fit_selection_or_all       -> Zoom to Fit Selection Or All
+  zoom_to_fit_selection_or_previous  -> Zoom to Fit Selection or Previous
+
