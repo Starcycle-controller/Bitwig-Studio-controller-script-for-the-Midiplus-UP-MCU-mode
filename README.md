@@ -117,6 +117,18 @@ packing `(stripIndex<<4)|level`) - all cross-checked against Ableton's own
 `ChannelStrip.py`. Button LEDs are plain Note On/Off (`midiOut.sendMidi(
 0x90, note, 127/0)`).
 
+**Assignment row (notes 40/41/42/44) LEDs are hardware-managed as a
+mutually-exclusive group - confirmed our own note-off is ignored.**
+Console-tested: pressing PLUG-INS a second time (to exit Device mode)
+correctly runs `updateModeLEDs()`, which sends note-off for 44 - but the
+LED stays lit. Pressing SEND afterward (lighting note 41) clears it as a
+side effect, same as the already-documented BANK/CHANNEL LED quirk. Since
+there's no way to force an assignment LED off directly, PLUG-INS/SEND/PAN
+now each call `flashLed(40, 60)` (a brief flash of TRACK/IO's LED, note
+40) whenever they return to a state where no assignment LED should be lit
+- this triggers the hardware's own mutual-exclusion clearing instead of
+relying on a note-off that gets ignored.
+
 Each encoder also has its own small position-indicator LED ring (a single
 lit dot moving around it), separate from the 2-row text display - real MCU
 protocol per Mossgraber's DrivenByMoss driver: CC `(0x30 + channel)` with a

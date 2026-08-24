@@ -1450,6 +1450,10 @@ function handleButtonPressInner(note) {
             refreshDisplayText();
             rebindFaders();
             showModePopup("MIXER");
+            // Same Assignment-row mutual-exclusion LED quirk as PLUG-INS
+            // (case 44) - our own note-off for 41 here is likely ignored
+            // too, so force the hardware to clear it the same way.
+            flashLed(40, 60);
          }
          break;
 
@@ -1471,6 +1475,12 @@ function handleButtonPressInner(note) {
          updateModeLEDs();
          refreshDisplayText();
          rebindFaders();
+         if (!isToolVolumeMode) {
+            // Same Assignment-row mutual-exclusion LED quirk as PLUG-INS/
+            // SEND above - turning PAN's own LED off via our note-off is
+            // likely ignored too.
+            flashLed(40, 60);
+         }
          break;
 
       case 43: // FLIP -> Swap Faders and Encoders. Moved here from note 50
@@ -1527,6 +1537,14 @@ function handleButtonPressInner(note) {
             refreshDisplayText();
             rebindFaders();
             showModePopup("MIXER");
+            // The hardware manages the Assignment row (40/41/42/44) LEDs
+            // as a mutually-exclusive group on its own - confirmed via
+            // testing that our own note-off for 44 here is ignored, but
+            // pressing SEND (lighting note 41) does clear it. Force the
+            // same effect by briefly flashing a sibling (TRACK/IO, note
+            // 40 - same one case 40 itself already flashes on every
+            // press) instead of relying on our own note-off working.
+            flashLed(40, 60);
          }
          break;
 
