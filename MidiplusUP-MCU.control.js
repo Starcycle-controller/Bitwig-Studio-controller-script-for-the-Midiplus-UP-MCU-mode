@@ -72,21 +72,80 @@ var isOptionPressed = false;  // Note 71
 var isControlPressed = false; // Note 72
 var isAltPressed = false;     // Note 73
 
-// ALT tap-to-cycle-macro-bank tracking (see the ALT block in onMidi below)
-// - same pattern as ctrlUsedForCombo: set true as soon as ALT is used to
-// modify another action (tempo nudge, jog wheel fine-scrub), so releasing
-// it afterwards doesn't also cycle the macro bank.
+// Each of the 4 modifier buttons above also tracks whether it was "used"
+// to modify another action (a jog-wheel combo, mostly) while held - see
+// setUsedForCombo()/wasUsedForCombo() below. This gates the *standalone
+// tap* actions (Plugin Mode settings below) so releasing a modifier that
+// was actually just held to modify something else doesn't also fire its
+// own tap action.
+var shiftUsedForCombo = false;
+var optionUsedForCombo = false;
+var ctrlUsedForCombo = false;
 var altUsedForCombo = false;
 
-// CTRL long-press-to-toggle-expanded-view tracking (see the CTRL block in
-// onMidi and cursorDevice.isExpanded() below). ctrlUsedForCombo is set true
-// as soon as CTRL is used to modify the jog wheel, so releasing it
-// afterwards doesn't also toggle the expanded view.
-var ctrlPressStartTime = 0;
-var ctrlUsedForCombo = false;
+function setUsedForCombo(note) {
+   if (note === 70) { shiftUsedForCombo = true; }
+   else if (note === 71) { optionUsedForCombo = true; }
+   else if (note === 72) { ctrlUsedForCombo = true; }
+   else if (note === 73) { altUsedForCombo = true; }
+}
+
+function wasUsedForCombo(note) {
+   if (note === 70) { return shiftUsedForCombo; }
+   if (note === 71) { return optionUsedForCombo; }
+   if (note === 72) { return ctrlUsedForCombo; }
+   if (note === 73) { return altUsedForCombo; }
+   return false;
+}
+
+// Plugin Mode settings (Controller Preferences panel -> this controller ->
+// "Plugin Mode" category, set up in init() below) - which modifier button
+// toggles the expanded device view, whether that's an instant tap or a
+// long press, and which modifier button cycles the selected device's
+// macro bank. -1 means "None" (disabled). Defaults match this session's
+// original hardcoded behavior (CTRL long-press for expanded view, ALT tap
+// for macro bank).
+var MODIFIER_NAME_TO_NOTE = { "SHIFT": 70, "OPTION": 71, "CTRL": 72, "ALT": 73, "None": -1 };
+var EXPANDED_VIEW_BUTTON = 72;
+var EXPANDED_VIEW_INSTANT = false; // false = long press, true = instant tap
+var MACRO_CYCLE_BUTTON = 73;
+
+// Press-start timestamp for whichever note is currently EXPANDED_VIEW_BUTTON
+// (only meaningful when EXPANDED_VIEW_INSTANT is false - see
+// handleModifierTap() below).
+var expandedViewPressStartTime = 0;
 // Default; overridden live from the Controller Preferences panel setting
 // created in init() below (see ctrlHoldTimeSetting).
 var CTRL_LONG_PRESS_MS = 500;
+
+// Called on release of any of the 4 modifier buttons (see the SHIFT/
+// OPTION/CTRL/ALT blocks in onMidi below) - handles the two configurable
+// Plugin Mode standalone-tap actions (see the settings above). Both are
+// no-ops if `note` isn't currently assigned to either action, or if the
+// button was actually just held to modify something else this press.
+function handleModifierTap(note, isPressed) {
+   if (isPressed) {
+      if (note === EXPANDED_VIEW_BUTTON) {
+         expandedViewPressStartTime = Date.now();
+      }
+      return;
+   }
+
+   var usedForCombo = wasUsedForCombo(note);
+
+   if (note === EXPANDED_VIEW_BUTTON && EXPANDED_VIEW_BUTTON >= 0 && currentMode === MODE_DEVICE && !usedForCombo) {
+      if (EXPANDED_VIEW_INSTANT || (Date.now() - expandedViewPressStartTime) >= CTRL_LONG_PRESS_MS) {
+         cursorDevice.isExpanded().toggle();
+      }
+   }
+
+   // A single note assigned to both actions always means "expanded view
+   // wins" - macro-bank cycling only fires for a *different* note.
+   if (note === MACRO_CYCLE_BUTTON && MACRO_CYCLE_BUTTON >= 0 && note !== EXPANDED_VIEW_BUTTON && !usedForCombo) {
+      remoteControls.selectNextPage(true);
+      host.showPopupNotification("Next Macro Bank");
+   }
+}
 
 // Physical jog wheel push/click, note 87 on this hardware (also the
 // standard Mackie Control protocol's PUNCH IN note - it was briefly wired
@@ -382,16 +441,42 @@ function init() {
    // so needs markInterested() or .toggle()/.get() throws.
    cursorDevice.isExpanded().markInterested();
 
-   // User-configurable CTRL long-press duration (Controller Preferences
-   // panel in Bitwig Studio -> this controller -> "Timing" category).
-   // addRawValueObserver fires immediately with the initial value and again
-   // any time the user edits it live, so CTRL_LONG_PRESS_MS always reflects
-   // the current setting without needing a restart.
+   // Plugin Mode settings (Controller Preferences panel in Bitwig Studio ->
+   // this controller -> "Plugin Mode" category) - which modifier button
+   // toggles the expanded device view and cycles the macro bank, whether
+   // the expanded-view toggle is an instant tap or a long press, and (for
+   // the long-press case) how long that press needs to be held. All four
+   // observers fire immediately with the initial value and again any time
+   // the user edits it live, so the corresponding globals (see
+   // EXPANDED_VIEW_BUTTON etc. above) always reflect the current setting
+   // without needing a restart. Defaults match this session's original
+   // hardcoded behavior.
+   var expandedViewButtonSetting = host.getPreferences().getEnumSetting(
+      "Expanded Device View Button", "Plugin Mode", ["CTRL", "ALT", "OPTION", "SHIFT", "None"], "CTRL");
+   expandedViewButtonSetting.markInterested();
+   expandedViewButtonSetting.addValueObserver(function (value) {
+      EXPANDED_VIEW_BUTTON = MODIFIER_NAME_TO_NOTE[value];
+   });
+
+   var expandedViewTriggerSetting = host.getPreferences().getEnumSetting(
+      "Expanded Device View Trigger", "Plugin Mode", ["Long Press", "Instant Tap"], "Long Press");
+   expandedViewTriggerSetting.markInterested();
+   expandedViewTriggerSetting.addValueObserver(function (value) {
+      EXPANDED_VIEW_INSTANT = (value === "Instant Tap");
+   });
+
    var ctrlHoldTimeSetting = host.getPreferences().getNumberSetting(
-      "CTRL Hold Time (Expanded Device View)", "Timing", 200, 2000, 10, "ms", 500);
+      "Long Press Duration (Expanded Device View)", "Plugin Mode", 200, 2000, 10, "ms", 500);
    ctrlHoldTimeSetting.markInterested();
    ctrlHoldTimeSetting.addRawValueObserver(function(value) {
       CTRL_LONG_PRESS_MS = value;
+   });
+
+   var macroCycleButtonSetting = host.getPreferences().getEnumSetting(
+      "Macro Bank Cycle Button", "Plugin Mode", ["ALT", "CTRL", "OPTION", "SHIFT", "None"], "ALT");
+   macroCycleButtonSetting.markInterested();
+   macroCycleButtonSetting.addValueObserver(function (value) {
+      MACRO_CYCLE_BUTTON = MODIFIER_NAME_TO_NOTE[value];
    });
 
    // User-configurable wheel-tick threshold for OPTION + Jog Wheel's
@@ -758,6 +843,7 @@ function onMidi(status, data1, data2) {
       var rawDelta = data2 < 64 ? data2 : -(data2 - 64);
 
       // If SHIFT is held, use fine-grain adjustments (0.2x scaling)
+      if (isShiftPressed) { shiftUsedForCombo = true; }
       var delta = isShiftPressed ? (rawDelta * 0.2) : rawDelta;
       var resolution = isShiftPressed ? 512 : 128;
 
@@ -890,6 +976,7 @@ function onMidi(status, data1, data2) {
          // OPTION + Jog Wheel: turn left halves the loop length, turn right
          // doubles it - accumulated across messages, see
          // loopScaleAccumulator above.
+         optionUsedForCombo = true;
          loopScaleAccumulator += Math.abs(rawStep);
          if (loopScaleAccumulator >= LOOP_SCALE_THRESHOLD) {
             loopScaleAccumulator -= LOOP_SCALE_THRESHOLD;
@@ -906,6 +993,7 @@ function onMidi(status, data1, data2) {
       if (isShiftPressed) {
          // SHIFT + Jog Wheel: move the whole loop region by one bar per
          // message, keeping its length unchanged.
+         shiftUsedForCombo = true;
          var loopBeatsPerBar = getBeatsPerBar();
          var oldLoopStart = transport.arrangerLoopStart().get();
          var newLoopStart = backwards ? oldLoopStart - loopBeatsPerBar : oldLoopStart + loopBeatsPerBar;
@@ -952,51 +1040,50 @@ function onMidi(status, data1, data2) {
          println("RAW Note-On received - Note: " + data1); // DEBUG: catches modifier buttons too
       }
 
-      // SHIFT Button (Note 70)
+      // SHIFT Button (Note 70) - held modifier for other actions (fine
+      // encoder adjust, jog wheel loop-shift); standalone tap can be
+      // assigned to a Plugin Mode action - see handleModifierTap().
       if (data1 === 70) {
          isShiftPressed = isPressed;
          midiOut.sendMidi(0x90, 70, isShiftPressed ? 127 : 0);
+         if (isPressed) { shiftUsedForCombo = false; }
+         handleModifierTap(70, isPressed);
          return;
       }
 
-      // OPTION Button (Note 71)
+      // OPTION Button (Note 71) - held modifier for the jog wheel's loop
+      // halve/double; standalone tap can be assigned to a Plugin Mode
+      // action - see handleModifierTap().
       if (data1 === 71) {
          isOptionPressed = isPressed;
          midiOut.sendMidi(0x90, 71, isOptionPressed ? 127 : 0);
+         if (isPressed) { optionUsedForCombo = false; }
+         handleModifierTap(71, isPressed);
          return;
       }
 
-      // CTRL Button (Note 72) - a standalone LONG press (held without also
-      // turning the jog wheel) toggles the expanded device view while in
-      // Device mode. Still tracked as a modifier for other combos (tempo
-      // nudge, CTRL+PUNCH IN/OUT, CTRL+jog device navigation) regardless of
-      // hold duration - see ctrlUsedForCombo below.
+      // CTRL Button (Note 72) - held modifier for other combos (tempo
+      // nudge, CTRL+PUNCH IN/OUT, CTRL+jog device navigation); standalone
+      // tap can be assigned to a Plugin Mode action - see
+      // handleModifierTap(). Defaults to toggling the expanded device
+      // view on a long press, per the Plugin Mode settings in init().
       if (data1 === 72) {
          isControlPressed = isPressed;
          midiOut.sendMidi(0x90, 72, isControlPressed ? 127 : 0);
-         if (isPressed) {
-            ctrlPressStartTime = Date.now();
-            ctrlUsedForCombo = false;
-         } else if (!ctrlUsedForCombo && currentMode === MODE_DEVICE &&
-                    (Date.now() - ctrlPressStartTime) >= CTRL_LONG_PRESS_MS) {
-            cursorDevice.isExpanded().toggle();
-         }
+         if (isPressed) { ctrlUsedForCombo = false; }
+         handleModifierTap(72, isPressed);
          return;
       }
 
       // ALT Button (Note 73) - held modifier for other actions (tempo
-      // nudge fine-grain, jog wheel half-step - see altUsedForCombo
-      // above), but a standalone tap (not used to modify anything else)
-      // cycles the selected device's macro bank (remote controls page).
+      // nudge fine-grain, jog wheel half-step); standalone tap can be
+      // assigned to a Plugin Mode action - see handleModifierTap().
+      // Defaults to cycling the selected device's macro bank.
       if (data1 === 73) {
          isAltPressed = isPressed;
          midiOut.sendMidi(0x90, 73, isAltPressed ? 127 : 0);
-         if (isPressed) {
-            altUsedForCombo = false;
-         } else if (!altUsedForCombo) {
-            remoteControls.selectNextPage(true);
-            host.showPopupNotification("Next Macro Bank");
-         }
+         if (isPressed) { altUsedForCombo = false; }
+         handleModifierTap(73, isPressed);
          return;
       }
 
@@ -1136,6 +1223,7 @@ function handleButtonPressInner(note) {
    switch (note) {
       case 40: // TRACK / I/O -> Toggle Track Mixer / Track Inspector I/O Panel
          if (currentMode === MODE_MIXER || isShiftPressed) {
+            if (isShiftPressed) { shiftUsedForCombo = true; }
             safeCall(application, "toggleInspector", "Toggle Track Inspector / I/O Panel");
          } else {
             currentMode = MODE_MIXER;
@@ -1248,6 +1336,7 @@ function handleButtonPressInner(note) {
 
       case 46: // BANK PREV (<) -> jump to bank 0 with SHIFT, else page back
          if (isShiftPressed) {
+            shiftUsedForCombo = true;
             activeTrackBank().scrollPosition().set(0);
             host.showPopupNotification("Jump to First Bank");
          } else if (currentMode === MODE_DEVICE) {
@@ -1263,6 +1352,7 @@ function handleButtonPressInner(note) {
 
       case 47: // BANK NEXT (>) -> jump to last bank with SHIFT, else page forward
          if (isShiftPressed) {
+            shiftUsedForCombo = true;
             var maxOffsetBank = Math.max(0, activeTrackBank().itemCount().get() - 8);
             activeTrackBank().scrollPosition().set(maxOffsetBank);
             host.showPopupNotification("Jump to Last Bank");
@@ -1301,6 +1391,7 @@ function handleButtonPressInner(note) {
                transport.tempo().incRaw(isAltPressed ? -0.1 : -1.0);
             }
          } else if (isShiftPressed) {
+            shiftUsedForCombo = true;
             activeTrackBank().scrollPosition().set(0);
             host.showPopupNotification("Jump to First Channel");
          } else {
@@ -1324,6 +1415,7 @@ function handleButtonPressInner(note) {
                transport.tempo().incRaw(isAltPressed ? 0.1 : 1.0);
             }
          } else if (isShiftPressed) {
+            shiftUsedForCombo = true;
             var maxOffsetCh = Math.max(0, activeTrackBank().itemCount().get() - 8);
             activeTrackBank().scrollPosition().set(maxOffsetCh);
             host.showPopupNotification("Jump to Last Channel");
@@ -1385,6 +1477,7 @@ function handleButtonPressInner(note) {
 
       case 78: // DETAIL -> Hide/Show Detail View
          if (isShiftPressed) {
+            shiftUsedForCombo = true;
             safeCall(application, "toggleAutomationEditor", "Toggle Automation Editor Panel");
          } else {
             safeCall(application, "toggleNoteEditor", "Toggle Detail Editor Panel");
@@ -1445,6 +1538,7 @@ function handleButtonPressInner(note) {
 
       case 83: // FOLLOW
          if (isShiftPressed) {
+            shiftUsedForCombo = true;
             transport.isMetronomeEnabled().toggle();
             host.showPopupNotification("Toggle Metronome");
          } else {
@@ -1472,6 +1566,7 @@ function handleButtonPressInner(note) {
 
       case 88: // PUNCH OUT (CTRL+PO: set loop end from playhead)
          if (isControlPressed) {
+            ctrlUsedForCombo = true;
             var loopStart = transport.arrangerLoopStart().get();
             var curPos = transport.getPosition().get();
             if (curPos > loopStart) {

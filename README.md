@@ -55,7 +55,9 @@ Two independent halves, both required:
   3-state toggle via the SEND button (note 41): sends 1-8 -> sends 9-16 ->
   back to Mixer.
 - `MODE_DEVICE` - faders/encoders control the selected device's 8 remote
-  control macros. Entered via PLUG-IN (note 43).
+  control macros. Entered via PLUG-INS (note 44 - see the button-map
+  correction below), or via F1-F8 in their default/orange state (notes
+  54-61), which also jump directly to device 1-8 on the chain.
 - `MODE_SCENE` - entered via the button printed B.T.A. on the old Live
   overlay (note 80): shows the clip launcher, switches Bitwig to the Mix
   panel layout, and the jog wheel selects/launches scenes instead of its
@@ -64,6 +66,29 @@ Two independent halves, both required:
 FLIP (note 50) swaps faders and encoders between volume and pan (or, in
 `MODE_DEVICE`, between device macros and volume) within whichever mode is
 active.
+
+### Plugin Mode settings (Controller Preferences panel)
+
+Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
+-> **Plugin Mode** category. All 4 modifier buttons (SHIFT/OPTION/CTRL/ALT,
+notes 70-73) are still always-available held modifiers for their existing
+combos (fine adjust, jog-wheel loop shift/scale, tempo nudge, device
+navigation, etc, regardless of these settings) - these settings only
+control each button's *standalone tap* action, i.e. what happens if you
+press and release one without using it to modify anything else:
+
+- **Expanded Device View Button** (CTRL / ALT / OPTION / SHIFT / None,
+  default CTRL) - which button's tap toggles `cursorDevice.isExpanded()`
+  while in `MODE_DEVICE`.
+- **Expanded Device View Trigger** (Long Press / Instant Tap, default Long
+  Press) - whether that tap needs to be held for the duration below, or
+  fires immediately on release.
+- **Long Press Duration (Expanded Device View)** (200-2000ms, default
+  500ms) - only relevant when Trigger is Long Press.
+- **Macro Bank Cycle Button** (ALT / CTRL / OPTION / SHIFT / None, default
+  ALT) - which button's tap calls `remoteControls.selectNextPage()`. If
+  set to the same button as Expanded Device View, that button's tap always
+  triggers Expanded Device View, never the macro cycle.
 
 ### LCD / meters / LEDs
 
@@ -97,7 +122,7 @@ was still in Live mode, is confirmed still correct.
 | 41 | SEND | 3-state Sends mode toggle |
 | 42 | PAN | Toggle `TRLVL` tool-device Gain/Pan control |
 | 43 | No Live-overlay label ("not available in Live" per the manual) | Unbound |
-| 44 | PLUG-INS | Toggle Device mode (first device, opens panel) - confirmed via console testing that the Live overlay's "PLUG-INS" sticker is over this note, not 43 |
+| 44 | PLUG-INS | Toggle Device mode (first device, opens panel; second press also closes the panel) - confirmed via console testing that the Live overlay's "PLUG-INS" sticker is over this note, not 43 |
 | 45 | No Live-overlay label (bare-label printing: INST) | Select first track instrument / next device page - unconfirmed whether this is reachable at all under the Live overlay |
 | 46 | BANK PREV | Page track bank back (SHIFT = jump to first) |
 | 47 | BANK NEXT | Page track bank forward (SHIFT = jump to last) |
@@ -107,9 +132,9 @@ was still in Live mode, is confirmed still correct.
 | 51 | RETURNS | Swap channel strips to/from the Return Tracks bank |
 | 52 | NAME/VALUE | Unbound (no Bitwig equivalent) |
 | 53 | SMPTE/BEATS | Pure mode key, deliberately unbound - toggles the F1-F8 row's backlight red/green (and which note range F1-F8 sends) entirely in hardware firmware; no longer bound to Automation Write |
-| 54-61 | F1-F8 (red state) | Unbound - 8 function-key slots awaiting assignment |
-| 62-69 | F1-F8 (green state) | Unbound - 8 more function-key slots awaiting assignment |
-| 70-73 | SHIFT / OPTION / CTRL / ALT | Modifier hold state |
+| 54-61 | F1-F8 (default/orange-lit state) | Select device 1-8 directly on the current track (enters `MODE_DEVICE` if needed) |
+| 62-69 | F1-F8 (green-lit state, toggled via SMPTE/BEATS) | Unbound - 8 more function-key slots awaiting assignment |
+| 70-73 | SHIFT / OPTION / CTRL / ALT | Modifier hold state; standalone tap action is configurable, see Plugin Mode settings above |
 | 74 | (Live label: SESS/ARR) | Toggle clip launcher / arranger view |
 | 75 | (Live label: CLIP/FX) | Toggle device / clip view |
 | 76 | (Live label: UNDO) | `application.undo()` |
@@ -148,18 +173,11 @@ sends note 100 directly, same as the note 100 already bound above.
 
 ## Open items for next session
 
-1. **16 F-key slots need assignment.** The Ableton Live overlay foil is
-   back on for the main/left button area (so those buttons are referred to
-   by their Live-overlay labels again, per the table above), but the top
-   F1-F8 overlay strip has been left off deliberately - those 8 keys are
-   meant to become general-purpose function buttons. Confirmed this
-   session: SMPTE/BEATS (note 53) is *not* bound to anything in Bitwig
-   anymore (previously toggled Automation Write - removed per request, see
-   git history) - pressing it is now purely a hardware-local mode toggle
-   that flips the F1-F8 row's backlight red/green and which of two note
-   ranges F1-F8 sends (red = 54-61, green = 62-69, confirmed via console
-   testing) - giving 16 independent, currently-unbound function-key slots.
-   Still need: what should each of the 16 actually trigger?
+1. **Green-state F1-F8 (notes 62-69) still unassigned.** The red/orange
+   state (54-61) now selects device 1-8 directly. SMPTE/BEATS (note 53)
+   toggles between the two states in hardware firmware only - it's not
+   bound to anything in Bitwig itself (previously toggled Automation
+   Write - removed per request, see git history).
 2. **Metering re-enabled but not re-tested this session** - it was
    disabled for several sessions while diagnosing the (unrelated) fader
    bug; restored to its intended state (`mode=3` SysEx + Channel Pressure
@@ -167,7 +185,7 @@ sends note 100 directly, same as the note 100 already bound above.
    meters still behave correctly now that faders work again.
 3. Debug logging (`RAW Note-On received`, `RAW CC received`, `Button
    pressed - Note:`) is still left in intentionally - useful while wiring
-   up the F1-F8 slots (item 1). Fine to remove once that's done.
+   up the remaining F1-F8 slots (item 1). Fine to remove once that's done.
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 
