@@ -20,7 +20,7 @@ loadAPI(25);
 host.defineController(
    "Midiplus",
    "Midiplus UP (Ableton Live Overlay)",
-   "1.0.0",
+   "2.0.0-fader-debug",
    "6f56e9e0-0871-4623-a178-5e82485a3c10",
    "Antigravity"
 );
