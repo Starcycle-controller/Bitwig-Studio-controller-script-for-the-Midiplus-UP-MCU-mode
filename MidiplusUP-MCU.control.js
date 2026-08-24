@@ -890,6 +890,20 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          // Requires the meter-enable SysEx sent once in init() above.
          track.addVuMeterObserver(13, -1, true, function (level) {
             if (currentMode === MODE_MIXER && isViewingReturns === isReturnsBank) {
+               // DEBUG: confirms whether Bitwig is even calling this back
+               // with real level data for this track - if channel 8's LED
+               // meter isn't animating on hardware, check the console for
+               // "Meter idx 7" lines while audio plays on that track. If
+               // they never appear, it's a Bitwig-side metering/routing
+               // issue (or the wrong track is selected in this bank slot);
+               // if they DO appear but the hardware LED still doesn't move,
+               // it's either our sendMidi below or a hardware limitation on
+               // this specific channel. Scoped to index 7 only to keep the
+               // console readable. Remove once channel 8 metering is
+               // confirmed working (or confirmed to be a hardware limit).
+               if (index === 7) {
+                  println("Meter idx 7 level " + level);
+               }
                midiOut.sendMidi(0xD0, (index << 4) | level, 0);
             }
          });
