@@ -422,30 +422,48 @@ was still in Live mode, is confirmed still correct.
 ### Jog wheel modifier combos
 
 In priority order (each returns before the next is checked, so only one
-applies per turn): `MODE_SCENE` active (move the scene cursor) > **SHIFT+OPTION**
-(adjust the last-clicked GUI parameter, see below) > CTRL (device-mode:
-step devices; otherwise: nudge tempo, fine with ALT) > PLUG-INS held (step
-devices) > BANK held (page remote-control pages) > OPTION alone (halve/
-double loop length) > SHIFT alone (shift loop by a bar) > SCRUB toggle or
-wheel press (jump by a bar) > default (scrub, ALT halves the step size).
+applies per turn): `MODE_SCENE` active (move the scene cursor) > CTRL
+(device-mode: step devices; otherwise: nudge tempo, fine with ALT) >
+**ALT alone** (adjust the last-clicked GUI parameter, see below) >
+PLUG-INS held (step devices) > BANK held (page remote-control pages) >
+OPTION alone (halve/double loop length) > SHIFT alone (shift loop by a
+bar) > SCRUB toggle or wheel press (jump by a bar) > default (scrub, one
+quarter note per message, no longer ALT-modified - see below).
 
-**SHIFT+OPTION + Jog Wheel** adjusts whatever parameter was last clicked
-in Bitwig's own GUI - click any knob/slider/fader once in Bitwig
+**ALT + Jog Wheel** adjusts whatever parameter was last clicked in
+Bitwig's own GUI - click any knob/slider/fader once in Bitwig
 (`host.createLastClickedParameter()`, `lastClickedParamValue.inc(rawStep,
-128)`), then hold SHIFT+OPTION and turn the wheel to dial it in without
-touching the mouse again. **Not literal continuous mouseover** - the
-Controller API only exposes "last clicked" (confirmed against the
+128)`), then hold ALT and turn the wheel to dial it in without touching
+the mouse again. **Not literal continuous mouseover** - the Controller
+API only exposes "last clicked" (confirmed against the
 `LastClickedParameter` Javadoc: `.parameter()` tracks whatever was most
 recently clicked, not live hover position), not a per-frame "what's under
 the cursor right now" feed - but functionally close for the requested
 workflow: click once to arm a control, then adjust freely with the wheel.
 Shows the parameter's name as a Bitwig popup on every turn so it's always
-clear what's currently armed. OPT alone was already bound (loop halve/
-double) when this was requested, so this needed a still-free combo -
-SHIFT+OPTION together weren't previously used for anything (each
-single-modifier branch only checks its own flag and returns, so a
-combined check has to come first, ahead of them, to not get swallowed -
-see the code). Not yet tested on hardware.
+clear what's currently armed. **Confirmed working on hardware** -
+clicking a Drum Machine's own output-level knob and using this combo
+correctly adjusted it; a circular on-screen overlay briefly appeared at
+the same time, which turned out to be that same Drum Machine parameter
+(commonly labeled "Master" inside instrument devices, unrelated to the
+actual mixer master bus) rather than a second, unintended change - the
+real master bus volume was confirmed unchanged.
+
+This was originally SHIFT+OPTION together (OPT alone was already bound to
+loop halve/double, so a still-free combo was needed), then moved to plain
+ALT per request - which meant giving up ALT's old role of halving the
+default scrub step (quarter note -> eighth note), now removed since ALT
+alone is claimed earlier and that code was no longer reachable. CTRL+ALT
+(fine tempo nudge) is unaffected, since CTRL is still checked first and
+returns before the plain-ALT branch is ever reached.
+
+**ALT + Jog Wheel Press** (push the wheel down while holding ALT) runs
+Bitwig's real `select_item_at_cursor` action ("Select item at cursor" -
+same one the Function Keys dropdowns offer, see `FKEY_FUNCTIONS`) -
+pairs naturally with the ALT+turn combo above: select something, then
+dial in whatever you clicked. Takes priority over the wheel-press's other
+use (launching the selected scene in `MODE_SCENE`) when ALT is held.
+Not yet tested on hardware.
 
 ### Jog-wheel "mode" buttons (CURSOR / SCROLL / ZOOM / MASTER / MARKER /
 NUDGE / BANK / CHANNEL, per the manual's "Multi-Purpose Jog Wheel Section")

@@ -73,8 +73,8 @@ var isOptionPressed = false;  // Note 71
 var isControlPressed = false; // Note 72
 var isAltPressed = false;     // Note 73
 
-// SHIFT+OPTION + Jog Wheel adjusts whichever parameter was last clicked
-// in Bitwig's own GUI - see the wheel handler in onMidi(). Both created
+// ALT + Jog Wheel adjusts whichever parameter was last clicked in
+// Bitwig's own GUI - see the wheel handler in onMidi(). Both created
 // once in init() via host.createLastClickedParameter() - lastClickedParam
 // is an ObjectProxy (like CursorTrack/CursorDevice elsewhere in this
 // file), so it and the Parameter it hands back both stay valid as stable
@@ -820,9 +820,9 @@ function init() {
    // Remote Controls (8 Macros for selected device)
    remoteControls = cursorDevice.createCursorRemoteControlsPage(8);
 
-   // Last-clicked-in-GUI parameter (see SHIFT+OPTION + Jog Wheel in the
-   // wheel handler above) - id is used for persistent state, per the
-   // Javadoc, so keep it stable across versions.
+   // Last-clicked-in-GUI parameter (see ALT + Jog Wheel in the wheel
+   // handler above) - id is used for persistent state, per the Javadoc,
+   // so keep it stable across versions.
    lastClickedParam = host.createLastClickedParameter("lastClickedParam", "Mouseover Parameter");
    lastClickedParamValue = lastClickedParam.parameter();
    lastClickedParamValue.name().markInterested();
@@ -1295,31 +1295,12 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      if (isShiftPressed && isOptionPressed) {
-         // SHIFT+OPTION + Jog Wheel: adjust whatever parameter was last
-         // clicked in Bitwig's own GUI (host.createLastClickedParameter(),
-         // see lastClickedParam above) - click any knob/slider once in
-         // Bitwig, then hold SHIFT+OPTION and turn the wheel to dial it in
-         // without touching the mouse again. Not true continuous
-         // mouseover - Bitwig's Controller API only exposes "last
-         // clicked", not live hover position (confirmed against the
-         // LastClickedParameter Javadoc) - but functionally close: click
-         // once to arm it, then adjust freely. Checked before OPTION's own
-         // solo branch below so the combo isn't swallowed by it - OPTION
-         // alone (loop halve/double) and SHIFT alone (shift loop by bar)
-         // are unaffected, both still fire normally when only one of the
-         // two is held.
-         shiftUsedForCombo = true;
-         optionUsedForCombo = true;
-         lastClickedParamValue.inc(rawStep, 128);
-         host.showPopupNotification(lastClickedParamValue.name().get());
-         return;
-      }
-
       if (isControlPressed) {
          // Using CTRL to modify the wheel means a long-press expanded-view
          // toggle shouldn't also fire when it's released - see the CTRL
-         // block above.
+         // block above. Checked before the plain ALT branch below so
+         // CTRL+ALT (fine tempo nudge) still works - CTRL always takes
+         // priority over ALT here, same as before.
          ctrlUsedForCombo = true;
 
          if (currentMode === MODE_DEVICE) {
@@ -1346,6 +1327,27 @@ function onMidi(status, data1, data2) {
          }
          var tempoStep = isAltPressed ? 0.1 : 1.0;
          transport.tempo().incRaw(rawStep * tempoStep);
+         return;
+      }
+
+      if (isAltPressed) {
+         // ALT + Jog Wheel (CTRL not also held, see above): adjust
+         // whatever parameter was last clicked in Bitwig's own GUI
+         // (host.createLastClickedParameter(), see lastClickedParam
+         // above) - click any knob/slider once in Bitwig, then hold ALT
+         // and turn the wheel to dial it in without touching the mouse
+         // again. Not true continuous mouseover - Bitwig's Controller API
+         // only exposes "last clicked", not live hover position (confirmed
+         // against the LastClickedParameter Javadoc) - but functionally
+         // close: click once to arm it, then adjust freely. This replaces
+         // ALT's old role of halving the default scrub step (see the
+         // default branch below, which no longer checks ALT) - was
+         // originally SHIFT+OPTION, moved to plain ALT per request. See
+         // also note 87's press handler for ALT+wheel-press ("Select item
+         // at cursor").
+         altUsedForCombo = true;
+         lastClickedParamValue.inc(rawStep, 128);
+         host.showPopupNotification(lastClickedParamValue.name().get());
          return;
       }
 
@@ -1428,18 +1430,15 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // Default: jump exactly one quarter note per wheel message (half of
-      // that, an eighth note, with ALT held), landing precisely on the
-      // beat grid line - same "compute the exact target position" approach
-      // as the bar-jump/loop-shift branches above, rather than a smooth
-      // but grid-imprecise scrub.
-      if (isAltPressed) {
-         altUsedForCombo = true;
-      }
-      var beatStep = isAltPressed ? 0.5 : 1.0;
-      var currentBeatUnit = Math.round(transport.getPosition().get() / beatStep);
+      // Default: jump exactly one quarter note per wheel message, landing
+      // precisely on the beat grid line - same "compute the exact target
+      // position" approach as the bar-jump/loop-shift branches above,
+      // rather than a smooth but grid-imprecise scrub. No longer
+      // ALT-modified - ALT alone is now claimed above (mouseover-parameter
+      // adjust), unreachable here since it always returns first.
+      var currentBeatUnit = Math.round(transport.getPosition().get());
       var targetBeatUnit = backwards ? currentBeatUnit - 1 : currentBeatUnit + 1;
-      transport.getPosition().set(Math.max(0, targetBeatUnit) * beatStep);
+      transport.getPosition().set(Math.max(0, targetBeatUnit));
       return;
    }
 
@@ -1497,14 +1496,21 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // Jog Wheel Push / Pan Mode (Note 87 - see isWheelPressed above). In
-      // MODE_SCENE, a press launches the currently selected scene instead -
-      // Pan Mode's bar-jump branch is unreachable in that mode anyway (the
-      // wheel handler's MODE_SCENE branch takes priority), so there's no
-      // conflict between the two uses of this note.
+      // Jog Wheel Push / Pan Mode (Note 87 - see isWheelPressed above).
+      // ALT held + press runs Bitwig's real "Select item at cursor" action
+      // (same one the F-key function list offers, see FKEY_FUNCTIONS) -
+      // takes priority over the MODE_SCENE scene-launch behavior below,
+      // since holding ALT is a deliberate, distinct gesture. Without ALT,
+      // in MODE_SCENE a press launches the currently selected scene
+      // instead - Pan Mode's bar-jump branch is unreachable in that mode
+      // anyway (the wheel handler's MODE_SCENE branch takes priority), so
+      // there's no conflict between the two (non-ALT) uses of this note.
       if (data1 === 87) {
          isWheelPressed = isPressed;
-         if (isPressed && currentMode === MODE_SCENE) {
+         if (isPressed && isAltPressed) {
+            altUsedForCombo = true;
+            safeInvokeAction("select_item_at_cursor", "Select item at cursor");
+         } else if (isPressed && currentMode === MODE_SCENE) {
             sceneBank.getScene(sceneCursorIndex).launch();
             host.showPopupNotification("Launch Scene " + (sceneCursorIndex + 1));
          }
