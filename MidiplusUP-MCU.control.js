@@ -226,6 +226,13 @@ var hwSurface = null;
 var hwFaders = []; // 8 track faders, index 0-7
 var hwMasterFader = null;
 
+// Last pitch-bend value (0-16383) sent to each fader's motor, indexed 0-7
+// for tracks and 8 for master - see updateFaderOutputs() below. Reset to
+// -1 (never sent) whenever rebindFaders() points a fader at a new
+// parameter, so the new target's value gets pushed out immediately on the
+// next flush() rather than waiting for it to actually change.
+var lastSentFaderValue = [-1, -1, -1, -1, -1, -1, -1, -1, -1];
+
 // SELECT button double-press detection (fold/unfold a group track) - one
 // timestamp per physical channel-strip slot, shared across whichever bank
 // is currently active.
@@ -1559,35 +1566,39 @@ function flashLed(note, durationMs) {
    }, durationMs);
 }
 
+// Returns whichever Parameter fader `i` (0-7) should currently control,
+// depending on mode/flip/tool state - shared by rebindFaders() (input side)
+// and updateFaderOutputs() (output side) below so the two can never
+// disagree about which parameter is "the" target for a given fader.
+function getFaderTarget(i) {
+   if (currentMode === MODE_SENDS) {
+      var sendIdx = (sendBankPage * 8) + i;
+      return cursorTrack.sendBank().getItemAt(sendIdx);
+   }
+   if (!isFlipped) {
+      if (currentMode === MODE_MIXER && isToolVolumeMode) {
+         return getToolParam(i, 0);
+      }
+      return activeTrackBank().getItemAt(i).volume();
+   }
+   if (currentMode === MODE_DEVICE) {
+      return remoteControls.getParameter(i);
+   }
+   if (isToolVolumeMode) {
+      return getToolParam(i, 1);
+   }
+   return activeTrackBank().getItemAt(i).pan();
+}
+
 // Re-binds each of the 8 hwFaders to whichever Parameter they should
 // currently control, whenever the active mode/flip/tool state changes
-// (called everywhere the old manual refreshFaders() used to be). Bitwig's
-// own hardware-binding system (see hwFaders above) then keeps the physical
-// motorized fader position in sync with that parameter automatically -
-// for hardware input AND for mouse-driven/automation-driven changes -
-// with no manual sendMidi() needed here at all.
+// (called everywhere the old manual refreshFaders() used to be). This is
+// the INPUT side: Bitwig's own hardware-binding system (see hwFaders
+// above) routes the physical fader's incoming pitch-bend straight to
+// whichever parameter is bound, with no manual onMidi() parsing needed.
 function rebindFaders() {
    for (var i = 0; i < 8; i++) {
-      var target = null;
-      if (currentMode === MODE_SENDS) {
-         var sendIdx = (sendBankPage * 8) + i;
-         target = cursorTrack.sendBank().getItemAt(sendIdx);
-      } else if (!isFlipped) {
-         if (currentMode === MODE_MIXER && isToolVolumeMode) {
-            target = getToolParam(i, 0);
-         } else {
-            target = activeTrackBank().getItemAt(i).volume();
-         }
-      } else if (currentMode === MODE_DEVICE) {
-         target = remoteControls.getParameter(i);
-      } else {
-         if (isToolVolumeMode) {
-            target = getToolParam(i, 1);
-         } else {
-            target = activeTrackBank().getItemAt(i).pan();
-         }
-      }
-
+      var target = getFaderTarget(i);
       if (target) {
          hwFaders[i].setBinding(target);
       } else {
@@ -1595,6 +1606,37 @@ function rebindFaders() {
          hwFaders[i].clearBindings();
       }
    }
+   // Force an immediate output refresh too, since the newly-bound
+   // parameters' values likely differ from whatever was last sent for the
+   // previous target (see updateFaderOutputs()/lastSentFaderValue below).
+   lastSentFaderValue = [-1, -1, -1, -1, -1, -1, -1, -1, -1];
+}
+
+// OUTPUT side: motorized fader feedback is NOT automatic just because a
+// HardwareSlider is bound via setBinding() above - Bitwig's own shipped
+// Mackie Control driver (and Jurgen Mossgraber's DrivenByMoss MCU driver)
+// both confirm this by explicitly polling each fader's current value on
+// every flush() call and manually calling sendPitchbend() whenever it's
+// changed since the last flush - there's no simpler API for this. Called
+// from flush() below, so it naturally covers hardware input, mouse drags,
+// automation playback, and mode/bank switches alike (anything that changes
+// the bound parameter's value), not just discrete button-triggered events.
+function sendFaderPitchBendIfChanged(channel, normalizedValue) {
+   if (normalizedValue === undefined || normalizedValue === null) normalizedValue = 0;
+   var val14 = Math.max(0, Math.min(16383, Math.round(normalizedValue * 16383)));
+   if (val14 === lastSentFaderValue[channel]) {
+      return;
+   }
+   lastSentFaderValue[channel] = val14;
+   midiOut.sendMidi(0xE0 + channel, val14 & 0x7F, (val14 >> 7) & 0x7F);
+}
+
+function updateFaderOutputs() {
+   for (var i = 0; i < 8; i++) {
+      var target = getFaderTarget(i);
+      sendFaderPitchBendIfChanged(i, target ? target.value().get() : 0);
+   }
+   sendFaderPitchBendIfChanged(8, masterTrack.volume().value().get());
 }
 
 // Force Refresh LCD Text Cache
@@ -1690,13 +1732,14 @@ function onSysex(data) {
    // SysEx input handling if required
 }
 
-// Bitwig calls this periodically - required for the native hwFaders/
-// hwMasterFader hardware-surface bindings (see rebindFaders() above) to
-// actually push their queued output (motor position updates) to the
-// device. Without this, setBinding() still tracks state correctly but
-// nothing gets sent to the hardware.
+// Bitwig calls this periodically. hwSurface.updateHardware() flushes the
+// native hardware-surface bindings' queued state (touch lights etc, and
+// required in general per the API docs); updateFaderOutputs() is the
+// actual motor-feedback push - see its comment above for why that can't
+// just be automatic.
 function flush() {
    hwSurface.updateHardware();
+   updateFaderOutputs();
 }
 
 function exit() {
