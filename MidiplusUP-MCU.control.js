@@ -1351,9 +1351,22 @@ function handleButtonPressInner(note) {
                // (inherited from testing done before the overlay was
                // reattached) was wrong. Still need to confirm what, if
                // anything, note 50 does now - see README.
+               //
+               // FLIP does NOT change currentMode - Plugin/Device mode
+               // (and any other active mode) stays active; FLIP is purely
+               // an additional axis (level vs macro control on the
+               // faders) layered on top of it. The explicit
+               // updateModeLEDs() call below is required even though FLIP
+               // itself doesn't touch any mode LED: the hardware was
+               // observed clearing note 44's (PLUG-INS/Device mode) LED on
+               // its own when FLIP is pressed (same kind of hardware-local
+               // LED behavior already documented for BANK/CHANNEL, see
+               // case 48) - re-sending the mode LEDs re-asserts the
+               // correct state regardless of what the firmware did.
          isFlipped = !isFlipped;
          midiOut.sendMidi(0x90, 43, isFlipped ? 127 : 0);
          host.showPopupNotification("Fader Flip: " + (isFlipped ? "ON" : "OFF"));
+         updateModeLEDs();
          rebindFaders();
          break;
 
