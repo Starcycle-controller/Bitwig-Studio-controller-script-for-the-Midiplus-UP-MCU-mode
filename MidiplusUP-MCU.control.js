@@ -2329,38 +2329,47 @@ function formatPanLR(rawValue) {
 }
 
 // Bitwig's ColorValue only exposes raw red()/green()/blue() (0-1 floats) -
-// no color-name API exists (confirmed against the Controller API Javadoc),
-// so nameForTrackColor() below picks whichever of these reference colors
-// is closest in RGB space (plain squared Euclidean distance - good enough
-// for "which color is this roughly", not colorimetrically precise). Every
-// name is deliberately <=7 characters so it always fits a channel LCD
-// cell without truncation.
+// no color-name API exists (confirmed against the Controller API Javadoc).
+// Rather than guessing generic color names, these are Bitwig's REAL
+// default track-color palette entries - ported verbatim (name + exact RGB)
+// from Mossgraber's DAWColor.java (de.mossgrabers.framework.daw), which
+// reverse-engineers this exact 27-color grid for controller color-matching
+// in his own DrivenByMoss drivers. Since a track's color almost always
+// comes from picking one of these 27 swatches in Bitwig's own color
+// picker, nameForTrackColor() below will usually land on an exact (or
+// near-exact) match rather than an approximate guess - fixing the earlier
+// problem where a generic palette collapsed neighboring swatches like
+// Orange/Light Orange into the same name. Names are abbreviated from
+// Mossgraber's originals (kept in the comments) to fit the 7-character
+// LCD cell limit.
 var NAMED_COLORS = [
-   { n: "RED",     r: 0.90, g: 0.10, b: 0.10 },
-   { n: "ORANGE",  r: 1.00, g: 0.55, b: 0.00 },
-   { n: "AMBER",   r: 1.00, g: 0.75, b: 0.00 },
-   { n: "YELLOW",  r: 1.00, g: 0.95, b: 0.10 },
-   { n: "LIME",    r: 0.60, g: 0.90, b: 0.10 },
-   { n: "GREEN",   r: 0.10, g: 0.70, b: 0.20 },
-   { n: "MINT",    r: 0.40, g: 0.90, b: 0.60 },
-   { n: "TEAL",    r: 0.00, g: 0.60, b: 0.55 },
-   { n: "CYAN",    r: 0.10, g: 0.85, b: 0.90 },
-   { n: "SKYBLUE", r: 0.30, g: 0.65, b: 0.95 },
-   { n: "BLUE",    r: 0.15, g: 0.35, b: 0.95 },
-   { n: "NAVY",    r: 0.05, g: 0.10, b: 0.50 },
-   { n: "INDIGO",  r: 0.35, g: 0.15, b: 0.75 },
-   { n: "PURPLE",  r: 0.55, g: 0.15, b: 0.75 },
-   { n: "VIOLET",  r: 0.75, g: 0.35, b: 0.90 },
-   { n: "MAGENTA", r: 0.90, g: 0.10, b: 0.75 },
-   { n: "PINK",    r: 0.95, g: 0.50, b: 0.70 },
-   { n: "ROSE",    r: 0.90, g: 0.30, b: 0.40 },
-   { n: "BROWN",   r: 0.50, g: 0.30, b: 0.15 },
-   { n: "OLIVE",   r: 0.55, g: 0.55, b: 0.10 },
-   { n: "WHITE",   r: 0.95, g: 0.95, b: 0.95 },
-   { n: "LTGRAY",  r: 0.75, g: 0.75, b: 0.75 },
-   { n: "GRAY",    r: 0.50, g: 0.50, b: 0.50 },
-   { n: "DKGRAY",  r: 0.25, g: 0.25, b: 0.25 },
-   { n: "BLACK",   r: 0.05, g: 0.05, b: 0.05 }
+   { n: "DKGRAY",  r: 0.3294117748737335, g: 0.3294117748737335, b: 0.3294117748737335 }, // Dark Gray
+   { n: "GRAY",    r: 0.47843137383461,   g: 0.47843137383461,   b: 0.47843137383461   }, // Gray
+   { n: "GRAY50",  r: 0.5,                g: 0.5,                b: 0.5                }, // Gray half
+   { n: "LTGRAY",  r: 0.7882353067398071, g: 0.7882353067398071, b: 0.7882353067398071 }, // Light Gray
+   { n: "SILVER",  r: 0.5254902243614197, g: 0.5372549295425415, b: 0.6745098233222961 }, // Silver
+   { n: "DKBROWN", r: 0.6392157077789307, g: 0.4745098054409027, b: 0.26274511218070984}, // Dark Brown
+   { n: "BROWN",   r: 0.7764706015586853, g: 0.6235294342041016, b: 0.43921568989753723}, // Brown
+   { n: "DKBLUE",  r: 0.34117648005485535,g: 0.3803921639919281, b: 0.7764706015586853 }, // Dark Blue
+   { n: "PRPLBLU", r: 0.5176470875740051, g: 0.5411764979362488, b: 0.8784313797950745 }, // Purplish Blue
+   { n: "PURPLE",  r: 0.5843137502670288, g: 0.2862745225429535, b: 0.7960784435272217 }, // Purple
+   { n: "PINK",    r: 0.8509804010391235, g: 0.21960784494876862,b: 0.4431372582912445 }, // Pink
+   { n: "RED",     r: 0.8509804010391235, g: 0.18039216101169586,b: 0.1411764770746231 }, // Red
+   { n: "ORANGE",  r: 1,                  g: 0.34117648005485535,b: 0.0235294122248888 }, // Orange
+   { n: "LTORANG", r: 0.8509804010391235, g: 0.615686297416687,  b: 0.062745101749897  }, // Light Orange
+   { n: "MOSSGRN", r: 0.26274511218070984,g: 0.8235294222831726, b: 0.7254902124404907 }, // Moss Green
+   { n: "GREEN",   r: 0.45098039507865906,g: 0.5960784554481506, b: 0.0784313753247261 }, // Green
+   { n: "COLDGRN", r: 0,                  g: 0.615686297416687,  b: 0.27843138575553894}, // Cold Green
+   { n: "BLUE",    r: 0.2666666805744171, g: 0.7843137383460999, b: 1                  }, // Blue
+   { n: "LTPURPL", r: 0.7372549176216125, g: 0.4627451002597809, b: 0.9411764740943909 }, // Light Purple
+   { n: "LTPINK",  r: 0.8823529481887817, g: 0.4000000059604645, b: 0.5686274766921997 }, // Light Pink
+   { n: "ROSE",    r: 0.9254902005195618, g: 0.3803921639919281, b: 0.34117648005485535}, // Rose
+   { n: "REDBRWN", r: 1,                  g: 0.5137255191802979, b: 0.24313725531101227}, // Redish Brown
+   { n: "LTBROWN", r: 0.8941176533699036, g: 0.7176470756530762, b: 0.30588236451148987}, // Light Brown
+   { n: "LTGREEN", r: 0.6274510025978088, g: 0.7529411911964417, b: 0.2980392277240753 }, // Light Green
+   { n: "BLUGRN",  r: 0,                  g: 0.6509804129600525, b: 0.5803921818733215 }, // Bluish Green
+   { n: "GRNBLU",  r: 0.24313725531101227,g: 0.7333333492279053, b: 0.3843137323856354 }, // Greenish Blue
+   { n: "LTBLUE",  r: 0,                  g: 0.6000000238418579, b: 0.8509804010391235 }  // Light Blue
 ];
 
 function nameForTrackColor(color) {

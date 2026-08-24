@@ -271,15 +271,21 @@ channel:
   it's left back to Mixer, via `showModePopup()`. Paging within Sends
   (1-8 -> 9-16) doesn't re-announce, since that's not a mode change.
 - **Selecting a track** (SELECT button, or clicking it in Bitwig) shows
-  its color as a human-readable name (`CYAN`, `SKYBLUE`, `PURPLE`, etc)
+  its color as a human-readable name (`ORANGE`, `LTORANG`, `PURPLE`, etc)
   on that channel's bottom row, via `nameForTrackColor()` - there's no
   color-name API (`ColorValue` only exposes raw `red()`/`green()`/
-  `blue()`), so this picks the closest match from a 25-entry reference
-  palette (plain squared RGB distance - close enough to be useful, not
-  colorimetrically exact). Every name is deliberately <=7 characters so
-  it always fits without truncation. Makes it easier to spot which track
-  just became selected at a glance, since Bitwig's own selection
-  highlight isn't otherwise visible on this hardware.
+  `blue()`). `NAMED_COLORS` is Bitwig's actual 27-entry default
+  track-color palette, ported verbatim (exact RGB, not guessed) from
+  Mossgraber's `DAWColor.java`, which reverse-engineers this same grid for
+  color-matching in his own controller drivers - since a track's color is
+  almost always one of these 27 swatches, matches are usually exact or
+  near-exact, not approximate (an earlier, smaller made-up palette
+  couldn't tell e.g. Orange from Light Orange apart - this one can, since
+  both are real distinct entries in it). Names are abbreviated from
+  Mossgraber's original labels (see the code comments for the full
+  originals) to fit the 7-character LCD cell limit. Makes it easier to
+  spot which track just became selected at a glance, since Bitwig's own
+  selection highlight isn't otherwise visible on this hardware.
 
 All four share one per-channel debounce mechanism (`lcdOverrideGeneration`)
 so they can't race each other, plus a separate single shared token
