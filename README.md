@@ -214,36 +214,53 @@ risky; flagged as a "could be shaky" concern when requested.
 Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
 -> **Mixer** category. **Pan Snap to Center** (on/off, default ON) - the
 pan encoders have no physical detent, so landing exactly on dead center by
-turning alone is fiddly; once a turn crosses into **Pan Snap Range (+/- %)**
-(default 2%, range 0-10%) of exact center **from outside it**, the encoder
-handler snaps the rest of the way to it (`encTarget.set(0.5)`) instead of
-leaving it at whatever the raw increment produced. Mixer mode only (real
-track pan and `TRLVL`'s Pan macro when `isToolVolumeMode` is active - both
-centered at the normalized value 0.5) - deliberately **not** applied to
-`MODE_DEVICE` remote-control macros, which have no guaranteed center
-value to snap to, or to `MODE_SENDS` levels. Doesn't replace the existing
-encoder-push pan reset (note 87/case in `handleButtonPress` - "Pan only -
-centers the pan, nothing else") - that's still there as an exact,
-always-available reset; this just makes turning the encoder itself land
-on center more often, without needing the separate push. Turn the range
-down to 0% to disable snapping without touching the on/off toggle, or use
-the toggle directly.
+turning alone is fiddly; once the encoder comes to **rest** (no further
+tick for **Pan Snap Idle Delay (ms)**, default 300) within **Pan Snap
+Range (+/- %)** (default 2%, range 0-10%) of exact center, it snaps the
+rest of the way there (`target.set(0.5)`) instead of leaving it at
+whatever the last increment produced. Mixer mode only (real track pan and
+`TRLVL`'s Pan macro when `isToolVolumeMode` is active - both centered at
+the normalized value 0.5) - deliberately **not** applied to `MODE_DEVICE`
+remote-control macros, which have no guaranteed center value to snap to,
+or to `MODE_SENDS` levels. Doesn't replace the existing encoder-push pan
+reset (note 87/case in `handleButtonPress` - "Pan only - centers the pan,
+nothing else") - that's still there as an exact, always-available reset;
+this just makes turning the encoder itself land on center more often,
+without needing the separate push. Turn the range down to 0% to disable
+snapping without touching the on/off toggle, or use the toggle directly.
 
-**Confirmed broken on hardware in its first version**, then fixed:
-checking only the *post-turn* value against the range (regardless of
-where the pan was before that turn) meant that once pan sat at/near
-center, every subsequent tick's own tiny increment (normally smaller than
-even a 1% range) still landed back inside the zone and got yanked
-straight back to exactly 0.5 - permanently trapping the pan at center, not
-moving at all in either direction, no matter how much the encoder was
-turned (reported as "pan does not move in any direction now"). Fixed by
-only snapping on the specific tick that **crosses into** the range from
-outside it (value was beyond the range before this turn, within it after)
-- once that snap has happened, the very next tick starts from exactly
-0.5, which is not "outside the range", so it no longer re-triggers and
-normal incremental movement resumes immediately in either direction.
-Re-entering the range later (from either side) snaps again the same way.
-Not yet re-tested on hardware since this fix.
+Went through two earlier designs that both failed on hardware before
+landing on the idle-based one above:
+
+1. **Per-tick, checked after every turn.** Snapped as soon as *any*
+   tick's resulting value fell inside the range, with no regard for
+   where the pan was a moment before. Once pan sat at/near center, every
+   following tick's own tiny increment (normally smaller than even a 1%
+   range) *also* landed inside the zone and got yanked straight back to
+   exactly 0.5 - the pan became permanently trapped at center, unable to
+   move in either direction no matter how much the encoder was turned
+   (reported as "pan does not move in any direction now").
+2. **Per-tick, but only on crossing into the zone from outside it**
+   (i.e. only snapping when the value was beyond the range before that
+   specific tick and inside it after). This fixed the trapping, but then
+   usually didn't snap at all on real hardware: the MCU protocol batches
+   several physical clicks into a single MIDI message's step count, so
+   an ordinary-speed turn typically jumps clean across the whole zone in
+   one message and its value is never actually observed sitting inside
+   it mid-turn - there's no tick to catch the crossing on.
+
+Both problems share the same root cause: reacting to *every individual
+tick* mid-turn, whether by value or by transition, is the wrong signal -
+what actually matters is where the pan ends up once you stop turning.
+`schedulePanSnapCheck()` re-arms a `host.scheduleTask()` check on every
+tick (bumping a per-encoder generation token, same debounce pattern
+`revealPanTemporarily()` already uses for the bottom-row LCD reveal, so
+only the LAST scheduled check for a turn ever actually runs) and only
+evaluates the resting value once nothing has moved that encoder for
+**Pan Snap Idle Delay (ms)** - sidestepping both the trapping and the
+overshoot-past-the-zone problem, since it no longer matters how big or
+small each individual MIDI message's step was. Not yet tested on
+hardware since this redesign.
 
 ### Diagnostics settings (Controller Preferences panel)
 

@@ -311,16 +311,51 @@ function revealPanTemporarily(index) {
 
 // Pan encoders are hard to land exactly on dead center by hand (no detent
 // on this hardware) - "Pan Snap to Center" (Controller Preferences ->
-// "Mixer" category) makes the encoder handler in onMidi snap the pan
-// value the rest of the way to exactly center once a turn lands it within
-// PAN_SNAP_THRESHOLD of 0.5 (2% by default, itself configurable), rather
-// than requiring the separate encoder-push reset. Mixer mode only (real
-// track pan and TOOL_DEVICE_NAME's Pan macro, both centered at 0.5) -
-// deliberately NOT applied to MODE_DEVICE macros, which have no
-// guaranteed center value. Default on; overridden live from the
-// Controller Preferences panel settings created in init() below.
+// "Mixer" category) snaps the pan value to exactly center once the
+// encoder comes to REST within PAN_SNAP_THRESHOLD of 0.5 (2% by default),
+// rather than requiring the separate encoder-push reset. Mixer mode only
+// (real track pan and TOOL_DEVICE_NAME's Pan macro, both centered at
+// 0.5) - deliberately NOT applied to MODE_DEVICE macros, which have no
+// guaranteed center value. Idle-based (checked PAN_SNAP_IDLE_MS after the
+// last tick, see schedulePanSnapCheck() below) rather than snapping on
+// every tick that lands inside the zone - an earlier per-tick version
+// snapped every message once close to center, which meant the very next
+// tiny increment landed back inside the zone too and got yanked straight
+// back, permanently trapping the pan at center. A later "only snap on the
+// tick that crosses into the zone from outside" version fixed the
+// trapping but then often didn't snap at all on hardware - the MCU
+// protocol batches several physical clicks into one MIDI message's step
+// count, so an ordinary-speed turn frequently jumps clean across the
+// whole zone in a single message and is never actually observed "inside"
+// it. Waiting for the encoder to stop and checking where it landed
+// sidesteps both problems. Defaults; overridden live from the Controller
+// Preferences panel settings created in init() below.
 var panSnapToCenterEnabled = true;
 var PAN_SNAP_THRESHOLD = 0.02;
+var PAN_SNAP_IDLE_MS = 300;
+
+// Same debounce-generation-token pattern as revealPanTemporarily() below
+// (and lcdOverrideGeneration) - only the LAST scheduled check for a given
+// encoder actually fires; every further tick before it bumps the token
+// and makes the earlier, now-superseded check a no-op, so the pan is only
+// evaluated once it's truly stopped moving for PAN_SNAP_IDLE_MS.
+var panSnapGeneration = [0, 0, 0, 0, 0, 0, 0, 0];
+
+function schedulePanSnapCheck(index, target) {
+   panSnapGeneration[index]++;
+   var myGeneration = panSnapGeneration[index];
+   host.scheduleTask(function () {
+      if (panSnapGeneration[index] !== myGeneration) {
+         return;
+      }
+      if (!panSnapToCenterEnabled || currentMode !== MODE_MIXER || isFlipped) {
+         return;
+      }
+      if (Math.abs(target.get() - 0.5) <= PAN_SNAP_THRESHOLD) {
+         target.set(0.5);
+      }
+   }, PAN_SNAP_IDLE_MS);
+}
 
 // One-shot status popup (e.g. SOLO/UNSOLO on the solo toggle) - shows
 // `text` in channel `index`'s bottom LCD row immediately, then reverts to
@@ -1043,6 +1078,17 @@ function init() {
       PAN_SNAP_THRESHOLD = value / 100;
    });
 
+   // How long the encoder has to sit idle (no further ticks) before the
+   // idle-based check in schedulePanSnapCheck() actually evaluates where
+   // it landed - see the comment on panSnapGeneration above for why this
+   // is idle-based rather than checked on every tick.
+   var panSnapIdleDelaySetting = host.getPreferences().getNumberSetting(
+      "Pan Snap Idle Delay (ms)", "Mixer", 50, 2000, 10, "ms", 300);
+   panSnapIdleDelaySetting.markInterested();
+   panSnapIdleDelaySetting.addRawValueObserver(function(value) {
+      PAN_SNAP_IDLE_MS = value;
+   });
+
    // Remote Controls (8 Macros for selected device)
    remoteControls = cursorDevice.createCursorRemoteControlsPage(8);
 
@@ -1479,24 +1525,15 @@ function onMidi(status, data1, data2) {
       // unflipped / volume flipped, the opposite of the fader).
       var encTarget = getEncoderTarget(encoderIndex);
       if (encTarget) {
-         // Pan Snap to Center - see panSnapToCenterEnabled above. Only
+         encTarget.inc(delta, resolution);
+         // Pan Snap to Center - see schedulePanSnapCheck() above. Only
          // meaningful in Mixer mode (unflipped = pan, real track or
          // TOOL_DEVICE_NAME's Pan macro) - MODE_DEVICE macros/MODE_SENDS
-         // levels have no guaranteed center to snap to. Snaps only on the
-         // tick that CROSSES INTO the snap zone from outside it (value
-         // was beyond PAN_SNAP_THRESHOLD before this turn, within it
-         // after) - checking the post-turn value alone would re-trigger
-         // on every single subsequent tick once already at/near center,
-         // since one tick's raw increment is normally smaller than even a
-         // 1% threshold: each tick would land back inside the zone and
-         // get yanked straight back to 0.5, permanently trapping the pan
-         // at center no matter which way the encoder turns (confirmed on
-         // hardware - reported as "pan does not move in any direction").
-         var isPanSnapTarget = panSnapToCenterEnabled && currentMode === MODE_MIXER && !isFlipped;
-         var wasOutsideSnapZone = isPanSnapTarget && Math.abs(encTarget.get() - 0.5) > PAN_SNAP_THRESHOLD;
-         encTarget.inc(delta, resolution);
-         if (wasOutsideSnapZone && Math.abs(encTarget.get() - 0.5) <= PAN_SNAP_THRESHOLD) {
-            encTarget.set(0.5);
+         // levels have no guaranteed center to snap to. Idle-based: this
+         // just (re)arms a check for PAN_SNAP_IDLE_MS after the LAST tick
+         // of this turn, not this specific tick's value.
+         if (panSnapToCenterEnabled && currentMode === MODE_MIXER && !isFlipped) {
+            schedulePanSnapCheck(encoderIndex, encTarget);
          }
       }
       // The bottom LCD row otherwise always shows volume in Mixer mode
