@@ -191,19 +191,43 @@ warning and shows a Bitwig popup naming which two keys collided. It
 doesn't prevent the duplicate, just flags it immediately instead of
 leaving it to be discovered by a key silently doing nothing.
 
-**SHIFT+CTRL Wheel Action** (also in the Function Keys category, since
-it's another configurable-action setting, even though it drives the jog
-wheel rather than an F-key) picks what SHIFT+CTRL + Jog Wheel does - see
-the full writeup under Jog wheel modifier combos below. `Scale Clip Size`
-(default) or `Duplicate/Delete Clip` (right = duplicate, left = delete).
+**SHIFT+CTRL Wheel Action** and **ALT+CTRL Wheel Action** (also in the
+Function Keys category, since they're configurable-action settings even
+though they drive the jog wheel rather than an F-key) pick what each of
+those two combos does - see the full writeup under Jog wheel modifier
+combos below. Both dropdowns offer the same 3 options: `Scale Clip Size`
+(SHIFT+CTRL's default), `Duplicate/Delete Clip`, or `Duplicate/Delete
+Track` (ALT+CTRL's default). Freely invertible - set either dropdown to
+either action, e.g. swap so SHIFT+CTRL duplicates the track and ALT+CTRL
+scales the clip instead.
 
-**SHIFT+CTRL Wheel: Allow Delete (Turn Left)** (on/off, default ON) -
-only relevant when the setting above is `Duplicate/Delete Clip`. On,
-turning left deletes the selection (the original behavior). Off, turning
-left in that mode is a no-op and only turning right (duplicate) does
-anything - the safer choice if a slightly-wrong turn deleting something
-outright is too risky; flagged as a "could be shaky" concern when
-requested.
+**Wheel Combos: Allow Delete (Turn Left)** (on/off, default ON) - shared
+by both combos above, only relevant when either is set to a
+`Duplicate/Delete` option. On, turning left deletes the selection (clip
+or track, the original behavior). Off, turning left in that mode is a
+no-op and only turning right (duplicate) does anything - the safer
+choice if a slightly-wrong turn deleting something outright is too
+risky; flagged as a "could be shaky" concern when requested.
+
+### Mixer settings (Controller Preferences panel)
+
+Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
+-> **Mixer** category. **Pan Snap to Center** (on/off, default ON) - the
+pan encoders have no physical detent, so landing exactly on dead center by
+turning alone is fiddly; once a turn lands the value within **Pan Snap
+Range (+/- %)** (default 2%, range 0-10%) of exact center, the encoder
+handler snaps the rest of the way to it (`encTarget.set(0.5)`) instead of
+leaving it at whatever the raw increment produced. Mixer mode only (real
+track pan and `TRLVL`'s Pan macro when `isToolVolumeMode` is active - both
+centered at the normalized value 0.5) - deliberately **not** applied to
+`MODE_DEVICE` remote-control macros, which have no guaranteed center
+value to snap to, or to `MODE_SENDS` levels. Doesn't replace the existing
+encoder-push pan reset (note 87/case in `handleButtonPress` - "Pan only -
+centers the pan, nothing else") - that's still there as an exact,
+always-available reset; this just makes turning the encoder itself land
+on center more often, without needing the separate push. Turn the range
+down to 0% to disable snapping without touching the on/off toggle, or use
+the toggle directly. Not yet tested on hardware.
 
 ### Diagnostics settings (Controller Preferences panel)
 
@@ -440,58 +464,101 @@ was still in Live mode, is confirmed still correct.
 
 In priority order (each returns before the next is checked, so only one
 applies per turn): `MODE_SCENE` active (move the scene cursor) >
-**SHIFT+CTRL** (scale the selected clip's content, see below) > **CTRL
-alone** (device-mode: step devices; otherwise: select next/previous
-arranger clip/item, see below) > **SHIFT+ALT** (nudge the selected
-arranger item, see below) > **ALT alone** (adjust the last-clicked GUI
-parameter, see below) > PLUG-INS held (step devices) > BANK held (page
-remote-control pages) > OPTION alone (halve/double loop length) > SHIFT
-alone (shift loop by a bar) > SCRUB toggle or wheel press (jump by a bar,
-or select-at-cursor with ALT or SHIFT+CTRL held, see below) > default
-(scrub, one quarter note per message, no longer ALT-modified - see
-below).
+**SHIFT+CTRL** (configurable, see below) > **ALT+CTRL** (configurable,
+see below) > **CTRL alone** (device-mode: step devices; otherwise: select
+next/previous arranger clip/item, see below) > **SHIFT+ALT** (nudge the
+selected arranger item, see below) > **ALT alone** (adjust the
+last-clicked GUI parameter, see below) > PLUG-INS held (step devices) >
+BANK held (page remote-control pages) > OPTION alone (halve/double loop
+length) > SHIFT alone (shift loop by a bar) > SCRUB toggle or wheel press
+(jump by a bar, or select-at-cursor with ALT or SHIFT+CTRL held, see
+below) > default (scrub, one quarter note per message, no longer
+ALT-modified - see below).
 
-**SHIFT+CTRL + Jog Wheel** (turn, as opposed to SHIFT+CTRL + Jog Wheel
-*Press* below - same two modifiers, different gesture, different action)
-does one of two things depending on the **SHIFT+CTRL Wheel Action**
-Controller Preferences setting (Function Keys category, see above):
+**SHIFT+CTRL + Jog Wheel** and **ALT+CTRL + Jog Wheel** (turn, as opposed
+to SHIFT+CTRL + Jog Wheel *Press* further below - same two modifiers as
+one of these, different gesture, different action) each independently
+run whichever action their own Controller Preferences dropdown is set to
+(**SHIFT+CTRL Wheel Action** / **ALT+CTRL Wheel Action**, Function Keys
+category, see above) - freely invertible, since both dropdowns offer the
+identical 3-option list:
 
-- `Scale Clip Size` (default) - turn right doubles the selected clip's
-  content (Bitwig's real `"Scale 200%"` action, id `scale_time_double`),
-  turn left halves it (`"Scale 50%"`, id `scale_time_half`), confirmed
-  from `bitwig-actions-reference.txt`.
+- `Scale Clip Size` (SHIFT+CTRL's default) - turn right doubles the
+  selected clip's content (Bitwig's real `"Scale 200%"` action, id
+  `scale_time_double`), turn left halves it (`"Scale 50%"`, id
+  `scale_time_half`), confirmed from `bitwig-actions-reference.txt`.
 - `Duplicate/Delete Clip` - turn right duplicates the selection
   (`application.duplicate()`), turn left deletes it
-  (`application.remove()`) - a deliberate opposite pairing, same as
-  grow/shrink elsewhere in this file. Turning left deleting the
-  selection outright (rather than a harmless no-op) was flagged as
-  potentially too risky, so it's gated by its own **SHIFT+CTRL Wheel:
-  Allow Delete (Turn Left)** setting (default on, see above) - off,
-  turning left does nothing and only duplicate (right) is live.
+  (`application.remove()`).
+- `Duplicate/Delete Track` (ALT+CTRL's default) - turn right duplicates
+  the current track (`cursorTrack.duplicateObject()`), turn left deletes
+  it (`cursorTrack.deleteObject()`) - `Track` implements
+  `DuplicableObject`/`DeleteableObject` directly, confirmed from the
+  Controller API Javadoc, so this targets the current track specifically
+  rather than depending on Bitwig's ambient selection the way
+  `application.duplicate()`/`.remove()` do for the clip option.
 
-Both cases are repeat-accumulating (scaling is exponential per repeat,
-duplicate/delete is additive - one extra duplicate or one more delete per
-repeat), so both share the same accumulate-then-fire throttling
-(`clipScaleAccumulator`, reuses `LOOP_SCALE_THRESHOLD`/the "Loop Halve/
-Double Wheel Ticks" setting rather than a separate constant) instead of
-firing on every raw wheel message, which would compound (or delete) far
-too fast. This replaced an earlier "jump to first/last item" behavior
-(which worked, but this was requested instead) - those actions are no
-longer bound anywhere, freed up if wanted again later. Checked before
-the plain-CTRL branch so it isn't swallowed by it. Not yet tested on
-hardware.
+Both `Duplicate/Delete` options pair duplicate/delete as deliberate
+opposites, same pattern as grow/shrink scaling. Turning left deleting
+something outright (rather than a harmless no-op) was flagged as
+potentially too risky, so it's gated by the shared **Wheel Combos: Allow
+Delete (Turn Left)** setting (default on, see above) - off, turning left
+does nothing in either `Duplicate/Delete` option and only duplicate
+(right) is live.
+
+All three actions are repeat-accumulating (scaling is exponential per
+repeat, duplicate/delete is additive - one extra duplicate or one more
+delete per repeat), so each combo throttles via its own accumulate-then-
+fire accumulator (`shiftCtrlWheelAccumulator`/`altCtrlWheelAccumulator` -
+kept separate so partial progress on one combo can't spill into the
+other if you switch which modifiers are held mid-turn), each with its
+**own independently configurable tick threshold** - **SHIFT+CTRL Wheel
+Ticks** and **ALT+CTRL Wheel Ticks** (Timing category, default 16 each,
+same range as "Loop Halve/Double Wheel Ticks") - rather than sharing one
+setting between them, so each combo's sensitivity can be tuned on its
+own (e.g. a higher tick count for `Duplicate/Delete` to make an
+accidental trigger less likely, while keeping `Scale Clip Size`
+responsive). Plain CTRL's clip/track-select stepping has its own
+matching setting too - **CTRL Wheel: Clip/Track Select Ticks** (Timing
+category, default 4, range 1-32) - previously shared with device-
+stepping's `PLUGIN_DEVICE_STEP_MESSAGES`, now independent. This all
+fires instead of on every raw wheel message, which would compound (or
+delete) far too fast. SHIFT+CTRL replaced an earlier "jump to first/last
+item" behavior (which worked, but this was requested instead) - those
+actions are no longer bound anywhere, freed
+up if wanted again later. Both checked before the plain-CTRL branch so
+neither is swallowed by it.
+
+For anyone who'd rather manage one shared default than tune all three
+separately, **Use Global Wheel Ticks** (Timing category, off by default)
+overrides all three of the settings above with a single **Global Wheel
+Ticks** count (Timing category, default 16, range 1-64) once switched on -
+`applyWheelTickSettings()` re-derives `CLIP_SELECT_STEP_MESSAGES`/
+`SHIFT_CTRL_WHEEL_THRESHOLD`/`ALT_CTRL_WHEEL_THRESHOLD` from either the
+global value or each combo's own individual setting depending on this
+toggle, called from every one of the five settings' observers so flipping
+it (or changing any value while it's on) takes effect immediately. The
+three individual settings stay visible and adjustable in the panel while
+the toggle is on - they're just not the ones in effect - so switching it
+back off picks up right where each one was left, nothing reset. Doesn't
+touch **Loop Halve/Double Wheel Ticks** (OPTION + Jog Wheel's own
+setting, predates this round's independently-configurable-ticks request
+and covers a different gesture) - only the three CTRL-combo settings.
+Not yet tested on hardware.
 
 **CTRL + Jog Wheel** (outside `MODE_DEVICE`, where it still steps devices
 as before) now selects the next/previous arranger clip/item instead of
 its previous job, nudging the project tempo - via Bitwig's real "Select
 Next Item"/"Select Previous Item" actions (ids `"Select next item"`/
 `"Select previous item"`, confirmed from `bitwig-actions-reference.txt`),
-throttled once every `PLUGIN_DEVICE_STEP_MESSAGES` (4) wheel messages,
-same as device-stepping. Repurposed per request - **tempo nudging no
-longer has a jog-wheel binding** (CTRL+ALT no longer means "fine tempo
-nudge" either, since there's no longer a continuous nudge to make fine -
-CTRL+ALT+wheel now just selects the next/previous item same as CTRL
-alone). **Confirmed working on hardware** - steps between arranger clips
+throttled once every **CTRL Wheel: Clip/Track Select Ticks** (default 4)
+wheel messages - its own dedicated setting, no longer shared with
+device-stepping's `PLUGIN_DEVICE_STEP_MESSAGES`. Repurposed per request -
+**tempo nudging no longer has a jog-wheel binding** (CTRL+ALT no longer
+means "fine tempo nudge" either, since there's no longer a continuous
+nudge to make fine - CTRL+ALT+wheel is now its own separate combo, see
+above, no longer swallowed into plain CTRL's behavior). **Confirmed
+working on hardware** - steps between arranger clips
 when one is selected; falls back to stepping between tracks (above/
 below) when nothing's selected, which is real Bitwig behavior from the
 same action, not something this script special-cases, and confirmed to

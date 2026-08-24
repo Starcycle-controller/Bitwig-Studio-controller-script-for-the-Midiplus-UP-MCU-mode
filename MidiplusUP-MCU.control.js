@@ -309,6 +309,19 @@ function revealPanTemporarily(index) {
    }, LCD_OVERRIDE_TIMEOUT_MS);
 }
 
+// Pan encoders are hard to land exactly on dead center by hand (no detent
+// on this hardware) - "Pan Snap to Center" (Controller Preferences ->
+// "Mixer" category) makes the encoder handler in onMidi snap the pan
+// value the rest of the way to exactly center once a turn lands it within
+// PAN_SNAP_THRESHOLD of 0.5 (2% by default, itself configurable), rather
+// than requiring the separate encoder-push reset. Mixer mode only (real
+// track pan and TOOL_DEVICE_NAME's Pan macro, both centered at 0.5) -
+// deliberately NOT applied to MODE_DEVICE macros, which have no
+// guaranteed center value. Default on; overridden live from the
+// Controller Preferences panel settings created in init() below.
+var panSnapToCenterEnabled = true;
+var PAN_SNAP_THRESHOLD = 0.02;
+
 // One-shot status popup (e.g. SOLO/UNSOLO on the solo toggle) - shows
 // `text` in channel `index`'s bottom LCD row immediately, then reverts to
 // whatever refreshDisplayText() would normally show there (correct for
@@ -429,10 +442,42 @@ var pluginDeviceStepAccumulator = 0;
 var PLUGIN_DEVICE_STEP_MESSAGES = 4;
 
 // CTRL + Jog Wheel (outside MODE_DEVICE) - selects the next/previous
-// arranger clip/item, throttled the same way as device-stepping above
-// (reuses PLUGIN_DEVICE_STEP_MESSAGES rather than a separate constant,
-// since it's the same "step through a list" granularity).
+// arranger clip/item. Own dedicated, independently configurable
+// threshold (Controller Preferences -> "Timing" category) rather than
+// reusing PLUGIN_DEVICE_STEP_MESSAGES, so this can be tuned separately
+// from device-stepping.
 var clipSelectStepAccumulator = 0;
+var CLIP_SELECT_STEP_MESSAGES = 4;
+
+// "Use Global Wheel Ticks" (Timing) - convenience override for anyone who
+// doesn't want to tune CTRL/SHIFT+CTRL/ALT+CTRL's tick thresholds
+// separately. When on, all three combos use the single "Global Wheel
+// Ticks" value below instead of their own individual settings; the
+// individual settings stay visible/settable in the panel but are ignored
+// while this is on, so switching it back off restores each combo's own
+// last value with nothing lost.
+var useGlobalWheelTicks = false;
+var globalWheelTicks = 16;
+
+// Each combo's own individual-setting value, tracked separately from the
+// live CLIP_SELECT_STEP_MESSAGES/SHIFT_CTRL_WHEEL_THRESHOLD/
+// ALT_CTRL_WHEEL_THRESHOLD globals below (which reflect whichever -
+// global or individual - is actually in effect right now, per
+// applyWheelTickSettings()).
+var clipSelectStepIndividual = 4;
+var shiftCtrlWheelThresholdIndividual = 16;
+var altCtrlWheelThresholdIndividual = 16;
+
+// Recomputes the three live thresholds from either the shared global tick
+// count or each combo's own individual setting, depending on
+// useGlobalWheelTicks. Called from every relevant Controller Preferences
+// observer (see init()) so a change to any one of these five settings -
+// including flipping the checkbox itself - takes effect immediately.
+function applyWheelTickSettings() {
+   CLIP_SELECT_STEP_MESSAGES = useGlobalWheelTicks ? globalWheelTicks : clipSelectStepIndividual;
+   SHIFT_CTRL_WHEEL_THRESHOLD = useGlobalWheelTicks ? globalWheelTicks : shiftCtrlWheelThresholdIndividual;
+   ALT_CTRL_WHEEL_THRESHOLD = useGlobalWheelTicks ? globalWheelTicks : altCtrlWheelThresholdIndividual;
+}
 
 // MODE_SCENE (BTA, note 80): which of the 8 scenes in sceneBank's window is
 // currently selected - the jog wheel moves this, note 87 (wheel push)
@@ -479,26 +524,74 @@ var arrangerToolCycleIndex = 0;
 var loopScaleAccumulator = 0;
 var LOOP_SCALE_THRESHOLD = 16;
 
-// SHIFT+CTRL + Jog Wheel scales the selected clip's content the same
-// exponential way (see onMidi) - shares LOOP_SCALE_THRESHOLD/the same
-// Controller Preferences setting rather than a separate constant, same
-// "wheel ticks per halve/double" granularity.
-var clipScaleAccumulator = 0;
-
-// SHIFT+CTRL + Jog Wheel's action is configurable (Controller Preferences
-// -> "Function Keys" category) - "Scale Clip Size" (default, right =
-// double/scale_time_double, left = halve/scale_time_half) or "Duplicate/
-// Delete Clip" (right = application.duplicate(), left =
-// application.remove() - deliberately paired as opposites, same as
-// grow/shrink elsewhere in this file). Delete-on-turn-left within that
-// second mode is itself further gated by shiftCtrlWheelDeleteEnabled
-// (its own setting, default on) - a slightly-wrong turn deleting the
-// selection outright was flagged as a shaky enough risk to want an "off"
-// switch; with it off, turning left in Duplicate/Delete mode is a no-op
-// and only turning right (duplicate) does anything.
-var SHIFT_CTRL_WHEEL_ACTIONS = ["Scale Clip Size", "Duplicate/Delete Clip"];
+// SHIFT+CTRL and ALT+CTRL + Jog Wheel each independently run one of the
+// same 3 configurable actions (Controller Preferences -> "Function Keys"
+// category - two separate dropdowns, one per combo, both offering this
+// same list) - so which combo does which is fully invertible by just
+// picking differently in each dropdown, no separate "swap" mechanism
+// needed:
+//   - "Scale Clip Size" - right doubles the selected clip's content
+//     (real "Scale 200%" action, id scale_time_double), left halves it
+//     ("Scale 50%"/scale_time_half) - exponential per repeat.
+//   - "Duplicate/Delete Clip" - right = application.duplicate(), left =
+//     application.remove().
+//   - "Duplicate/Delete Track" - right = cursorTrack.duplicateObject(),
+//     left = cursorTrack.deleteObject() (Track implements
+//     DuplicableObject/DeleteableObject directly - more reliable/
+//     targeted than application.duplicate()/remove(), which operate on
+//     whatever's ambiently selected in Bitwig rather than specifically
+//     the current track).
+// Both "Duplicate/Delete" actions pair duplicate/delete as opposites,
+// same pattern as grow/shrink scaling. Turning left actually deleting
+// something outright (rather than a harmless no-op) was flagged as risky
+// enough to want a kill switch - see wheelComboDeleteEnabled below,
+// shared by both combos' delete behavior.
+var WHEEL_COMBO_ACTIONS = ["Scale Clip Size", "Duplicate/Delete Clip", "Duplicate/Delete Track"];
 var shiftCtrlWheelAction = "Scale Clip Size";
-var shiftCtrlWheelDeleteEnabled = true;
+var altCtrlWheelAction = "Duplicate/Delete Track";
+var wheelComboDeleteEnabled = true;
+
+// Separate accumulators AND separate, independently configurable
+// thresholds per combo (Controller Preferences -> "Timing" category) -
+// so partial progress on one combo can't spill over and prematurely
+// trigger the other if the user switches which modifiers are held
+// mid-turn, and each combo's sensitivity can be tuned independently
+// (e.g. duplicate/delete might want a higher threshold than scaling, to
+// make an accidental delete less likely).
+var shiftCtrlWheelAccumulator = 0;
+var SHIFT_CTRL_WHEEL_THRESHOLD = 16;
+var altCtrlWheelAccumulator = 0;
+var ALT_CTRL_WHEEL_THRESHOLD = 16;
+
+// Shared by the SHIFT+CTRL and ALT+CTRL + Jog Wheel branches in onMidi()
+// once their own accumulator crosses LOOP_SCALE_THRESHOLD - resolves
+// whichever action is currently configured for that combo (see
+// WHEEL_COMBO_ACTIONS above) against the turn direction.
+function performWheelComboAction(actionName, backwards) {
+   switch (actionName) {
+      case "Duplicate/Delete Clip":
+         if (backwards) {
+            if (wheelComboDeleteEnabled) {
+               application.remove();
+            }
+         } else {
+            application.duplicate();
+         }
+         break;
+      case "Duplicate/Delete Track":
+         if (backwards) {
+            if (wheelComboDeleteEnabled) {
+               cursorTrack.deleteObject();
+            }
+         } else {
+            cursorTrack.duplicateObject();
+         }
+         break;
+      default: // "Scale Clip Size"
+         safeInvokeAction(backwards ? "scale_time_half" : "scale_time_double", null);
+         break;
+   }
+}
 
 // RETURNS (note 51): swap the 8 channel strips between the main track bank
 // and the effect ("return") track bank.
@@ -837,25 +930,36 @@ function init() {
       })(fkIdx);
    }
 
-   // What SHIFT+CTRL + Jog Wheel does - see SHIFT_CTRL_WHEEL_ACTIONS/
-   // shiftCtrlWheelAction above and the wheel handler in onMidi().
+   // What SHIFT+CTRL and ALT+CTRL + Jog Wheel each do - independent
+   // dropdowns, same option list, see WHEEL_COMBO_ACTIONS/
+   // shiftCtrlWheelAction/altCtrlWheelAction/performWheelComboAction
+   // above and the wheel handler in onMidi(). Freely invertible: set
+   // either dropdown to either action.
    var shiftCtrlWheelActionSetting = host.getPreferences().getEnumSetting(
-      "SHIFT+CTRL Wheel Action", "Function Keys", SHIFT_CTRL_WHEEL_ACTIONS, shiftCtrlWheelAction);
+      "SHIFT+CTRL Wheel Action", "Function Keys", WHEEL_COMBO_ACTIONS, shiftCtrlWheelAction);
    shiftCtrlWheelActionSetting.markInterested();
    shiftCtrlWheelActionSetting.addValueObserver(function (value) {
       shiftCtrlWheelAction = value;
    });
 
-   // Only relevant when the setting above is "Duplicate/Delete Clip" -
-   // whether turning the wheel left actually deletes the selection, or is
-   // a no-op (only turning right/duplicate does anything). Default on
-   // (matches the original behavior); off is the safer choice if a
+   var altCtrlWheelActionSetting = host.getPreferences().getEnumSetting(
+      "ALT+CTRL Wheel Action", "Function Keys", WHEEL_COMBO_ACTIONS, altCtrlWheelAction);
+   altCtrlWheelActionSetting.markInterested();
+   altCtrlWheelActionSetting.addValueObserver(function (value) {
+      altCtrlWheelAction = value;
+   });
+
+   // Only relevant when either dropdown above is a "Duplicate/Delete"
+   // option - whether turning the wheel left actually deletes something,
+   // or is a no-op (only turning right/duplicate does anything). Default
+   // on (matches the original behavior); off is the safer choice if a
    // slightly-wrong turn deleting something outright is too risky.
-   var shiftCtrlWheelDeleteEnabledSetting = host.getPreferences().getBooleanSetting(
-      "SHIFT+CTRL Wheel: Allow Delete (Turn Left)", "Function Keys", true);
-   shiftCtrlWheelDeleteEnabledSetting.markInterested();
-   shiftCtrlWheelDeleteEnabledSetting.addValueObserver(function (value) {
-      shiftCtrlWheelDeleteEnabled = value;
+   // Shared by both combos rather than two separate toggles.
+   var wheelComboDeleteEnabledSetting = host.getPreferences().getBooleanSetting(
+      "Wheel Combos: Allow Delete (Turn Left)", "Function Keys", true);
+   wheelComboDeleteEnabledSetting.markInterested();
+   wheelComboDeleteEnabledSetting.addValueObserver(function (value) {
+      wheelComboDeleteEnabled = value;
    });
 
    // User-configurable wheel-tick threshold for OPTION + Jog Wheel's
@@ -866,6 +970,77 @@ function init() {
    loopScaleThresholdSetting.markInterested();
    loopScaleThresholdSetting.addRawValueObserver(function(value) {
       LOOP_SCALE_THRESHOLD = value;
+   });
+
+   // Same idea, independently for CTRL/SHIFT+CTRL/ALT+CTRL + Jog Wheel
+   // (see CLIP_SELECT_STEP_MESSAGES/SHIFT_CTRL_WHEEL_THRESHOLD/
+   // ALT_CTRL_WHEEL_THRESHOLD above) - each combo's sensitivity tunable
+   // on its own rather than sharing one setting between all of them. Each
+   // observer stores into its own "Individual" var and re-derives the
+   // live thresholds via applyWheelTickSettings(), so these keep working
+   // as the per-combo values whenever "Use Global Wheel Ticks" (below) is
+   // off, and stay ready to resume immediately once it's switched off
+   // again.
+   var clipSelectStepSetting = host.getPreferences().getNumberSetting(
+      "CTRL Wheel: Clip/Track Select Ticks", "Timing", 1, 32, 1, "ticks", 4);
+   clipSelectStepSetting.markInterested();
+   clipSelectStepSetting.addRawValueObserver(function(value) {
+      clipSelectStepIndividual = value;
+      applyWheelTickSettings();
+   });
+
+   var shiftCtrlWheelThresholdSetting = host.getPreferences().getNumberSetting(
+      "SHIFT+CTRL Wheel Ticks", "Timing", 2, 64, 1, "ticks", 16);
+   shiftCtrlWheelThresholdSetting.markInterested();
+   shiftCtrlWheelThresholdSetting.addRawValueObserver(function(value) {
+      shiftCtrlWheelThresholdIndividual = value;
+      applyWheelTickSettings();
+   });
+
+   var altCtrlWheelThresholdSetting = host.getPreferences().getNumberSetting(
+      "ALT+CTRL Wheel Ticks", "Timing", 2, 64, 1, "ticks", 16);
+   altCtrlWheelThresholdSetting.markInterested();
+   altCtrlWheelThresholdSetting.addRawValueObserver(function(value) {
+      altCtrlWheelThresholdIndividual = value;
+      applyWheelTickSettings();
+   });
+
+   // "Use Global Wheel Ticks" - when on, all three combos above ignore
+   // their own individual settings and use the single "Global Wheel
+   // Ticks" count instead, for anyone who'd rather manage one shared
+   // default than three separate values.
+   var useGlobalWheelTicksSetting = host.getPreferences().getBooleanSetting(
+      "Use Global Wheel Ticks", "Timing", false);
+   useGlobalWheelTicksSetting.markInterested();
+   useGlobalWheelTicksSetting.addValueObserver(function(value) {
+      useGlobalWheelTicks = value;
+      applyWheelTickSettings();
+   });
+
+   var globalWheelTicksSetting = host.getPreferences().getNumberSetting(
+      "Global Wheel Ticks", "Timing", 1, 64, 1, "ticks", 16);
+   globalWheelTicksSetting.markInterested();
+   globalWheelTicksSetting.addRawValueObserver(function(value) {
+      globalWheelTicks = value;
+      applyWheelTickSettings();
+   });
+
+   // Pan Snap to Center - see panSnapToCenterEnabled/PAN_SNAP_THRESHOLD
+   // above (the encoder CC handler in onMidi). Its own "Mixer" category
+   // rather than piling onto "Timing", since it's a snap distance, not a
+   // wheel-tick debounce threshold.
+   var panSnapToCenterSetting = host.getPreferences().getBooleanSetting(
+      "Pan Snap to Center", "Mixer", true);
+   panSnapToCenterSetting.markInterested();
+   panSnapToCenterSetting.addValueObserver(function(value) {
+      panSnapToCenterEnabled = value;
+   });
+
+   var panSnapThresholdSetting = host.getPreferences().getNumberSetting(
+      "Pan Snap Range (+/- %)", "Mixer", 0, 10, 0.1, "%", 2);
+   panSnapThresholdSetting.markInterested();
+   panSnapThresholdSetting.addRawValueObserver(function(value) {
+      PAN_SNAP_THRESHOLD = value / 100;
    });
 
    // Remote Controls (8 Macros for selected device)
@@ -1305,6 +1480,15 @@ function onMidi(status, data1, data2) {
       var encTarget = getEncoderTarget(encoderIndex);
       if (encTarget) {
          encTarget.inc(delta, resolution);
+         // Pan Snap to Center - see panSnapToCenterEnabled above. Only
+         // meaningful in Mixer mode (unflipped = pan, real track or
+         // TOOL_DEVICE_NAME's Pan macro) - MODE_DEVICE macros/MODE_SENDS
+         // levels have no guaranteed center to snap to.
+         if (panSnapToCenterEnabled && currentMode === MODE_MIXER && !isFlipped) {
+            if (Math.abs(encTarget.get() - 0.5) <= PAN_SNAP_THRESHOLD) {
+               encTarget.set(0.5);
+            }
+         }
       }
       // The bottom LCD row otherwise always shows volume in Mixer mode
       // (see setupChannelStripObservers) - reveal the live pan value
@@ -1351,38 +1535,36 @@ function onMidi(status, data1, data2) {
       }
 
       if (isControlPressed && isShiftPressed) {
-         // SHIFT+CTRL + Jog Wheel: either scales the selected clip's
-         // content (default - turn right doubles it via Bitwig's real
-         // "Scale 200%" action, id "scale_time_double"; turn left halves
-         // it, "Scale 50%"/"scale_time_half") or duplicates/deletes it
-         // (turn right = application.duplicate(), turn left =
-         // application.remove()) - configurable via the "SHIFT+CTRL Wheel
-         // Action" Controller Preferences setting, see
-         // SHIFT_CTRL_WHEEL_ACTIONS/shiftCtrlWheelAction above. Both
-         // directions are exponential/repeat-accumulating in the scale
-         // case and additive (one duplicate/delete per threshold crossed)
-         // in the duplicate case, so both share the same accumulate-then-
-         // fire throttling (clipScaleAccumulator/LOOP_SCALE_THRESHOLD
-         // above) rather than firing on every raw wheel message. Checked
-         // before the plain CTRL branch so it isn't swallowed by it - CTRL
-         // alone (step next/previous) still fires normally when SHIFT
-         // isn't also held.
+         // SHIFT+CTRL + Jog Wheel: runs whichever action is configured
+         // for it (see WHEEL_COMBO_ACTIONS/shiftCtrlWheelAction/
+         // performWheelComboAction above) - default "Scale Clip Size".
+         // Checked before the plain CTRL branch so it isn't swallowed by
+         // it - CTRL alone (step next/previous) still fires normally when
+         // SHIFT isn't also held.
          ctrlUsedForCombo = true;
          shiftUsedForCombo = true;
-         clipScaleAccumulator += Math.abs(rawStep);
-         if (clipScaleAccumulator >= LOOP_SCALE_THRESHOLD) {
-            clipScaleAccumulator -= LOOP_SCALE_THRESHOLD;
-            if (shiftCtrlWheelAction === "Duplicate/Delete Clip") {
-               if (backwards) {
-                  if (shiftCtrlWheelDeleteEnabled) {
-                     application.remove();
-                  }
-               } else {
-                  application.duplicate();
-               }
-            } else {
-               safeInvokeAction(backwards ? "scale_time_half" : "scale_time_double", null);
-            }
+         shiftCtrlWheelAccumulator += Math.abs(rawStep);
+         if (shiftCtrlWheelAccumulator >= SHIFT_CTRL_WHEEL_THRESHOLD) {
+            shiftCtrlWheelAccumulator -= SHIFT_CTRL_WHEEL_THRESHOLD;
+            performWheelComboAction(shiftCtrlWheelAction, backwards);
+         }
+         return;
+      }
+
+      if (isControlPressed && isAltPressed) {
+         // ALT+CTRL + Jog Wheel: same mechanism as SHIFT+CTRL above, its
+         // own independent action setting (altCtrlWheelAction, default
+         // "Duplicate/Delete Track") and its own accumulator - so the two
+         // combos can be configured to do either action, in either
+         // combination (fully invertible via the two separate Controller
+         // Preferences dropdowns, no dedicated "swap" needed). Checked
+         // before the plain CTRL branch for the same reason as SHIFT+CTRL.
+         ctrlUsedForCombo = true;
+         altUsedForCombo = true;
+         altCtrlWheelAccumulator += Math.abs(rawStep);
+         if (altCtrlWheelAccumulator >= ALT_CTRL_WHEEL_THRESHOLD) {
+            altCtrlWheelAccumulator -= ALT_CTRL_WHEEL_THRESHOLD;
+            performWheelComboAction(altCtrlWheelAction, backwards);
          }
          return;
       }
@@ -1416,12 +1598,13 @@ function onMidi(status, data1, data2) {
          // Item"/"Select Previous Item" actions (ids "Select next item"/
          // "Select previous item", confirmed from
          // bitwig-actions-reference.txt) - once every
-         // PLUGIN_DEVICE_STEP_MESSAGES messages, same throttling as the
-         // device-step case above. Replaces the previous tempo-nudge
-         // behavior per request; use SHIFT+ALT + Jog Wheel Press/Turn (see
-         // below) to select and then move a clip instead.
+         // CLIP_SELECT_STEP_MESSAGES messages (its own dedicated,
+         // independently configurable threshold - see above). Replaces
+         // the previous tempo-nudge behavior per request; use SHIFT+ALT +
+         // Jog Wheel Press/Turn (see below) to select and then move a
+         // clip instead.
          clipSelectStepAccumulator++;
-         if (clipSelectStepAccumulator >= PLUGIN_DEVICE_STEP_MESSAGES) {
+         if (clipSelectStepAccumulator >= CLIP_SELECT_STEP_MESSAGES) {
             clipSelectStepAccumulator = 0;
             safeInvokeAction(backwards ? "Select previous item" : "Select next item", null);
          }
