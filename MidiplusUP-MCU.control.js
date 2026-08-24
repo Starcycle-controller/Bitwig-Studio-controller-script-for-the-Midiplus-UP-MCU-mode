@@ -512,10 +512,6 @@ function init() {
       midiOut.sendMidi(0x90, 89, isClick ? 127 : 0); // Metronome LED
    });
 
-   transport.isArrangerAutomationWriteEnabled().addValueObserver(function (isWriting) {
-      midiOut.sendMidi(0x90, 53, isWriting ? 127 : 0); // SMPTE/BEATS LED (Automation Write)
-   });
-
    // Cursor Track Name Observer
    cursorTrack.name().addValueObserver(function (trackName) {
       if (currentMode === MODE_SENDS) {
@@ -1317,20 +1313,17 @@ function handleButtonPressInner(note) {
       // Note 52 is the generic MCU "Name/Value display" toggle - no
       // meaningful equivalent surfaced in Bitwig's API, left unbound.
 
-      case 53: // SMPTE/BEATS -> repurposed as Automation Write toggle (the
-               // time-display-format concept it's named for has no Bitwig
-               // equivalent, but transport.isArrangerAutomationWriteEnabled()
-               // is a real SettableBooleanValue matching the "automation
-               // toggle" request).
-         transport.isArrangerAutomationWriteEnabled().toggle();
-         host.showPopupNotification("Toggle Automation Write");
-         break;
+      // Note 53 (SMPTE/BEATS) is a pure mode key, deliberately left
+      // unbound here: pressing it toggles the F1-F8 row's backlight
+      // between red and green entirely in the hardware's own firmware
+      // (confirmed - the button itself sends note 53 but that's not acted
+      // on), and which of two note ranges F1-F8 sends: red = 54-61,
+      // green = 62-69 (confirmed via console testing - see README). Do
+      // not bind anything to note 53 itself; bind the 16 individual F-key
+      // slots below instead.
 
-      // F1-F8 (notes 54-61) and F9-F16 (notes 62-69): Ableton's own driver
-      // no-ops on all of these (SoftwareController.handle_function_key_switch_ids
-      // is a no-op), and the Midiplus manual confirms "the other buttons
-      // with no label are not available in Live" - so they're intentionally
-      // left unbound here rather than guessing fictional behavior for them.
+      // F1-F8 (red: notes 54-61) and F1-F8 (green: notes 62-69) - 16
+      // independent function-key slots, still awaiting assignment.
 
       case 74: // SESS/ARR -> Toggle Clip Launcher / Arranger View
          arranger.isClipLauncherVisible().toggle();

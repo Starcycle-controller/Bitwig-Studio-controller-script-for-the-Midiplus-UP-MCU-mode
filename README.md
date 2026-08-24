@@ -110,9 +110,9 @@ was still in Live mode, is confirmed still correct.
 | 50 | FLIP | Swap faders/encoders |
 | 51 | RETURNS | Swap channel strips to/from the Return Tracks bank |
 | 52 | NAME/VALUE | Unbound (no Bitwig equivalent) |
-| 53 | SMPTE/BEATS | Toggle arranger automation write |
-| 54-61 | F1-F8 | Unbound (Ableton's own driver also no-ops these) |
-| 62-69 | F9-F16 / MIDI TRACKS...USER | Unbound |
+| 53 | SMPTE/BEATS | Pure mode key, deliberately unbound - toggles the F1-F8 row's backlight red/green (and which note range F1-F8 sends) entirely in hardware firmware; no longer bound to Automation Write |
+| 54-61 | F1-F8 (red state) | Unbound - 8 function-key slots awaiting assignment |
+| 62-69 | F1-F8 (green state) | Unbound - 8 more function-key slots awaiting assignment |
 | 70-73 | SHIFT / OPTION / CTRL / ALT | Modifier hold state |
 | 74 | (Live label: SESS/ARR) | Toggle clip launcher / arranger view |
 | 75 | (Live label: CLIP/FX) | Toggle device / clip view |
@@ -152,29 +152,26 @@ sends note 100 directly, same as the note 100 already bound above.
 
 ## Open items for next session
 
-1. **Notes 74-90 real labels unconfirmed per-button.** The table above
-   still documents these by their old Live-overlay label because that's
-   what the code comments say, but the physical stickers are gone now and
-   the real printed labels (Logic Pro X base labels - READ/WRITE/TRIM/
-   TOUCH/LATCH/GROUP, SAVE/UNDO/CANCEL/ENTER, etc., per the manual section
-   4.3) haven't been matched to their exact note number one-by-one - only
-   confirmed as unchanged *sets* (e.g. `{74..79}` fires for the automation
-   row, `{80..83}` fires for the Utilities row) via bulk testing. Bitwig's
-   *behavior* bound to each note is unaffected (notes didn't change), but
-   the comments/this table should get the real label once confirmed, and
-   worth double-checking whether any Bitwig-side function now makes less
-   sense under its real label than it did under the Live-overlay one.
-2. **GLOBAL and F1-F8 (with GLOBAL held) not yet tested** - manual says
-   F1-F8's meaning depends on GLOBAL's toggle state; current script leaves
-   all of 54-69 unbound.
-3. **Metering re-enabled but not re-tested this session** - it was
+1. **16 F-key slots need assignment.** The Ableton Live overlay foil is
+   back on for the main/left button area (so those buttons are referred to
+   by their Live-overlay labels again, per the table above), but the top
+   F1-F8 overlay strip has been left off deliberately - those 8 keys are
+   meant to become general-purpose function buttons. Confirmed this
+   session: SMPTE/BEATS (note 53) is *not* bound to anything in Bitwig
+   anymore (previously toggled Automation Write - removed per request, see
+   git history) - pressing it is now purely a hardware-local mode toggle
+   that flips the F1-F8 row's backlight red/green and which of two note
+   ranges F1-F8 sends (red = 54-61, green = 62-69, confirmed via console
+   testing) - giving 16 independent, currently-unbound function-key slots.
+   Still need: what should each of the 16 actually trigger?
+2. **Metering re-enabled but not re-tested this session** - it was
    disabled for several sessions while diagnosing the (unrelated) fader
    bug; restored to its intended state (`mode=3` SysEx + Channel Pressure
-   send) as part of this cleanup, but worth confirming the LCD/LED meters
-   still behave correctly now that faders work again.
-4. Debug logging (`RAW Note-On received`, `RAW CC received`, `Button
-   pressed - Note:`) is still left in intentionally to support finishing
-   item 1 - fine to remove once the button audit is done.
+   send) as part of a cleanup pass, but worth confirming the LCD/LED
+   meters still behave correctly now that faders work again.
+3. Debug logging (`RAW Note-On received`, `RAW CC received`, `Button
+   pressed - Note:`) is still left in intentionally - useful while wiring
+   up the F1-F8 slots (item 1). Fine to remove once that's done.
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 
