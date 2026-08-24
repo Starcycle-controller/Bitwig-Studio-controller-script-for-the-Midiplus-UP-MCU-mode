@@ -195,8 +195,15 @@ leaving it to be discovered by a key silently doing nothing.
 it's another configurable-action setting, even though it drives the jog
 wheel rather than an F-key) picks what SHIFT+CTRL + Jog Wheel does - see
 the full writeup under Jog wheel modifier combos below. `Scale Clip Size`
-(default) or `Duplicate/Delete Clip` (right = duplicate, left = delete -
-be aware turning the wrong way in this mode deletes the selection).
+(default) or `Duplicate/Delete Clip` (right = duplicate, left = delete).
+
+**SHIFT+CTRL Wheel: Allow Delete (Turn Left)** (on/off, default ON) -
+only relevant when the setting above is `Duplicate/Delete Clip`. On,
+turning left deletes the selection (the original behavior). Off, turning
+left in that mode is a no-op and only turning right (duplicate) does
+anything - the safer choice if a slightly-wrong turn deleting something
+outright is too risky; flagged as a "could be shaky" concern when
+requested.
 
 ### Diagnostics settings (Controller Preferences panel)
 
@@ -456,8 +463,11 @@ Controller Preferences setting (Function Keys category, see above):
 - `Duplicate/Delete Clip` - turn right duplicates the selection
   (`application.duplicate()`), turn left deletes it
   (`application.remove()`) - a deliberate opposite pairing, same as
-  grow/shrink elsewhere in this file, but be aware turning the wrong way
-  in this mode deletes the selection outright, not a harmless no-op.
+  grow/shrink elsewhere in this file. Turning left deleting the
+  selection outright (rather than a harmless no-op) was flagged as
+  potentially too risky, so it's gated by its own **SHIFT+CTRL Wheel:
+  Allow Delete (Turn Left)** setting (default on, see above) - off,
+  turning left does nothing and only duplicate (right) is live.
 
 Both cases are repeat-accumulating (scaling is exponential per repeat,
 duplicate/delete is additive - one extra duplicate or one more delete per

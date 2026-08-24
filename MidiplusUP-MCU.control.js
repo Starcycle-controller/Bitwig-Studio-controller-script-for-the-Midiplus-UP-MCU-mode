@@ -490,10 +490,15 @@ var clipScaleAccumulator = 0;
 // double/scale_time_double, left = halve/scale_time_half) or "Duplicate/
 // Delete Clip" (right = application.duplicate(), left =
 // application.remove() - deliberately paired as opposites, same as
-// grow/shrink elsewhere in this file; be aware turning the wrong way in
-// this mode deletes the selection, not just a harmless no-op).
+// grow/shrink elsewhere in this file). Delete-on-turn-left within that
+// second mode is itself further gated by shiftCtrlWheelDeleteEnabled
+// (its own setting, default on) - a slightly-wrong turn deleting the
+// selection outright was flagged as a shaky enough risk to want an "off"
+// switch; with it off, turning left in Duplicate/Delete mode is a no-op
+// and only turning right (duplicate) does anything.
 var SHIFT_CTRL_WHEEL_ACTIONS = ["Scale Clip Size", "Duplicate/Delete Clip"];
 var shiftCtrlWheelAction = "Scale Clip Size";
+var shiftCtrlWheelDeleteEnabled = true;
 
 // RETURNS (note 51): swap the 8 channel strips between the main track bank
 // and the effect ("return") track bank.
@@ -839,6 +844,18 @@ function init() {
    shiftCtrlWheelActionSetting.markInterested();
    shiftCtrlWheelActionSetting.addValueObserver(function (value) {
       shiftCtrlWheelAction = value;
+   });
+
+   // Only relevant when the setting above is "Duplicate/Delete Clip" -
+   // whether turning the wheel left actually deletes the selection, or is
+   // a no-op (only turning right/duplicate does anything). Default on
+   // (matches the original behavior); off is the safer choice if a
+   // slightly-wrong turn deleting something outright is too risky.
+   var shiftCtrlWheelDeleteEnabledSetting = host.getPreferences().getBooleanSetting(
+      "SHIFT+CTRL Wheel: Allow Delete (Turn Left)", "Function Keys", true);
+   shiftCtrlWheelDeleteEnabledSetting.markInterested();
+   shiftCtrlWheelDeleteEnabledSetting.addValueObserver(function (value) {
+      shiftCtrlWheelDeleteEnabled = value;
    });
 
    // User-configurable wheel-tick threshold for OPTION + Jog Wheel's
@@ -1357,7 +1374,9 @@ function onMidi(status, data1, data2) {
             clipScaleAccumulator -= LOOP_SCALE_THRESHOLD;
             if (shiftCtrlWheelAction === "Duplicate/Delete Clip") {
                if (backwards) {
-                  application.remove();
+                  if (shiftCtrlWheelDeleteEnabled) {
+                     application.remove();
+                  }
                } else {
                   application.duplicate();
                }
