@@ -351,6 +351,19 @@ var hwMasterFader = null;
 // next flush() rather than waiting for it to actually change.
 var lastSentFaderValue = [-1, -1, -1, -1, -1, -1, -1, -1, -1];
 
+// V-Pot ring LED (the small position-dot indicator ring around each
+// encoder, separate from the 2-row LCD text) - real MCU protocol per
+// Mossgraber's DrivenByMoss MCU driver: CC (0x30 + channel) with a value
+// packing the display mode (bits 4-5) and a 0-11 rescaled position (bits
+// 0-3). Shows the CURRENT FADER TARGET's value (track volume when
+// unflipped, macro when flipped in Device mode - i.e. whatever
+// getFaderTarget() returns), giving a compact non-text readout of "what
+// the fader controls" even while the LCD text is showing something else
+// (e.g. the macro name/value in Device mode). -1 = never sent, same reset
+// pattern as lastSentFaderValue.
+var lastSentVPotRing = [-1, -1, -1, -1, -1, -1, -1, -1];
+var VPOT_LED_MODE_SINGLE_DOT = 0;
+
 // SELECT button double-press detection (fold/unfold a group track) - one
 // timestamp per physical channel-strip slot, shared across whichever bank
 // is currently active.
@@ -1830,6 +1843,7 @@ function rebindFaders() {
    // parameters' values likely differ from whatever was last sent for the
    // previous target (see updateFaderOutputs()/lastSentFaderValue below).
    lastSentFaderValue = [-1, -1, -1, -1, -1, -1, -1, -1, -1];
+   lastSentVPotRing = [-1, -1, -1, -1, -1, -1, -1, -1];
 }
 
 // OUTPUT side: motorized fader feedback is NOT automatic just because a
@@ -1857,6 +1871,32 @@ function updateFaderOutputs() {
       sendFaderPitchBendIfChanged(i, target ? target.value().get() : 0);
    }
    sendFaderPitchBendIfChanged(8, masterTrack.volume().value().get());
+}
+
+// Sends the V-Pot ring LED position for channel `channel` if it's changed
+// since the last flush (same de-dup pattern as sendFaderPitchBendIfChanged
+// above) - see lastSentVPotRing above for the protocol details.
+function sendVPotRingIfChanged(channel, normalizedValue) {
+   if (normalizedValue === undefined || normalizedValue === null) normalizedValue = 0;
+   // 0-11 position, rounded, with a nonzero value always showing at least
+   // 1 dot lit (matches Mossgraber's setKnobLED() - otherwise small
+   // nonzero values would look indistinguishable from exactly zero).
+   var position = Math.round(Math.max(0, Math.min(1, normalizedValue)) * 11);
+   if (normalizedValue > 0 && position === 0) {
+      position = 1;
+   }
+   if (position === lastSentVPotRing[channel]) {
+      return;
+   }
+   lastSentVPotRing[channel] = position;
+   midiOut.sendMidi(0xB0, 0x30 + channel, (VPOT_LED_MODE_SINGLE_DOT << 4) + position);
+}
+
+function updateVPotRingOutputs() {
+   for (var i = 0; i < 8; i++) {
+      var target = getFaderTarget(i);
+      sendVPotRingIfChanged(i, target ? target.value().get() : 0);
+   }
 }
 
 // Force Refresh LCD Text Cache
@@ -1956,10 +1996,12 @@ function onSysex(data) {
 // native hardware-surface bindings' queued state (touch lights etc, and
 // required in general per the API docs); updateFaderOutputs() is the
 // actual motor-feedback push - see its comment above for why that can't
-// just be automatic.
+// just be automatic. updateVPotRingOutputs() is the same idea for the
+// V-Pot ring LEDs (see lastSentVPotRing above).
 function flush() {
    hwSurface.updateHardware();
    updateFaderOutputs();
+   updateVPotRingOutputs();
 }
 
 function exit() {

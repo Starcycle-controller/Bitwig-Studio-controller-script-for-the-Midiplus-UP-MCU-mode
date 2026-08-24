@@ -117,6 +117,18 @@ packing `(stripIndex<<4)|level`) - all cross-checked against Ableton's own
 `ChannelStrip.py`. Button LEDs are plain Note On/Off (`midiOut.sendMidi(
 0x90, note, 127/0)`).
 
+Each encoder also has its own small position-indicator LED ring (a single
+lit dot moving around it), separate from the 2-row text display - real MCU
+protocol per Mossgraber's DrivenByMoss driver: CC `(0x30 + channel)` with a
+value packing the display mode (single dot/boost-cut/wrap/spread, bits
+4-5) and a 0-11 rescaled position (bits 0-3). Wired up in
+`updateVPotRingOutputs()` (called every `flush()`, same polling-and-diff
+pattern as the fader motor output) to show whatever `getFaderTarget()`
+currently returns for that channel - i.e. track volume when unflipped,
+the macro value when flipped in Device mode - so there's a compact,
+always-visible readout of "what the fader controls" even while the LCD
+text is showing something else (the macro name/value).
+
 ## Confirmed button map
 
 Live-tested this session (pressing every button in MCU mode and reading the
