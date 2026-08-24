@@ -1,26 +1,38 @@
-// Midiplus UP Bitwig Controller Script (MCU Engine + Ableton Live Overlay Template)
+// Midiplus UP Bitwig Controller Script (Standard MCU Mode)
 // Author: Antigravity
 // API Version: 25
 //
-// Note numbers below are sourced from Ableton's own shipped "MackieControl"
-// remote script (consts.py / Transport.py / SoftwareController.py /
-// ChannelStripController.py - identical SID values in the Live 9 and Live 12
-// releases), since the Midiplus UP's "Live" control mode implements the
-// standard Mackie Control protocol that Ableton's built-in driver expects
-// (see the Midiplus UP manual, section 6.2: "set Control Surface 1 to
-// Mackie Control"). Where the manual documents a Live-only function
-// (RETURNS, SMPTE/BEATS, DRAW, MARKER, PUNCH IN/OUT, HOME/END, ...) but
-// this script's Bitwig behavior differs from Ableton's, that's a deliberate
-// Bitwig-appropriate adaptation, not an attempt at 1:1 parity - only the
-// physical button -> note number mapping needs to match the hardware.
+// This hardware is run in the Up/Up+'s standard "MCU" control mode (not one
+// of the Logic/Cubase/Live "customized" modes - see the manual, section 3.3
+// and section 8), with the plastic Ableton Live overlay removed, so the
+// buttons show their real printed labels. Note numbers below match the
+// standard Mackie Control Universal protocol (cross-checked against both
+// Ableton's own shipped "MackieControl" remote script and Jurgen
+// Mossgraber's open-source DrivenByMoss MCU driver - both land on identical
+// note numbers, e.g. fader touch = 104-112). Live-testing on this exact unit
+// (pressing every button and reading the console's "RAW Note-On received"
+// log) confirmed the note map is IDENTICAL to what this script used while
+// the hardware was still in Live mode with the overlay on - switching modes
+// only affects onboard LED/display behavior the manual documents, not which
+// note a given physical button sends. So functions that were bound to a
+// Live-overlay label (B.T.A., DRAW, SMPTE/BEATS, RETURNS, SESS/ARR, ...) are
+// unchanged; only the comments below have been updated to note the button's
+// real printed MCU label alongside its Bitwig-repurposed behavior.
+//
+// Faders (see hwFaders/hwMasterFader and rebindFaders() below) use Bitwig's
+// native hardware-binding API (HardwareSurface.createHardwareSlider() +
+// setBinding()) rather than manually parsing/sending pitch-bend - Bitwig
+// itself keeps the motorized fader position in sync with whatever Parameter
+// it's bound to, for hardware input AND for mouse-driven/automation-driven
+// changes, with no sendMidi() needed in this script at all.
 
 loadAPI(25);
 
 // Define Controller Metadata
 host.defineController(
    "Midiplus",
-   "Midiplus UP (Ableton Live Overlay)",
-   "2.0.0-fader-debug",
+   "Midiplus UP (MCU Mode)",
+   "3.0.0-native-faders",
    "6f56e9e0-0871-4623-a178-5e82485a3c10",
    "Antigravity"
 );
@@ -202,6 +214,17 @@ var transport = null;
 var application = null;
 var arranger = null;
 var midiOut = null;
+var midiIn = null;
+
+// Native Bitwig hardware-binding faders (see rebindFaders() below). Motor
+// feedback is handled entirely by Bitwig itself once a slider is bound to a
+// Parameter via setBinding() - no manual sendMidi() needed, and (unlike the
+// old manual pitch-bend approach) this correctly reflects mouse-driven and
+// automation-driven value changes on the physical fader, not just changes
+// that originated from the hardware itself.
+var hwSurface = null;
+var hwFaders = []; // 8 track faders, index 0-7
+var hwMasterFader = null;
 
 // SELECT button double-press detection (fold/unfold a group track) - one
 // timestamp per physical channel-strip slot, shared across whichever bank
@@ -281,12 +304,13 @@ function init() {
 
    // MIDI Output Port (required for sendMidi/sendSysexBytes below)
    midiOut = host.getMidiOutPort(0);
+   midiIn = host.getMidiInPort(0);
 
    // Enable SysEx handling
-   host.getMidiInPort(0).setSysexCallback(onSysex);
+   midiIn.setSysexCallback(onSysex);
 
    // Set MIDI callback
-   host.getMidiInPort(0).setMidiCallback(onMidi);
+   midiIn.setMidiCallback(onMidi);
 
    // Initialize Main Track Bank (8 tracks, 16 sends, 8 scenes)
    trackBank = host.createMainTrackBank(8, MAX_SENDS, 8);
@@ -308,6 +332,29 @@ function init() {
 
    // Initialize Master Track
    masterTrack = host.createMasterTrack(0);
+
+   // Native hardware-bound faders (see hwFaders/hwMasterFader above and
+   // rebindFaders() below). Each slider's input side is wired once here to
+   // its fixed pitch-bend channel (0-7 for tracks, 8 for master - confirmed
+   // via console log, unchanged between this hardware's Live and MCU
+   // modes); the *target parameter* side is rebound dynamically by
+   // rebindFaders() whenever the active mode/flip/tool state changes.
+   hwSurface = host.createHardwareSurface();
+   for (var faderIdx = 0; faderIdx < 8; faderIdx++) {
+      (function (channel) {
+         var slider = hwSurface.createHardwareSlider("fader" + channel);
+         slider.setAdjustValueMatcher(midiIn.createAbsolutePitchBendValueMatcher(channel));
+         // Motorized fader: snap immediately to the bound parameter's value
+         // instead of requiring a pickup/catch-up gesture, since the motor
+         // itself will move the fader to match.
+         slider.disableTakeOver();
+         hwFaders[channel] = slider;
+      })(faderIdx);
+   }
+   hwMasterFader = hwSurface.createHardwareSlider("faderMaster");
+   hwMasterFader.setAdjustValueMatcher(midiIn.createAbsolutePitchBendValueMatcher(8));
+   hwMasterFader.disableTakeOver();
+   hwMasterFader.setBinding(masterTrack.volume());
 
    // Initialize Cursor Track & Send Bank (16 Send slots for focused track)
    cursorTrack = host.createCursorTrack("MIDIPLUS_CURSOR_TRACK", "Cursor Track", 16, 0, true);
@@ -386,12 +433,6 @@ function init() {
       (function (sendIdx) {
          var sendItem = cursorTrack.sendBank().getItemAt(sendIdx);
 
-         // Live fader-follow (pushing this value to the hardware fader as
-         // it changes) was confirmed non-functional on this hardware -
-         // see the comment above sendPitchBend for why. Still need
-         // markInterested() for the .value().get() calls refreshFaders()
-         // makes (mode switch / bank-flip fader sync, which IS confirmed
-         // working) - removing this would break that.
          sendItem.value().markInterested();
 
          sendItem.displayedValue().addValueObserver(function (dispVal) {
@@ -473,7 +514,7 @@ function init() {
    cursorTrack.name().addValueObserver(function (trackName) {
       if (currentMode === MODE_SENDS) {
          refreshDisplayText();
-         refreshFaders();
+         rebindFaders();
       }
    });
 
@@ -486,6 +527,7 @@ function init() {
 
    // Flush display initially
    updateModeLEDs();
+   rebindFaders();
    host.scheduleTask(displayFlushTask, 100);
 
    println("Midiplus UP Controller Script Ready.");
@@ -515,13 +557,6 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
             }
          });
 
-         // Track Volume - live push-to-fader was confirmed non-functional
-         // on this hardware (isolated single sends from a scheduleTask
-         // context never reach it, even throttled and flushed - only
-         // sends made synchronously inside onMidi() while handling an
-         // incoming message work, e.g. refreshFaders() on mode switch /
-         // bank-flip). Still need markInterested() - see the comment on
-         // the send observer above.
          track.volume().value().markInterested();
 
          track.volume().displayedValue().addValueObserver(function (dispVal) {
@@ -531,7 +566,6 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
             }
          });
 
-         // Track Pan - same as volume above, kept only for markInterested().
          track.pan().value().markInterested();
 
          // Track Meter Observer - real MCU protocol per Ableton's own
@@ -606,8 +640,8 @@ function scanTrackForToolDevice(track, onSlotFound, onSlotLost) {
 
          // Bitwig only syncs a Value's current state (and allows .get()) if
          // it's been observed or markInterested() was called on it during
-         // init - refreshFaders()/refreshDisplayText() read these on-demand
-         // rather than observing them, so without this they throw
+         // init - refreshDisplayText() reads name()/displayedValue() on
+         // demand rather than observing them, so without this it throws
          // "Either call markInterested() or add at least one observer".
          for (var p = 0; p < 2; p++) {
             var param = remote.getParameter(p);
@@ -659,7 +693,7 @@ function setupToolDeviceTracking(bank, toolSlotState, toolRemoteState) {
 function refreshToolModeIfActive() {
    if (currentMode === MODE_MIXER && isToolVolumeMode) {
       refreshDisplayText();
-      refreshFaders();
+      rebindFaders();
    }
 }
 
@@ -701,49 +735,11 @@ function onMidi(status, data1, data2) {
       println("RAW CC received - CC#: " + data1 + ", Value: " + data2);
    }
 
-   // 1. Motorized Pitchbend Faders (14-bit resolution)
-   if (msgType === 0xE0) {
-      var val14 = (data2 << 7) | data1;
-      var normalizedVal = val14 / 16383.0;
-
-      if (channel >= 0 && channel < 8) {
-         if (currentMode === MODE_SENDS) {
-            // Sends Mode: Faders 1-8 control Sends on focused track
-            var sendTargetIndex = (sendBankPage * 8) + channel;
-            cursorTrack.sendBank().getItemAt(sendTargetIndex).set(normalizedVal);
-         } else if (!isFlipped) {
-            // Standard Fader -> Track Volume (or Tool Gain in isToolVolumeMode).
-            // Applies in both MIXER and DEVICE modes - FLIP is the overlay
-            // that swaps faders/encoders between volume and macros.
-            if (currentMode === MODE_MIXER && isToolVolumeMode) {
-               var gainParam = getToolParam(channel, 0);
-               if (gainParam) {
-                  gainParam.set(normalizedVal);
-               }
-            } else {
-               activeTrackBank().getItemAt(channel).volume().set(normalizedVal);
-            }
-         } else if (currentMode === MODE_DEVICE) {
-            // Flipped + Plugin mode: faders control the device macros
-            // (encoders take over track volume - see the encoder handler).
-            remoteControls.getParameter(channel).set(normalizedVal);
-         } else {
-            // Flipped Fader behavior (MIXER)
-            if (isToolVolumeMode) {
-               var panParam = getToolParam(channel, 1);
-               if (panParam) {
-                  panParam.set(normalizedVal);
-               }
-            } else {
-               activeTrackBank().getItemAt(channel).pan().set(normalizedVal);
-            }
-         }
-      } else if (channel === 8) {
-         // Master Fader
-         masterTrack.volume().set(normalizedVal);
-      }
-      return;
-   }
+   // 1. Motorized Pitchbend Faders - handled entirely by the native
+   // hwFaders/hwMasterFader hardware bindings (see rebindFaders()), not
+   // here. Bitwig reads the incoming pitch-bend and drives the bound
+   // parameter (and the physical motor, for any value change regardless of
+   // its source) automatically once bound via setBinding().
 
    // 2. Rotary Encoders (CC 16-23 on Channel 1: 0xB0)
    if (msgType === 0xB0 && data1 >= 16 && data1 <= 23) {
@@ -1044,15 +1040,10 @@ function onMidi(status, data1, data2) {
    }
 }
 
-// Ableton Live MCU Overlay Button Processing
-// TEMPORARY DIAGNOSTIC WRAPPER: explicitly catches and prints any
-// exception thrown while handling a button press, since it's unclear
-// whether Bitwig's host surfaces uncaught errors from this callback to
-// the console on its own - refreshFaders() (called after refreshDisplayText
-// in several cases) appears to never be reached despite no visible error,
-// so this will confirm whether something upstream is throwing silently.
-// Remove once diagnosed; the real logic is unchanged, just renamed and
-// wrapped.
+// Button Processing (standard MCU note map - see the file header)
+// Wraps the real handler so one throwing button handler can't silently
+// break every subsequent button press (Bitwig doesn't surface uncaught
+// exceptions from this callback to the console on its own).
 function handleButtonPress(note) {
    try {
       handleButtonPressInner(note);
@@ -1127,7 +1118,7 @@ function handleButtonPressInner(note) {
             host.showPopupNotification("Mode: Mixer (Volume / Pan)");
             updateModeLEDs();
             refreshDisplayText();
-            refreshFaders();
+            rebindFaders();
          }
          flashLed(40, 150);
          break;
@@ -1146,7 +1137,7 @@ function handleButtonPressInner(note) {
          }
          updateModeLEDs();
          refreshDisplayText();
-         refreshFaders();
+         rebindFaders();
          break;
 
       case 42: // PAN -> toggle TOOL_DEVICE_NAME Gain/Pan control (see isToolVolumeMode)
@@ -1166,7 +1157,7 @@ function handleButtonPressInner(note) {
          }
          updateModeLEDs();
          refreshDisplayText();
-         refreshFaders();
+         rebindFaders();
          break;
 
       case 43: // PLUG-IN / DEVICE -> toggle into Device mode, jumping to the
@@ -1187,7 +1178,7 @@ function handleButtonPressInner(note) {
          }
          updateModeLEDs();
          refreshDisplayText();
-         refreshFaders();
+         rebindFaders();
          break;
 
       case 44: // PAGE PREV / EQ -> Focus EQ / Prev Parameter Page
@@ -1228,7 +1219,7 @@ function handleButtonPressInner(note) {
             host.showPopupNotification("Track Bank Left");
          }
          refreshDisplayText();
-         refreshFaders();
+         rebindFaders();
          break;
 
       case 47: // BANK NEXT (>) -> jump to last bank with SHIFT, else page forward
@@ -1244,7 +1235,7 @@ function handleButtonPressInner(note) {
             host.showPopupNotification("Track Bank Right");
          }
          refreshDisplayText();
-         refreshFaders();
+         rebindFaders();
          break;
 
       case 48: // CHANNEL PREV (<) -> nudge 1 channel back, jump to first with
@@ -1277,7 +1268,7 @@ function handleButtonPressInner(note) {
             host.showPopupNotification("Nudge Channel Left");
          }
          refreshDisplayText();
-         refreshFaders();
+         rebindFaders();
          break;
 
       case 49: // CHANNEL NEXT (>) -> nudge 1 channel forward, jump to last
@@ -1300,14 +1291,14 @@ function handleButtonPressInner(note) {
             host.showPopupNotification("Nudge Channel Right");
          }
          refreshDisplayText();
-         refreshFaders();
+         rebindFaders();
          break;
 
       case 50: // FLIP -> Swap Faders and Encoders
          isFlipped = !isFlipped;
          midiOut.sendMidi(0x90, 50, isFlipped ? 127 : 0);
          host.showPopupNotification("Fader Flip: " + (isFlipped ? "ON" : "OFF"));
-         refreshFaders();
+         rebindFaders();
          break;
 
       case 51: // RETURNS -> swap the 8 channel strips to/from the Return Tracks bank
@@ -1317,7 +1308,7 @@ function handleButtonPressInner(note) {
          refreshChannelStripLEDs();
          if (currentMode === MODE_MIXER) {
             refreshDisplayText();
-            refreshFaders();
+            rebindFaders();
          }
          break;
 
@@ -1400,7 +1391,7 @@ function handleButtonPressInner(note) {
          }
          updateModeLEDs();
          refreshDisplayText();
-         refreshFaders();
+         rebindFaders();
          break;
 
       case 81: // DRAW -> cycle through the 6 arranger edit tools, one per
@@ -1486,7 +1477,7 @@ function handleButtonPressInner(note) {
             safeCall(application, "arrowKeyLeft");
          }
          refreshDisplayText();
-         refreshFaders();
+         rebindFaders();
          break;
 
       case 97: // RIGHT ARROW
@@ -1498,7 +1489,7 @@ function handleButtonPressInner(note) {
             safeCall(application, "arrowKeyRight");
          }
          refreshDisplayText();
-         refreshFaders();
+         rebindFaders();
          break;
 
       case 98: // UP ARROW
@@ -1568,28 +1559,40 @@ function flashLed(note, durationMs) {
    }, durationMs);
 }
 
-// Refresh Motorized Faders upon Flip or Mode Change
-function refreshFaders() {
+// Re-binds each of the 8 hwFaders to whichever Parameter they should
+// currently control, whenever the active mode/flip/tool state changes
+// (called everywhere the old manual refreshFaders() used to be). Bitwig's
+// own hardware-binding system (see hwFaders above) then keeps the physical
+// motorized fader position in sync with that parameter automatically -
+// for hardware input AND for mouse-driven/automation-driven changes -
+// with no manual sendMidi() needed here at all.
+function rebindFaders() {
    for (var i = 0; i < 8; i++) {
+      var target = null;
       if (currentMode === MODE_SENDS) {
          var sendIdx = (sendBankPage * 8) + i;
-         sendPitchBend(i, cursorTrack.sendBank().getItemAt(sendIdx).value().get());
+         target = cursorTrack.sendBank().getItemAt(sendIdx);
       } else if (!isFlipped) {
          if (currentMode === MODE_MIXER && isToolVolumeMode) {
-            var gainParam = getToolParam(i, 0);
-            sendPitchBend(i, gainParam ? gainParam.value().get() : 0);
+            target = getToolParam(i, 0);
          } else {
-            sendPitchBend(i, activeTrackBank().getItemAt(i).volume().value().get());
+            target = activeTrackBank().getItemAt(i).volume();
          }
       } else if (currentMode === MODE_DEVICE) {
-         sendPitchBend(i, remoteControls.getParameter(i).value().get());
+         target = remoteControls.getParameter(i);
       } else {
          if (isToolVolumeMode) {
-            var panParam = getToolParam(i, 1);
-            sendPitchBend(i, panParam ? panParam.value().get() : 0.5);
+            target = getToolParam(i, 1);
          } else {
-            sendPitchBend(i, activeTrackBank().getItemAt(i).pan().value().get());
+            target = activeTrackBank().getItemAt(i).pan();
          }
+      }
+
+      if (target) {
+         hwFaders[i].setBinding(target);
+      } else {
+         // No TOOL_DEVICE_NAME parameter found for this slot (isToolVolumeMode) - nothing to bind.
+         hwFaders[i].clearBindings();
       }
    }
 }
@@ -1625,43 +1628,6 @@ function refreshDisplayText() {
    }
    displayNeedsUpdate = true;
 }
-
-// Helper: Send MCU Pitchbend Message (14-bit)
-function sendPitchBend(channel, normalizedValue) {
-   if (normalizedValue === undefined || normalizedValue === null) normalizedValue = 0;
-   var val14 = Math.round(normalizedValue * 16383);
-   val14 = Math.max(0, Math.min(16383, val14));
-
-   var lsb = val14 & 0x7F;
-   var msb = (val14 >> 7) & 0x7F;
-
-   // TEMPORARY DEBUG: reconfirms byte-level correctness for every
-   // sendPitchBend call (including from refreshFaders) - remove once
-   // diagnosed.
-   println("sendPitchBend - channel: " + channel + ", normalizedValue: " + normalizedValue +
-      ", status: 0x" + (0xE0 + channel).toString(16) + ", lsb: " + lsb + ", msb: " + msb);
-
-   midiOut.sendMidi(0xE0 + channel, lsb, msb);
-}
-
-// Live fader-follow (pushing volume/pan/send/macro changes to the
-// motorized fader as they happen, e.g. from a mouse drag or automation)
-// was investigated extensively and confirmed NOT achievable on this
-// hardware: even a single isolated sendPitchBend() call, deferred via
-// host.scheduleTask() and followed by host.requestFlush(), never reached
-// the fader - ruling out message flooding, throttling, and flush timing
-// as the cause. The one thing that reliably works is sendPitchBend()
-// called synchronously from inside onMidi() while handling an incoming
-// controller message (that's what refreshFaders() does, triggered on
-// mode switches / bank-flip / FLIP toggle) - output sent from a
-// scheduleTask or value-observer callback (i.e. NOT during onMidi()'s own
-// call stack) appears to never reach this hardware, regardless of
-// formatting or timing. There's no way to route a mouse/automation-driven
-// change through onMidi(), since no MIDI is incoming from the controller
-// in that case, so this isn't fixable in software. The various volume/pan/
-// send/macro value observers are still registered (see
-// setupChannelStripObservers etc.) purely to satisfy markInterested() for
-// the .value().get() calls refreshFaders() makes - don't remove those.
 
 // Render MCU LCD Display SysEx Messages
 // SysEx Format: F0 00 00 66 14 12 <offset> <ASCII text...> F7
@@ -1722,6 +1688,15 @@ function formatTrackName(str, length) {
 
 function onSysex(data) {
    // SysEx input handling if required
+}
+
+// Bitwig calls this periodically - required for the native hwFaders/
+// hwMasterFader hardware-surface bindings (see rebindFaders() above) to
+// actually push their queued output (motor position updates) to the
+// device. Without this, setBinding() still tracks state correctly but
+// nothing gets sent to the hardware.
+function flush() {
+   hwSurface.updateHardware();
 }
 
 function exit() {
