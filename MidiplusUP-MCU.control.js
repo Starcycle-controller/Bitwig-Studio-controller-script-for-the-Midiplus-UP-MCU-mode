@@ -1344,10 +1344,18 @@ function handleButtonPressInner(note) {
          rebindFaders();
          break;
 
-      // Note 43 has no label on the Ableton Live overlay (confirmed via
-      // console testing - the printed PLUG-INS button actually sends note
-      // 44, see below) and the manual documents unlabeled buttons as "not
-      // available in Live" - deliberately left unbound.
+      case 43: // FLIP -> Swap Faders and Encoders. Moved here from note 50
+               // after the user reported pressing the overlay's printed
+               // FLIP button produces note 43, not 50 (confirmed via
+               // console log) - the note-43-is-unlabeled assumption below
+               // (inherited from testing done before the overlay was
+               // reattached) was wrong. Still need to confirm what, if
+               // anything, note 50 does now - see README.
+         isFlipped = !isFlipped;
+         midiOut.sendMidi(0x90, 43, isFlipped ? 127 : 0);
+         host.showPopupNotification("Fader Flip: " + (isFlipped ? "ON" : "OFF"));
+         rebindFaders();
+         break;
 
       case 44: // PLUG-INS -> toggle into Device mode, jumping to the first
                // device on the selected track and opening its panel (does
@@ -1504,12 +1512,11 @@ function handleButtonPressInner(note) {
          rebindFaders();
          break;
 
-      case 50: // FLIP -> Swap Faders and Encoders
-         isFlipped = !isFlipped;
-         midiOut.sendMidi(0x90, 50, isFlipped ? 127 : 0);
-         host.showPopupNotification("Fader Flip: " + (isFlipped ? "ON" : "OFF"));
-         rebindFaders();
-         break;
+      // Note 50 - FLIP was previously (wrongly) assumed to be here; moved
+      // to note 43 above after console-log confirmation. Deliberately left
+      // unbound until it's confirmed what, if anything, this button
+      // actually does under the current overlay - press it and check the
+      // console for "RAW Note-On received".
 
       case 51: // RETURNS -> swap the 8 channel strips to/from the Return Tracks bank
          isViewingReturns = !isViewingReturns;
