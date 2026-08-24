@@ -1045,7 +1045,23 @@ function onMidi(status, data1, data2) {
 }
 
 // Ableton Live MCU Overlay Button Processing
+// TEMPORARY DIAGNOSTIC WRAPPER: explicitly catches and prints any
+// exception thrown while handling a button press, since it's unclear
+// whether Bitwig's host surfaces uncaught errors from this callback to
+// the console on its own - refreshFaders() (called after refreshDisplayText
+// in several cases) appears to never be reached despite no visible error,
+// so this will confirm whether something upstream is throwing silently.
+// Remove once diagnosed; the real logic is unchanged, just renamed and
+// wrapped.
 function handleButtonPress(note) {
+   try {
+      handleButtonPressInner(note);
+   } catch (e) {
+      println("EXCEPTION in handleButtonPress (note " + note + "): " + e);
+   }
+}
+
+function handleButtonPressInner(note) {
    println("Button pressed - Note: " + note); // DEBUG: remove once all mappings are confirmed
    // Track Channel Strip Buttons (0 - 31) - always act on whichever bank
    // (main tracks or returns) is currently active.
