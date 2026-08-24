@@ -696,6 +696,29 @@ function init() {
       midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, meterStripIdx, 3, 0xF7]);
    }
 
+   // Diagnostics: live-testable meter mode for channel 8 only (the other 7
+   // strips stay on the confirmed mode=3 above) - lets us try each of the
+   // 4 real MCU VU-meter modes (confirmed against Mossgraber's
+   // switchVuMode()/VUMODE_* in MCUControlSurface.java, not guessed) from
+   // the Controller Preferences panel and see the result on hardware
+   // immediately, no redeploy needed, while investigating what channel 8's
+   // LCD bar graph actually shows and whether it can be repurposed to
+   // display track color instead of level.
+   var meterTestModeValues = {
+      "LED + LCD (default, mode 3)": 3,
+      "Off (mode 0)": 0,
+      "LED Only (mode 1)": 1,
+      "LCD Only (mode 6)": 6
+   };
+   var meterTestModeSetting = host.getPreferences().getEnumSetting(
+      "Channel 8 Meter Test Mode", "Diagnostics",
+      ["LED + LCD (default, mode 3)", "Off (mode 0)", "LED Only (mode 1)", "LCD Only (mode 6)"],
+      "LED + LCD (default, mode 3)");
+   meterTestModeSetting.markInterested();
+   meterTestModeSetting.addValueObserver(function (value) {
+      midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, 7, meterTestModeValues[value], 0xF7]);
+   });
+
    // Track each bank's per-track TOOL_DEVICE_NAME device, if any (see isToolVolumeMode).
    setupToolDeviceTracking(trackBank, mainToolSlot, mainToolRemote);
    setupToolDeviceTracking(effectTrackBank, returnsToolSlot, returnsToolRemote);

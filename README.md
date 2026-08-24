@@ -125,6 +125,25 @@ press and release one without using it to modify anything else:
   (`cursorDeviceBank`) - there's no Controller API way to enumerate open
   plugin windows project-wide, so windows on other tracks aren't affected.
 
+### Diagnostics settings (Controller Preferences panel)
+
+Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
+-> **Diagnostics** category.
+
+- **Channel 8 Meter Test Mode** (default `LED + LCD (default, mode 3)`) -
+  live-switches which of the 4 real MCU VU-meter modes channel 8's strip
+  uses, by re-sending `F0 00 00 66 14 20 07 <mode> F7` with a different
+  mode byte the moment you change the dropdown - no reload needed. The 4
+  values are confirmed against Mossgraber's `switchVuMode()`/`VUMODE_*` in
+  `MCUControlSurface.java` (not guessed): `0` = all off, `1` = LED meter
+  only, `3` = LED + VU-meter on the LCD (what all 8 channels normally use,
+  see below), `6` = VU-meter on the LCD only, no LED. Scoped to channel 8
+  only - the other 7 strips stay on the confirmed-working mode 3
+  regardless of this setting. Added to investigate the "blue bar" on
+  channel 8's LCD (see below) and, if it turns out to be a real VU meter,
+  work out whether it can be repurposed to show track color instead of
+  level.
+
 ### LCD / meters / LEDs
 
 Standard MCU SysEx: `F0 00 00 66 14 12 <offset> <ASCII...> F7` for the two
@@ -132,7 +151,13 @@ Standard MCU SysEx: `F0 00 00 66 14 12 <offset> <ASCII...> F7` for the two
 <mode> F7` (mode=3) to enable per-channel metering, and metering level sent
 as Channel Pressure (status `0xD0`, always MIDI channel 1, one data byte
 packing `(stripIndex<<4)|level`) - all cross-checked against Ableton's own
-`ChannelStrip.py`. Button LEDs are plain Note On/Off (`midiOut.sendMidi(
+`ChannelStrip.py`. Mode 3 is "LED + VU-meter on the LCD" (see the
+Diagnostics setting above for the other 3 confirmed mode values) - the
+"blue bar" visible on each channel's LCD is very likely this VU meter
+doing exactly what it's supposed to; under investigation is whether it's
+actually tracking real level (Channel Pressure data) or appears static,
+and if so whether the LCD real estate it uses can be redirected to show
+track color instead. Button LEDs are plain Note On/Off (`midiOut.sendMidi(
 0x90, note, 127/0)`).
 
 **Assignment row (notes 40/41/42/44/45 - TRACK/IO, SEND, PAN, PLUG-INS,
