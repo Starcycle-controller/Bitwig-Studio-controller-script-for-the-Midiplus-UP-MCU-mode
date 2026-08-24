@@ -146,6 +146,62 @@ var expandedViewPressStartTime = 0;
 // created in init() below (see ctrlHoldTimeSetting).
 var CTRL_LONG_PRESS_MS = 500;
 
+// Shared "temporarily override the bottom LCD row, then revert" debounce
+// token - one array covering both use cases below (pan-reveal-while-
+// turning and one-shot status popups like SOLO/UNSOLO), so the two never
+// race each other on the same channel: whichever happens more recently
+// always wins, and only the LAST scheduled revert for a channel actually
+// fires (Bitwig's scheduleTask has no way to cancel a still-pending call,
+// so this "does my token still match the current one" check is how
+// earlier, now-superseded timers are made into no-ops).
+var lcdOverrideGeneration = [0, 0, 0, 0, 0, 0, 0, 0];
+var LCD_OVERRIDE_TIMEOUT_MS = 800;
+
+// Mixer mode's bottom LCD row always shows volume (see
+// setupChannelStripObservers) - while an encoder is actively being turned
+// to adjust pan (its usual unflipped Mixer-mode target), the bottom row
+// temporarily shows the live pan value instead, reverting back to volume
+// after the encoder stops moving. Needs LIVE updates for the whole
+// duration (the value keeps changing as the encoder turns), unlike the
+// one-shot popups below - isShowingPanTemporarily gates the pan
+// displayedValue observer in setupChannelStripObservers.
+var isShowingPanTemporarily = [false, false, false, false, false, false, false, false];
+
+function revealPanTemporarily(index) {
+   isShowingPanTemporarily[index] = true;
+   lcdOverrideGeneration[index]++;
+   var myGeneration = lcdOverrideGeneration[index];
+   host.scheduleTask(function () {
+      if (lcdOverrideGeneration[index] !== myGeneration) {
+         return;
+      }
+      isShowingPanTemporarily[index] = false;
+      if (currentMode === MODE_MIXER && !isFlipped) {
+         refreshDisplayText();
+      }
+   }, LCD_OVERRIDE_TIMEOUT_MS);
+}
+
+// One-shot status popup (e.g. SOLO/UNSOLO on the solo toggle) - shows
+// `text` in channel `index`'s bottom LCD row immediately, then reverts to
+// whatever refreshDisplayText() would normally show there (correct for
+// whichever mode is active by the time it fires, not just Mixer/volume)
+// after LCD_OVERRIDE_TIMEOUT_MS, unless superseded first by another
+// popup or a pan-reveal on the same channel.
+function showBottomRowPopup(index, text) {
+   isShowingPanTemporarily[index] = false;
+   bottomRowText[index] = formatString(text, 7);
+   displayNeedsUpdate = true;
+   lcdOverrideGeneration[index]++;
+   var myGeneration = lcdOverrideGeneration[index];
+   host.scheduleTask(function () {
+      if (lcdOverrideGeneration[index] !== myGeneration) {
+         return;
+      }
+      refreshDisplayText();
+   }, LCD_OVERRIDE_TIMEOUT_MS);
+}
+
 // Called on release of any of the 4 modifier buttons (see the SHIFT/
 // OPTION/CTRL/ALT blocks in onMidi below) - handles the two configurable
 // Plugin Mode standalone-tap actions (see the settings above). Both are
@@ -748,13 +804,24 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          track.volume().value().markInterested();
 
          track.volume().displayedValue().addValueObserver(function (dispVal) {
-            if (currentMode === MODE_MIXER && !isFlipped && isViewingReturns === isReturnsBank) {
+            if (currentMode === MODE_MIXER && !isFlipped && isViewingReturns === isReturnsBank &&
+                !isShowingPanTemporarily[index]) {
                bottomRowText[index] = formatString(dispVal, 7);
                displayNeedsUpdate = true;
             }
          });
 
          track.pan().value().markInterested();
+
+         // Bottom row's temporary pan reveal while turning the encoder -
+         // see revealPanTemporarily() above.
+         track.pan().displayedValue().addValueObserver(function (dispVal) {
+            if (currentMode === MODE_MIXER && !isFlipped && isViewingReturns === isReturnsBank &&
+                isShowingPanTemporarily[index]) {
+               bottomRowText[index] = formatString(dispVal, 7);
+               displayNeedsUpdate = true;
+            }
+         });
 
          // Track Color - read on-demand (not observed) by
          // updateChannelColorOutput(), polled every flush() like the
@@ -950,6 +1017,14 @@ function onMidi(status, data1, data2) {
       var encTarget = getEncoderTarget(encoderIndex);
       if (encTarget) {
          encTarget.inc(delta, resolution);
+      }
+      // The bottom LCD row otherwise always shows volume in Mixer mode
+      // (see setupChannelStripObservers) - reveal the live pan value
+      // instead while actually turning the encoder to adjust pan, since
+      // that's the only case where the encoder and the displayed value
+      // disagree. See revealPanTemporarily() below.
+      if (currentMode === MODE_MIXER && !isFlipped && !isToolVolumeMode) {
+         revealPanTemporarily(encoderIndex);
       }
       return;
    }
@@ -1250,13 +1325,24 @@ function handleButtonPressInner(note) {
       return;
    }
    if (note >= 8 && note <= 15) {
-      // Solo 1-8
-      activeTrackBank().getItemAt(note - 8).solo().toggle();
+      // Solo 1-8 - .set() instead of .toggle() so the resulting state is
+      // known synchronously, for the momentary SOLO/UNSOLO LCD popup (see
+      // showBottomRowPopup()).
+      var soloIdx = note - 8;
+      var soloTrack = activeTrackBank().getItemAt(soloIdx);
+      var newSoloState = !soloTrack.solo().get();
+      soloTrack.solo().set(newSoloState);
+      showBottomRowPopup(soloIdx, newSoloState ? "SOLO" : "UNSOLO");
       return;
    }
    if (note >= 16 && note <= 23) {
-      // Mute 1-8
-      activeTrackBank().getItemAt(note - 16).mute().toggle();
+      // Mute 1-8 - same synchronous-state pattern as Solo above, for the
+      // momentary MUTE/UNMUTE LCD popup.
+      var muteIdx = note - 16;
+      var muteTrack = activeTrackBank().getItemAt(muteIdx);
+      var newMuteState = !muteTrack.mute().get();
+      muteTrack.mute().set(newMuteState);
+      showBottomRowPopup(muteIdx, newMuteState ? "MUTE" : "UNMUTE");
       return;
    }
    if (note >= 24 && note <= 31) {

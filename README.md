@@ -129,16 +129,40 @@ itself controls (pan in Mixer mode, sends in Sends mode, always the macro
 in Device mode regardless of FLIP), matching the physical V-Pot ring's
 own encoder rather than the fader.
 
-**EXPERIMENTAL - per-channel LCD/strip colors**, matching each track's own
-Bitwig color, via `updateChannelColorOutput()` (same flush()-polling
-pattern): one SysEx `F0 00 02 4E 16 14 <8x R,G,B (0-127)> F7` covering all
-8 channels at once (the "ICON"-vendor variant of this MCU extension, per
-Mossgraber's driver - there are at least two other known vendor-specific
-variants, e.g. Behringer's single-byte 3-bit color index, and this isn't
-documented in the Midiplus manual at all). **Not yet confirmed working on
-this hardware** - if channel colors don't visibly change, this protocol
-variant is likely wrong for this unit and would need trying one of the
-alternatives instead.
+**Per-channel LCD/strip colors, matching each track's own Bitwig color,
+via `updateChannelColorOutput()` - confirmed NOT working on this hardware.**
+Sends one SysEx `F0 00 02 4E 16 14 <8x R,G,B (0-127)> F7` covering all 8
+channels at once (the "ICON"-vendor variant of this MCU extension, per
+Mossgraber's driver). Tested live: channel colors don't change at all, so
+this protocol variant is wrong for this unit. There are at least two other
+known vendor-specific variants (e.g. Behringer's single-byte 3-bit color
+index) that haven't been tried yet - this isn't documented in the Midiplus
+manual at all, so it's trial and error. The code is still in place
+(harmless no-op on this hardware) in case a future firmware or a different
+variant turns out to work.
+
+### Momentary bottom-row LCD popups
+
+The bottom LCD row normally always shows the track's volume in Mixer mode
+(see `setupChannelStripObservers`) - two things temporarily override it,
+then revert back to whatever's normally shown (via `refreshDisplayText()`)
+after `LCD_OVERRIDE_TIMEOUT_MS` (800ms) of no further activity on that
+channel:
+
+- **Turning an encoder to adjust pan** (Mixer mode, unflipped) reveals the
+  live pan value instead of volume for as long as you keep turning it -
+  see `revealPanTemporarily()` / `isShowingPanTemporarily`.
+- **Pressing SOLO or MUTE** shows a one-shot `SOLO`/`UNSOLO` or
+  `MUTE`/`UNMUTE` popup (reflecting the *resulting* state, not what it
+  was before the press) - see `showBottomRowPopup()`. Works regardless of
+  which mode is currently active (Mixer/Sends/Device), since Solo/Mute
+  themselves aren't mode-specific.
+
+Both share one per-channel debounce mechanism (`lcdOverrideGeneration`) so
+a popup and a pan-reveal on the same channel can't race each other, and
+Bitwig's `scheduleTask` has no way to cancel an earlier still-pending
+timer - each trigger bumps its channel's token, and a scheduled revert
+only actually happens if nothing bumped it again in the meantime.
 
 ## Confirmed button map
 
@@ -246,12 +270,11 @@ sends note 100 directly, same as the note 100 already bound above.
    Next step if revisited: try continuously re-asserting it every flush()
    cycle rather than only right after the FLIP press, in case the
    firmware's local clearing happens on a delay.
-5. **Channel colors (`updateChannelColorOutput()`) need hardware
-   confirmation.** Sends the "ICON"-vendor MCU SysEx variant as a
-   best-guess, since the Midiplus manual doesn't document this feature at
-   all - if colors don't visibly change on the hardware, this is the
-   wrong protocol variant for this unit (see the LCD/meters/LEDs section
-   above for the two other known alternatives).
+5. **Channel colors confirmed not working (ICON variant) - try an
+   alternative protocol if this is still wanted.** `updateChannelColorOutput()`
+   is left in as a harmless no-op; see the LCD/meters/LEDs section above
+   for the other known vendor-specific variants worth trying (e.g.
+   Behringer's single-byte 3-bit color index).
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 
