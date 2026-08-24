@@ -270,8 +270,18 @@ channel:
   across all 8 channels' bottom row - on entry to that mode and again when
   it's left back to Mixer, via `showModePopup()`. Paging within Sends
   (1-8 -> 9-16) doesn't re-announce, since that's not a mode change.
+- **Selecting a track** (SELECT button, or clicking it in Bitwig) shows
+  its color as a human-readable name (`CYAN`, `SKYBLUE`, `PURPLE`, etc)
+  on that channel's bottom row, via `nameForTrackColor()` - there's no
+  color-name API (`ColorValue` only exposes raw `red()`/`green()`/
+  `blue()`), so this picks the closest match from a 25-entry reference
+  palette (plain squared RGB distance - close enough to be useful, not
+  colorimetrically exact). Every name is deliberately <=7 characters so
+  it always fits without truncation. Makes it easier to spot which track
+  just became selected at a glance, since Bitwig's own selection
+  highlight isn't otherwise visible on this hardware.
 
-All three share one per-channel debounce mechanism (`lcdOverrideGeneration`)
+All four share one per-channel debounce mechanism (`lcdOverrideGeneration`)
 so they can't race each other, plus a separate single shared token
 (`modePopupGeneration`) for the whole-strip mode announcements specifically
 (so per-channel activity elsewhere doesn't cut it short). Bitwig's

@@ -944,6 +944,14 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
             ledState.select[index] = isSelected;
             if (isViewingReturns === isReturnsBank) {
                midiOut.sendMidi(0x90, 24 + index, isSelected ? 127 : 0); // Select LED
+               if (isSelected) {
+                  // Briefly show the selected track's color as a human
+                  // -readable name (there's no color-name API - see
+                  // nameForTrackColor()) instead of its usual name/volume
+                  // text, so it's easier to spot which track is now
+                  // selected at a glance.
+                  showBottomRowPopup(index, nameForTrackColor(track.color()));
+               }
             }
          });
 
@@ -2318,6 +2326,57 @@ function formatPanLR(rawValue) {
       return "C";
    }
    return percent + (rawValue < 0.5 ? "L" : "R");
+}
+
+// Bitwig's ColorValue only exposes raw red()/green()/blue() (0-1 floats) -
+// no color-name API exists (confirmed against the Controller API Javadoc),
+// so nameForTrackColor() below picks whichever of these reference colors
+// is closest in RGB space (plain squared Euclidean distance - good enough
+// for "which color is this roughly", not colorimetrically precise). Every
+// name is deliberately <=7 characters so it always fits a channel LCD
+// cell without truncation.
+var NAMED_COLORS = [
+   { n: "RED",     r: 0.90, g: 0.10, b: 0.10 },
+   { n: "ORANGE",  r: 1.00, g: 0.55, b: 0.00 },
+   { n: "AMBER",   r: 1.00, g: 0.75, b: 0.00 },
+   { n: "YELLOW",  r: 1.00, g: 0.95, b: 0.10 },
+   { n: "LIME",    r: 0.60, g: 0.90, b: 0.10 },
+   { n: "GREEN",   r: 0.10, g: 0.70, b: 0.20 },
+   { n: "MINT",    r: 0.40, g: 0.90, b: 0.60 },
+   { n: "TEAL",    r: 0.00, g: 0.60, b: 0.55 },
+   { n: "CYAN",    r: 0.10, g: 0.85, b: 0.90 },
+   { n: "SKYBLUE", r: 0.30, g: 0.65, b: 0.95 },
+   { n: "BLUE",    r: 0.15, g: 0.35, b: 0.95 },
+   { n: "NAVY",    r: 0.05, g: 0.10, b: 0.50 },
+   { n: "INDIGO",  r: 0.35, g: 0.15, b: 0.75 },
+   { n: "PURPLE",  r: 0.55, g: 0.15, b: 0.75 },
+   { n: "VIOLET",  r: 0.75, g: 0.35, b: 0.90 },
+   { n: "MAGENTA", r: 0.90, g: 0.10, b: 0.75 },
+   { n: "PINK",    r: 0.95, g: 0.50, b: 0.70 },
+   { n: "ROSE",    r: 0.90, g: 0.30, b: 0.40 },
+   { n: "BROWN",   r: 0.50, g: 0.30, b: 0.15 },
+   { n: "OLIVE",   r: 0.55, g: 0.55, b: 0.10 },
+   { n: "WHITE",   r: 0.95, g: 0.95, b: 0.95 },
+   { n: "LTGRAY",  r: 0.75, g: 0.75, b: 0.75 },
+   { n: "GRAY",    r: 0.50, g: 0.50, b: 0.50 },
+   { n: "DKGRAY",  r: 0.25, g: 0.25, b: 0.25 },
+   { n: "BLACK",   r: 0.05, g: 0.05, b: 0.05 }
+];
+
+function nameForTrackColor(color) {
+   var r = color.red(), g = color.green(), b = color.blue();
+   var bestName = "?";
+   var bestDist = Infinity;
+   for (var i = 0; i < NAMED_COLORS.length; i++) {
+      var c = NAMED_COLORS[i];
+      var dr = r - c.r, dg = g - c.g, db = b - c.b;
+      var dist = dr * dr + dg * dg + db * db;
+      if (dist < bestDist) {
+         bestDist = dist;
+         bestName = c.n;
+      }
+   }
+   return bestName;
 }
 
 // Helper: Format string to fixed length (7 chars, padded or truncated)
