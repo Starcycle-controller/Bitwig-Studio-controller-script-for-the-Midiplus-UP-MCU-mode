@@ -54,8 +54,11 @@ Two independent halves, both required:
 - `MODE_SENDS` - faders/encoders control the focused track's sends.
   3-state toggle via the SEND button (note 41): sends 1-8 -> sends 9-16 ->
   back to Mixer.
-- `MODE_DEVICE` - faders/encoders control the selected device's 8 remote
-  control macros. Entered via PLUG-INS (note 44 - see the button-map
+- `MODE_DEVICE` - encoders **always** control the selected device's 8
+  remote control macros, regardless of FLIP. Faders control track volume
+  by default and swap to the macros when FLIP is on (press again to
+  revert to volume) - i.e. FLIP only affects the faders in this mode, not
+  the encoders. Entered via PLUG-INS (note 44 - see the button-map
   correction below), or via F1-F8 in their default/orange state (notes
   54-61), which also jump directly to device 1-8 on the chain.
 - `MODE_SCENE` - entered via the button printed B.T.A. on the old Live
@@ -63,9 +66,9 @@ Two independent halves, both required:
   panel layout, and the jog wheel selects/launches scenes instead of its
   usual transport scrub.
 
-FLIP (note 50) swaps faders and encoders between volume and pan (or, in
-`MODE_DEVICE`, between device macros and volume) within whichever mode is
-active.
+FLIP (note 50) swaps faders and encoders between volume and pan in
+`MODE_MIXER`, and faders (only - see `MODE_DEVICE` above) between volume
+and macros in `MODE_DEVICE`.
 
 ### Plugin Mode settings (Controller Preferences panel)
 

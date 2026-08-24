@@ -929,6 +929,12 @@ function onMidi(status, data1, data2) {
          } else if (currentMode === MODE_DEVICE) {
             remoteControls.getParameter(encoderIndex).inc(delta, resolution);
          }
+      } else if (currentMode === MODE_DEVICE) {
+         // Encoders always control macros in Device mode, regardless of
+         // FLIP - only the faders swap between track volume and macros
+         // (see getFaderTarget()). FLIP still swaps everything else
+         // (Mixer volume/pan, Sends) as usual.
+         remoteControls.getParameter(encoderIndex).inc(delta, resolution);
       } else {
          // Flipped Encoder -> Track Volume (or Tool Gain in isToolVolumeMode)
          if (currentMode === MODE_MIXER && isToolVolumeMode) {
