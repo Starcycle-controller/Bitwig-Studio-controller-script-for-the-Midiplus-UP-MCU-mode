@@ -1195,12 +1195,10 @@ function handleButtonPressInner(note) {
             remoteControls.selectPreviousPage(true);
             host.showPopupNotification("Device Page Previous");
          } else {
-            try {
-               cursorDevice.selectFirstInKeyTrack();
-            } catch (e) {
-               println("Warning: selectFirstInKeyTrack() not available: " + e);
-            }
-            host.showPopupNotification("Device: EQ / Primary FX");
+            // No Bitwig API equivalent to "jump to the first EQ device on
+            // the track" (cursorDevice.selectFirstInKeyTrack() doesn't
+            // exist on this API version - confirmed via console error).
+            host.showPopupNotification("EQ (no Bitwig equivalent)");
          }
          break;
 
