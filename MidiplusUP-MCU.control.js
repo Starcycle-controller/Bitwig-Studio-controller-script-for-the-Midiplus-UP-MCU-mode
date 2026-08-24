@@ -448,6 +448,16 @@ var lastSentFaderValue = [-1, -1, -1, -1, -1, -1, -1, -1, -1];
 var lastSentVPotRing = [-1, -1, -1, -1, -1, -1, -1, -1];
 var VPOT_LED_MODE_SINGLE_DOT = 0;
 
+// Segment display (transport position, CC 0x40-0x49) - see
+// updateSegmentDisplay() below. positionFormatter is created once in
+// init() (needs host.createBeatTimeFormatter()); segmentDisplayBuffer
+// caches the last ASCII+dot byte sent per digit cell (-1 = never sent,
+// same de-dup pattern as lastSentFaderValue/lastSentVPotRing above) so
+// flush() only re-sends digits that actually changed.
+var positionFormatter = null;
+var lastSegmentDisplayText = null;
+var segmentDisplayBuffer = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1];
+
 // Per-channel LCD/strip color, matching each track's own Bitwig color -
 // EXPERIMENTAL, not confirmed working on this hardware yet. Sent as one
 // SysEx covering all 8 channels (real MCU protocol per Mossgraber's
@@ -681,6 +691,16 @@ function init() {
    transport.timeSignature().numerator().markInterested();
    transport.timeSignature().denominator().markInterested();
 
+   // Segment display (the separate "BEATS" transport-position display,
+   // notes 40-53 are NOT it - this is CC 0x40-0x49, 10 digit cells,
+   // confirmed via Mossgraber's MCUSegmentDisplay.java) - Bars:Beats:
+   // Subdivision:Ticks, 3+2+2+3 = 10 digits, matching genuine MCU layout.
+   // This is the display's real, intended default purpose - it was
+   // already showing "BEATS" as its own idle label before this script
+   // ever sent it anything, waiting for exactly this. See
+   // updateSegmentDisplay(), called from flush().
+   positionFormatter = host.createBeatTimeFormatter(":", 3, 2, 2, 3);
+
    // Setup Observers for both the main track bank and the returns bank -
    // only the currently-active one (per isViewingReturns) writes to the
    // shared display caches / LEDs.
@@ -888,22 +908,11 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          // - not per-strip), with a single data byte packing the strip
          // index into the high nibble and the level into the low nibble.
          // Requires the meter-enable SysEx sent once in init() above.
+         // Confirmed working on all 8 channels, including channel 8, once
+         // audio was actually routed to it (the earlier "not updating"
+         // report was a routing issue, not a script bug).
          track.addVuMeterObserver(13, -1, true, function (level) {
             if (currentMode === MODE_MIXER && isViewingReturns === isReturnsBank) {
-               // DEBUG: confirms whether Bitwig is even calling this back
-               // with real level data for this track - if channel 8's LED
-               // meter isn't animating on hardware, check the console for
-               // "Meter idx 7" lines while audio plays on that track. If
-               // they never appear, it's a Bitwig-side metering/routing
-               // issue (or the wrong track is selected in this bank slot);
-               // if they DO appear but the hardware LED still doesn't move,
-               // it's either our sendMidi below or a hardware limitation on
-               // this specific channel. Scoped to index 7 only to keep the
-               // console readable. Remove once channel 8 metering is
-               // confirmed working (or confirmed to be a hardware limit).
-               if (index === 7) {
-                  println("Meter idx 7 level " + level);
-               }
                midiOut.sendMidi(0xD0, (index << 4) | level, 0);
             }
          });
@@ -2198,6 +2207,52 @@ function updateChannelColorOutput() {
    midiOut.sendSysexBytes(sysex);
 }
 
+// Segment display (transport position) - polled every flush() like the
+// fader/V-Pot ring/channel-color outputs above, rather than an observer,
+// since BeatTimeValue.getFormatted() is a pull, not a push API (only the
+// deprecated addTimeObserver() pushes - avoided here in favor of the
+// same polling pattern already used everywhere else in this file).
+// getFormatted(positionFormatter) yields e.g. "003:02:03:045" (Bars:
+// Beats:Subdivision:Ticks, per the 3/2/2/3 split chosen in init()).
+function updateSegmentDisplay() {
+   var text = transport.getPosition().getFormatted(positionFormatter);
+   if (text === lastSegmentDisplayText) {
+      return;
+   }
+   lastSegmentDisplayText = text;
+
+   // Ports Mossgraber's MCUSegmentDisplay.writeLine(): walk the text
+   // right-to-left filling 10 digit cells; a ':' doesn't consume a cell -
+   // it sets a flag that ORs 0x40 onto the NEXT (further left) digit's
+   // ASCII code, which is how this display's 7-segment protocol encodes
+   // "digit with a decimal dot after it". Unfilled cells (string shorter
+   // than 10 digits) get a blank space.
+   var addDot = false;
+   var pos = text.length - 1;
+   var i = 0;
+   while (i < 10) {
+      var c = 0x20;
+      if (pos >= 0) {
+         var ch = text.charAt(pos);
+         pos--;
+         if (ch === ":") {
+            addDot = true;
+            continue;
+         }
+         c = ch.charCodeAt(0);
+         if (addDot) {
+            c += 0x40;
+         }
+      }
+      if (c !== segmentDisplayBuffer[i]) {
+         midiOut.sendMidi(0xB0, 0x40 + i, c);
+         segmentDisplayBuffer[i] = c;
+      }
+      i++;
+      addDot = false;
+   }
+}
+
 // Force Refresh LCD Text Cache
 function refreshDisplayText() {
    for (var i = 0; i < 8; i++) {
@@ -2315,6 +2370,7 @@ function flush() {
    updateFaderOutputs();
    updateVPotRingOutputs();
    updateChannelColorOutput();
+   updateSegmentDisplay();
 }
 
 function exit() {

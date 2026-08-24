@@ -139,10 +139,12 @@ Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
   only, `3` = LED + VU-meter on the LCD (what all 8 channels normally use,
   see below), `6` = VU-meter on the LCD only, no LED. Scoped to channel 8
   only - the other 7 strips stay on the confirmed-working mode 3
-  regardless of this setting. Added to investigate the "blue bar" on
-  channel 8's LCD (see below) and, if it turns out to be a real VU meter,
-  work out whether it can be repurposed to show track color instead of
-  level.
+  regardless of this setting. **Result: on this hardware, the on-screen
+  LCD bar reacted to real level in every one of the 4 modes, including
+  `0`/off** - so this unit doesn't appear to distinguish between the mode
+  byte values the way genuine Mackie hardware does; the LCD meter bar
+  seems to always be driven directly by the incoming Channel Pressure
+  level data regardless of the mode SysEx. Conclusion below.
 
 ### LCD / meters / LEDs
 
@@ -151,14 +153,49 @@ Standard MCU SysEx: `F0 00 00 66 14 12 <offset> <ASCII...> F7` for the two
 <mode> F7` (mode=3) to enable per-channel metering, and metering level sent
 as Channel Pressure (status `0xD0`, always MIDI channel 1, one data byte
 packing `(stripIndex<<4)|level`) - all cross-checked against Ableton's own
-`ChannelStrip.py`. Mode 3 is "LED + VU-meter on the LCD" (see the
-Diagnostics setting above for the other 3 confirmed mode values) - the
-"blue bar" visible on each channel's LCD is very likely this VU meter
-doing exactly what it's supposed to; under investigation is whether it's
-actually tracking real level (Channel Pressure data) or appears static,
-and if so whether the LCD real estate it uses can be redirected to show
-track color instead. Button LEDs are plain Note On/Off (`midiOut.sendMidi(
+`ChannelStrip.py`. Button LEDs are plain Note On/Off (`midiOut.sendMidi(
 0x90, note, 127/0)`).
+
+**Per-channel LCD meter bar: confirmed working, and confirmed NOT
+independently paintable for color.** Console-verified: `track idx 7`'s
+Channel Pressure level fluctuated correctly (2-6, tracking real playback)
+while the on-screen bar visibly moved in sync, on all 8 channels,
+including channel 8 (the earlier "channel 8 not updating" report turned
+out to be no audio actually routed to that track yet, not a script bug).
+The Channel 8 Meter Test Mode experiment (see Diagnostics above) then
+showed the bar reacting to level in every one of the 4 documented VU
+modes, including notionally "off" - meaning this bar isn't a separate
+paintable display region gated by that mode byte, it's a genuine VU meter
+directly driven by the Channel Pressure value, full stop. Repurposing it
+to show track color instead of level isn't achievable through this
+mechanism: sending fake "level" values to force a certain color band
+would mean giving up real metering on that channel, and would still only
+get whatever green/yellow/red gradient this hardware's firmware bakes
+into level rendering - not arbitrary RGB. The earlier "blue bar" question
+that kicked this off was very likely about a different, unrelated
+display entirely - the segment display (see below) - not this meter.
+
+Separately, there's a totally distinct hardware display - the transport
+position ("segment display", confirmed via Mossgraber's
+`MCUSegmentDisplay.java`: 10 digits, each driven by its own CC 0x40-0x49)
+- that showed "BEATS" and its own idle graphic before this script sent it
+anything, which is exactly what a genuine MCU's segment display looks
+like at idle: it's the display's real, intended purpose, not something to
+repurpose. **Now implemented** (`updateSegmentDisplay()`, polled every
+`flush()` like the other outputs): `transport.getPosition().getFormatted(
+positionFormatter)` (a real, non-deprecated Controller API method -
+`host.createBeatTimeFormatter(":", 3, 2, 2, 3)`, called once in `init()`)
+yields a `Bars:Beats:Subdivision:Ticks` string (e.g. `"003:02:03:045"`),
+3+2+2+3 = 10 digits total, matching this display's 10 cells exactly. The
+string is translated into the segment protocol by porting Mossgraber's
+`writeLine()` logic verbatim: walking the text right-to-left, a `:`
+doesn't consume a digit cell - it flags the *next* (further left) digit
+to get `+0x40` added to its ASCII code, which is how this protocol
+encodes "this digit has a decimal dot after it" on a 7-segment display.
+Per-digit de-duped against `segmentDisplayBuffer` so only cells that
+actually changed get re-sent. Not yet tested on hardware - next step is
+confirming it actually renders bars/beats/ticks (and isn't, say, off by
+a digit or using the wrong CC range for this specific unit).
 
 **Assignment row (notes 40/41/42/44/45 - TRACK/IO, SEND, PAN, PLUG-INS,
 RETURNS) LEDs are hardware-managed and inconsistent about clearing each
@@ -328,34 +365,33 @@ sends note 100 directly, same as the note 100 already bound above.
    toggles between the two states in hardware firmware only - it's not
    bound to anything in Bitwig itself (previously toggled Automation
    Write - removed per request, see git history).
-2. **Metering re-enabled but not re-tested this session** - it was
-   disabled for several sessions while diagnosing the (unrelated) fader
-   bug; restored to its intended state (`mode=3` SysEx + Channel Pressure
-   send) as part of a cleanup pass, but worth confirming the LCD/LED
-   meters still behave correctly now that faders work again.
+2. **Metering confirmed working on hardware, all 8 channels.** Console +
+   visual confirmation: Channel Pressure level data fluctuates correctly
+   and the on-screen LCD bar tracks it in real time on every channel,
+   including channel 8 (an earlier report of channel 8 "not updating" was
+   just no audio routed to it yet, not a script bug).
 3. Debug logging (`RAW Note-On received`, `RAW CC received`, `Button
    pressed - Note:`) is still left in intentionally - useful while wiring
    up the remaining F1-F8 slots (item 1). Fine to remove once that's done.
-4. **Needs a fresh hardware pass: Assignment-row LED explicit-off fix +
-   unified mode switching.** Two bugs reported after the RETURNS/matrix
-   fix - pressing RETURNS a second time correctly reverted the mode
-   internally but left note 45 lit, and jumping straight from Sends to
-   Returns left things in a visibly wrong state. Fixed by (a) having
-   `updateModeLEDs()` send an explicit note-off for the previously-lit
-   note in addition to lighting the new one (see LCD/meters/LEDs section),
-   and (b) routing every mode-changing button through a single
-   `applyModeChange()` choke point that fully resolves state before
-   touching any hardware output (see Modes section) - not yet re-tested on
-   hardware. If note 45 (or any other assignment note) still sticks after
-   this, the explicit-off approach isn't enough and the hardware's
-   clearing behavior needs more targeted probing (e.g. does 44 clear 45?
-   does 42 clear anything? does 45 clear itself reliably on a genuinely
-   clean 2nd press with nothing else going on?).
-5. **Channel colors confirmed not working (ICON variant) - try an
-   alternative protocol if this is still wanted.** `updateChannelColorOutput()`
-   is left in as a harmless no-op; see the LCD/meters/LEDs section above
-   for the other known vendor-specific variants worth trying (e.g.
-   Behringer's single-byte 3-bit color index).
+4. **Assignment-row LED explicit-off fix + unified mode switching -
+   confirmed better on hardware.** The `applyModeChange()` choke point
+   (every mode-changing button fully resolves state, then re-syncs LEDs/
+   display/fader-bindings together in one call) and `updateModeLEDs()`'s
+   explicit note-off for the previously-lit note are both live and
+   user-confirmed improved. Not exhaustively re-tested against every
+   possible mode-to-mode jump though - worth keeping an eye out for any
+   remaining stuck-LED case.
+5. **Channel colors: the LCD meter bar is confirmed NOT usable for this -
+   only the direct color SysEx (ICON variant, confirmed not working) is
+   still an open avenue, and only if this is still wanted.** The meter
+   bar experiment (see LCD/meters/LEDs section) ruled out repurposing the
+   per-channel VU meter for color - it's hardwired to real Channel
+   Pressure level data regardless of the mode byte. `updateChannelColorOutput()`
+   (the ICON-variant color SysEx, unrelated to the meter bar) is left in
+   as a harmless no-op; the remaining untried option is a different
+   vendor's color SysEx variant (e.g. Behringer's single-byte 3-bit color
+   index) - worth trying only if track color on this hardware still
+   matters enough to keep chasing.
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 
