@@ -1333,6 +1333,30 @@ function onMidi(status, data1, data2) {
          return;
       }
 
+      if (isShiftPressed && isAltPressed) {
+         // SHIFT+ALT + Jog Wheel: nudge whatever's currently selected in
+         // the arranger (a clip, automation point, etc - whatever Bitwig's
+         // own selection holds, typically set by clicking it) left/right
+         // by one grid step per wheel message, via the real "Nudge Events
+         // One Step Backward/Forward" actions (ids
+         // nudge_events_one_step_earlier/_later, confirmed from
+         // bitwig-actions-reference.txt - NOT the similarly-named
+         // nudge_events_one_bar_earlier/_later, which despite the "bar" in
+         // their id actually map to "Nudge Events Fine/Alternate Amount
+         // Backward/Forward", a different and more ambiguous granularity).
+         // Click a clip in Bitwig first to select it, then hold SHIFT+ALT
+         // and turn the wheel to "drag" it - the visible clip move in
+         // Bitwig's own UI is feedback enough, so unlike the plain-ALT
+         // combo below this doesn't also show a popup every tick. Checked
+         // before the plain-ALT branch so it isn't swallowed by it - ALT
+         // alone (mouseover-parameter adjust) still fires normally when
+         // SHIFT isn't also held.
+         shiftUsedForCombo = true;
+         altUsedForCombo = true;
+         safeInvokeAction(backwards ? "nudge_events_one_step_earlier" : "nudge_events_one_step_later", null);
+         return;
+      }
+
       if (isAltPressed) {
          // ALT + Jog Wheel (CTRL not also held, see above): adjust
          // whatever parameter was last clicked in Bitwig's own GUI
@@ -1511,7 +1535,16 @@ function onMidi(status, data1, data2) {
       if (data1 === 87) {
          isWheelPressed = isPressed;
          if (isPressed && isAltPressed) {
+            // Fires on ALT+press regardless of SHIFT, so this doubles as
+            // the "click" step of the SHIFT+ALT clip-drag gesture above -
+            // hold SHIFT+ALT, press to select whatever's at the cursor,
+            // keep holding and turn to nudge it. If SHIFT happens to be
+            // held too, mark it used so its own standalone-tap action
+            // (if configured) doesn't also fire on release.
             altUsedForCombo = true;
+            if (isShiftPressed) {
+               shiftUsedForCombo = true;
+            }
             safeInvokeAction("select_item_at_cursor", "Select item at cursor");
          } else if (isPressed && currentMode === MODE_SCENE) {
             sceneBank.getScene(sceneCursorIndex).launch();

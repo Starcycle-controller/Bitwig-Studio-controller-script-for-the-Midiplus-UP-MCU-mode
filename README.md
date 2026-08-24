@@ -427,11 +427,13 @@ was still in Live mode, is confirmed still correct.
 In priority order (each returns before the next is checked, so only one
 applies per turn): `MODE_SCENE` active (move the scene cursor) > CTRL
 (device-mode: step devices; otherwise: nudge tempo, fine with ALT) >
-**ALT alone** (adjust the last-clicked GUI parameter, see below) >
-PLUG-INS held (step devices) > BANK held (page remote-control pages) >
-OPTION alone (halve/double loop length) > SHIFT alone (shift loop by a
-bar) > SCRUB toggle or wheel press (jump by a bar) > default (scrub, one
-quarter note per message, no longer ALT-modified - see below).
+**SHIFT+ALT** (nudge the selected arranger item, see below) > **ALT
+alone** (adjust the last-clicked GUI parameter, see below) > PLUG-INS
+held (step devices) > BANK held (page remote-control pages) > OPTION
+alone (halve/double loop length) > SHIFT alone (shift loop by a bar) >
+SCRUB toggle or wheel press (jump by a bar, or select-at-cursor with ALT
+held, see below) > default (scrub, one quarter note per message, no
+longer ALT-modified - see below).
 
 **ALT + Jog Wheel** adjusts whatever parameter was last clicked in
 Bitwig's own GUI - click any knob/slider/fader once in Bitwig
@@ -462,11 +464,31 @@ returns before the plain-ALT branch is ever reached.
 
 **ALT + Jog Wheel Press** (push the wheel down while holding ALT) runs
 Bitwig's real `select_item_at_cursor` action ("Select item at cursor" -
-same one the Function Keys dropdowns offer, see `FKEY_FUNCTIONS`) -
-pairs naturally with the ALT+turn combo above: select something, then
-dial in whatever you clicked. Takes priority over the wheel-press's other
-use (launching the selected scene in `MODE_SCENE`) when ALT is held.
-Not yet tested on hardware.
+same one the Function Keys dropdowns offer, see `FKEY_FUNCTIONS`) - the
+wheel press itself acts as the "click", so nothing needs an actual mouse
+click first. The check only tests `isAltPressed` (not caring whether
+SHIFT is also held), so it doubles as the first step of the SHIFT+ALT
+clip-drag gesture below - the same press works whether you're holding
+just ALT or SHIFT+ALT. Takes priority over the wheel-press's other use
+(launching the selected scene in `MODE_SCENE`) when ALT is held. Not yet
+tested on hardware.
+
+**SHIFT+ALT + Jog Wheel** nudges whatever's currently selected in the
+arranger (a clip, automation point, etc.) left/right by one grid step per
+wheel message, via the real `nudge_events_one_step_earlier`/`_later`
+actions ("Nudge Events One Step Backward"/"Forward" - **not** the
+similarly-named `nudge_events_one_bar_earlier`/`_later`, which despite
+the "bar" in their id actually map to "Nudge Events Fine/Alternate Amount
+Backward"/"Forward", a different and more ambiguous granularity per
+`bitwig-actions-reference.txt`). The full gesture: hold SHIFT+ALT, press
+the wheel to select whatever's at the cursor (see ALT + Jog Wheel Press
+above - its check doesn't exclude SHIFT, so it fires the same way), then
+keep holding and turn the wheel to "drag" it - no mouse click needed
+anywhere in the sequence. Doesn't show a popup per tick (unlike the
+plain-ALT combo above) since the clip visibly moving in Bitwig's own UI
+is feedback enough. Checked before the plain-ALT branch so it isn't
+swallowed by it - ALT alone (parameter adjust) still fires normally when
+SHIFT isn't also held. Not yet tested on hardware.
 
 ### Jog-wheel "mode" buttons (CURSOR / SCROLL / ZOOM / MASTER / MARKER /
 NUDGE / BANK / CHANNEL, per the manual's "Multi-Purpose Jog Wheel Section")
