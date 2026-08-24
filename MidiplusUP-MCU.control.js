@@ -72,6 +72,12 @@ var isOptionPressed = false;  // Note 71
 var isControlPressed = false; // Note 72
 var isAltPressed = false;     // Note 73
 
+// ALT tap-to-cycle-macro-bank tracking (see the ALT block in onMidi below)
+// - same pattern as ctrlUsedForCombo: set true as soon as ALT is used to
+// modify another action (tempo nudge, jog wheel fine-scrub), so releasing
+// it afterwards doesn't also cycle the macro bank.
+var altUsedForCombo = false;
+
 // CTRL long-press-to-toggle-expanded-view tracking (see the CTRL block in
 // onMidi and cursorDevice.isExpanded() below). ctrlUsedForCombo is set true
 // as soon as CTRL is used to modify the jog wheel, so releasing it
@@ -209,6 +215,7 @@ var sceneBank = null; // MODE_SCENE (BTA): fixed 8-scene window, see sceneCursor
 var masterTrack = null;
 var cursorTrack = null;
 var cursorDevice = null;
+var cursorDeviceBank = null; // 8-slot device chain bank for the F1-F8 (notes 54-61) direct device-select feature
 var remoteControls = null;
 var transport = null;
 var application = null;
@@ -366,6 +373,10 @@ function init() {
    // Initialize Cursor Track & Send Bank (16 Send slots for focused track)
    cursorTrack = host.createCursorTrack("MIDIPLUS_CURSOR_TRACK", "Cursor Track", 16, 0, true);
    cursorDevice = cursorTrack.createCursorDevice("MIDIPLUS_CURSOR_DEVICE", "Cursor Device", 0, CursorDeviceFollowMode.FIRST_INSTRUMENT_OR_DEVICE);
+
+   // F1-F8 (notes 54-61, the F-key row's default/orange-lit state) select
+   // device 1-8 directly via cursorDevice.selectDevice() - see case 54-61.
+   cursorDeviceBank = cursorTrack.createDeviceBank(8);
 
    // Toggled on-demand (not observed) by CTRL's long-press handling above,
    // so needs markInterested() or .toggle()/.get() throws.
@@ -834,6 +845,9 @@ function onMidi(status, data1, data2) {
 
          // CTRL + Jog Wheel (outside Device mode): Nudge Tempo (fine with
          // ALT held)
+         if (isAltPressed) {
+            altUsedForCombo = true;
+         }
          var tempoStep = isAltPressed ? 0.1 : 1.0;
          transport.tempo().incRaw(rawStep * tempoStep);
          return;
@@ -921,6 +935,9 @@ function onMidi(status, data1, data2) {
       // beat grid line - same "compute the exact target position" approach
       // as the bar-jump/loop-shift branches above, rather than a smooth
       // but grid-imprecise scrub.
+      if (isAltPressed) {
+         altUsedForCombo = true;
+      }
       var beatStep = isAltPressed ? 0.5 : 1.0;
       var currentBeatUnit = Math.round(transport.getPosition().get() / beatStep);
       var targetBeatUnit = backwards ? currentBeatUnit - 1 : currentBeatUnit + 1;
@@ -967,10 +984,19 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // ALT Button (Note 73)
+      // ALT Button (Note 73) - held modifier for other actions (tempo
+      // nudge fine-grain, jog wheel half-step - see altUsedForCombo
+      // above), but a standalone tap (not used to modify anything else)
+      // cycles the selected device's macro bank (remote controls page).
       if (data1 === 73) {
          isAltPressed = isPressed;
          midiOut.sendMidi(0x90, 73, isAltPressed ? 127 : 0);
+         if (isPressed) {
+            altUsedForCombo = false;
+         } else if (!altUsedForCombo) {
+            remoteControls.selectNextPage(true);
+            host.showPopupNotification("Next Macro Bank");
+         }
          return;
       }
 
@@ -1167,11 +1193,12 @@ function handleButtonPressInner(note) {
                // device on the selected track and opening its panel (does
                // NOT touch the expanded device view - that's CTRL
                // long-press, see the CTRL block in onMidi). Pressing again
-               // while already in Device mode exits back to Mixer mode.
-               // Hold + jog wheel steps through devices instead (see
-               // isPluginHeld). Moved here from note 43 after confirming
-               // via console testing that this hardware's Live overlay
-               // prints "PLUG-INS" over note 44, not 43.
+               // while already in Device mode exits back to Mixer mode and
+               // closes the device panel it opened. Hold + jog wheel steps
+               // through devices instead (see isPluginHeld). Moved here
+               // from note 43 after confirming via console testing that
+               // this hardware's Live overlay prints "PLUG-INS" over note
+               // 44, not 43.
          if (currentMode !== MODE_DEVICE) {
             currentMode = MODE_DEVICE;
             cursorDevice.selectFirst();
@@ -1179,11 +1206,30 @@ function handleButtonPressInner(note) {
             host.showPopupNotification("Device: First Plugin");
          } else {
             currentMode = MODE_MIXER;
+            cursorDevice.isWindowOpen().set(false);
             host.showPopupNotification("Mode: Mixer (Track Volume / Pan)");
          }
          updateModeLEDs();
          refreshDisplayText();
          rebindFaders();
+         break;
+
+      case 54: case 55: case 56: case 57: case 58: case 59: case 60: case 61:
+         // F1-F8, default/orange-lit state (SMPTE/BEATS switches these to
+         // notes 62-69 instead - see the note-53 comment above; that green
+         // state isn't bound to anything yet). Select device 1-8 directly
+         // on the selected track's device chain, entering Device mode if
+         // not already active.
+         var fkeyDeviceIdx = note - 54;
+         if (currentMode !== MODE_DEVICE) {
+            currentMode = MODE_DEVICE;
+            cursorDevice.isWindowOpen().set(true);
+            updateModeLEDs();
+         }
+         cursorDevice.selectDevice(cursorDeviceBank.getItemAt(fkeyDeviceIdx));
+         refreshDisplayText();
+         rebindFaders();
+         host.showPopupNotification("Device " + (fkeyDeviceIdx + 1));
          break;
 
       case 45: // PAGE NEXT / INST -> Focus Instrument / Next Parameter Page
@@ -1251,6 +1297,7 @@ function handleButtonPressInner(note) {
             if (currentMode === MODE_DEVICE) {
                cursorDevice.selectPrevious();
             } else {
+               if (isAltPressed) { altUsedForCombo = true; }
                transport.tempo().incRaw(isAltPressed ? -0.1 : -1.0);
             }
          } else if (isShiftPressed) {
@@ -1273,6 +1320,7 @@ function handleButtonPressInner(note) {
             if (currentMode === MODE_DEVICE) {
                cursorDevice.selectNext();
             } else {
+               if (isAltPressed) { altUsedForCombo = true; }
                transport.tempo().incRaw(isAltPressed ? 0.1 : 1.0);
             }
          } else if (isShiftPressed) {
@@ -1310,15 +1358,12 @@ function handleButtonPressInner(note) {
 
       // Note 53 (SMPTE/BEATS) is a pure mode key, deliberately left
       // unbound here: pressing it toggles the F1-F8 row's backlight
-      // between red and green entirely in the hardware's own firmware
-      // (confirmed - the button itself sends note 53 but that's not acted
-      // on), and which of two note ranges F1-F8 sends: red = 54-61,
-      // green = 62-69 (confirmed via console testing - see README). Do
-      // not bind anything to note 53 itself; bind the 16 individual F-key
-      // slots below instead.
-
-      // F1-F8 (red: notes 54-61) and F1-F8 (green: notes 62-69) - 16
-      // independent function-key slots, still awaiting assignment.
+      // between red (default/"orange") and green entirely in the
+      // hardware's own firmware (confirmed - the button itself sends note
+      // 53 but that's not acted on), and which of two note ranges F1-F8
+      // sends: red = 54-61 (bound below - direct device select), green =
+      // 62-69 (confirmed via console testing - see README; not yet bound
+      // to anything). Do not bind anything to note 53 itself.
 
       case 74: // SESS/ARR -> Toggle Clip Launcher / Arranger View
          arranger.isClipLauncherVisible().toggle();
@@ -1532,7 +1577,7 @@ function updateModeLEDs() {
    // Note 40 (TRACK/IO) isn't handled here - see flashLed() in case 40.
    midiOut.sendMidi(0x90, 41, currentMode === MODE_SENDS ? 127 : 0); // SEND LED
    midiOut.sendMidi(0x90, 42, isToolVolumeMode ? 127 : 0); // PAN LED - lit while Tool Gain/Pan mode is active
-   midiOut.sendMidi(0x90, 43, currentMode === MODE_DEVICE ? 127 : 0); // PLUG-IN LED
+   midiOut.sendMidi(0x90, 44, currentMode === MODE_DEVICE ? 127 : 0); // PLUG-INS LED
    midiOut.sendMidi(0x90, 80, currentMode === MODE_SCENE ? 127 : 0); // B.T.A. LED
 }
 
