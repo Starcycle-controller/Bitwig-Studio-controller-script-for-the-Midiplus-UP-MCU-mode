@@ -143,9 +143,13 @@ function handleModifierTap(note, isPressed) {
    if (note === EXPANDED_VIEW_BUTTON && EXPANDED_VIEW_BUTTON >= 0 && !usedForCombo) {
       var longPressOk = EXPANDED_VIEW_INSTANT || (Date.now() - expandedViewPressStartTime) >= CTRL_LONG_PRESS_MS;
       if (longPressOk && EXPANDED_VIEW_OPENS_WINDOW) {
-         // Also opens the plugin window - so this works as a one-press
-         // shortcut into the expanded device view from any mode, not just
-         // while already looking at Device mode.
+         // Also opens/closes the plugin window in lockstep with the
+         // expanded-view state (computed here, rather than blindly calling
+         // .toggle(), specifically so the window's open/closed state can
+         // mirror it - toggle() alone doesn't hand back the new value) -
+         // so this works as a one-press shortcut into the expanded view
+         // from any mode, and a second press collapses the view AND
+         // closes the window again.
          if (currentMode !== MODE_DEVICE) {
             currentMode = MODE_DEVICE;
             cursorDevice.selectFirst();
@@ -153,8 +157,9 @@ function handleModifierTap(note, isPressed) {
             refreshDisplayText();
             rebindFaders();
          }
-         cursorDevice.isWindowOpen().set(true);
-         cursorDevice.isExpanded().toggle();
+         var nowExpanded = !cursorDevice.isExpanded().get();
+         cursorDevice.isExpanded().set(nowExpanded);
+         cursorDevice.isWindowOpen().set(nowExpanded);
       } else if (longPressOk && currentMode === MODE_DEVICE) {
          // Window-opening disabled - only toggle expanded view, and only
          // while already in Device mode (original behavior).

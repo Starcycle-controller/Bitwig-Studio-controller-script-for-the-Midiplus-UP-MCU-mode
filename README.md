@@ -85,12 +85,13 @@ press and release one without using it to modify anything else:
 - **Long Press Duration (Expanded Device View)** (200-2000ms, default
   500ms) - only relevant when Trigger is Long Press.
 - **Expanded Device View Also Opens Plugin Window** (on/off, default ON) -
-  when on, the tap also opens the plugin window and switches into
-  `MODE_DEVICE` if needed (a one-press shortcut into the expanded view from
-  any mode - selects the first device if none was selected yet, same as
-  PLUG-INS). When off, the tap only toggles the expanded-view flag, and
-  only does anything while already in `MODE_DEVICE` (original behavior).
-  Never closes the window, only opens it.
+  when on, the tap also opens/closes the plugin window in lockstep with
+  the expanded-view state, and switches into `MODE_DEVICE` if needed (a
+  one-press shortcut into the expanded view from any mode - selects the
+  first device if none was selected yet, same as PLUG-INS). Press again
+  to collapse the view and close the window. When off, the tap only
+  toggles the expanded-view flag and never touches the window, and only
+  does anything while already in `MODE_DEVICE` (original behavior).
 - **Macro Bank Cycle Button** (ALT / CTRL / OPTION / SHIFT / None, default
   ALT) - which button's tap calls `remoteControls.selectNextPage()`. If
   set to the same button as Expanded Device View, that button's tap always
