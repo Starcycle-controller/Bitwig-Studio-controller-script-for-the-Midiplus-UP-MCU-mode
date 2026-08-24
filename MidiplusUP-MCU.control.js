@@ -811,14 +811,15 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
             }
          });
 
-         track.pan().value().markInterested();
-
          // Bottom row's temporary pan reveal while turning the encoder -
-         // see revealPanTemporarily() above.
-         track.pan().displayedValue().addValueObserver(function (dispVal) {
+         // see revealPanTemporarily() above. Uses the raw value (formatted
+         // ourselves via formatPanLR() into the classic "50L"/"50R"/"C"
+         // style) rather than Bitwig's own displayedValue() string, which
+         // is a plain percentage with no L/R indicator.
+         track.pan().value().addValueObserver(function (rawVal) {
             if (currentMode === MODE_MIXER && !isFlipped && isViewingReturns === isReturnsBank &&
                 isShowingPanTemporarily[index]) {
-               bottomRowText[index] = formatString(dispVal, 7);
+               bottomRowText[index] = formatString(formatPanLR(rawVal), 7);
                displayNeedsUpdate = true;
             }
          });
@@ -2093,6 +2094,18 @@ function sendMCUSysex(offset, text) {
 
    sysexBytes.push(0xF7);
    midiOut.sendSysexBytes(sysexBytes);
+}
+
+// Helper: format a raw pan value (0..1, 0.5 = center) as the classic
+// mixing-console "50L" / "50R" / "C" style, rather than Bitwig's own
+// displayedValue() (a plain percentage string with no L/R indicator).
+function formatPanLR(rawValue) {
+   if (rawValue === undefined || rawValue === null) rawValue = 0.5;
+   var percent = Math.round(Math.abs(rawValue - 0.5) * 200);
+   if (percent === 0) {
+      return "C";
+   }
+   return percent + (rawValue < 0.5 ? "L" : "R");
 }
 
 // Helper: Format string to fixed length (7 chars, padded or truncated)
