@@ -432,8 +432,9 @@ see below) > **ALT alone** (adjust the last-clicked GUI parameter, see
 below) > PLUG-INS held (step devices) > BANK held (page remote-control
 pages) > OPTION alone (halve/double loop length) > SHIFT alone (shift
 loop by a bar) > SCRUB toggle or wheel press (jump by a bar, or
-select-at-cursor with ALT held, see below) > default (scrub, one quarter
-note per message, no longer ALT-modified - see below).
+select-at-cursor with ALT or SHIFT+CTRL held, see below) > default
+(scrub, one quarter note per message, no longer ALT-modified - see
+below).
 
 **CTRL + Jog Wheel** (outside `MODE_DEVICE`, where it still steps devices
 as before) now selects the next/previous arranger clip/item instead of
@@ -505,6 +506,18 @@ plain-ALT combo above) since the clip visibly moving in Bitwig's own UI
 is feedback enough. Checked before the plain-ALT branch so it isn't
 swallowed by it - ALT alone (parameter adjust) still fires normally when
 SHIFT isn't also held. Not yet tested on hardware.
+
+**SHIFT+CTRL + Jog Wheel Press** selects whichever clip/item is closest
+to the playhead - a one-shot "jump to it" gesture (unlike CTRL alone's
+step-through-sequentially turn combo above), so it's bound to the press,
+not the turn. Reuses the same `select_item_at_cursor` action as ALT +
+Jog Wheel Press above. **Unverified which "cursor" the action name
+means** - the arranger edit cursor/playhead position (what's wanted
+here) or a generic UI keyboard-focus position (what it's used for above,
+activating whatever element currently has focus) are both plausible
+readings of the bare action name; needs a hardware test to know which -
+if it just repeats the ALT-press behavior instead of actually jumping
+to the playhead, that's the answer. Not yet tested on hardware.
 
 ### Jog-wheel "mode" buttons (CURSOR / SCROLL / ZOOM / MASTER / MARKER /
 NUDGE / BANK / CHANNEL, per the manual's "Multi-Purpose Jog Wheel Section")
