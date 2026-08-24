@@ -149,21 +149,18 @@ function closeOtherDeviceWindowsIfConfigured() {
 // (guaranteed correct, not guessed) - Consolidate has no such method in
 // the Controller API (confirmed: not in Track/Clip/Arranger/Application),
 // so it goes through the generic application.getAction(id)/invoke()
-// mechanism instead, with a best-guess action ID that hasn't been
-// confirmed on hardware yet - see README Open Items if it doesn't fire.
+// mechanism instead - see CONSOLIDATE_ACTION_ID below (confirmed correct
+// on hardware, console-verified).
 var FKEY_FUNCTION_NAMES = [
    "None", "Duplicate", "Consolidate", "Cut", "Copy", "Paste", "Delete",
    "Rename", "Select All", "Select None", "Undo", "Redo"
 ];
 
-// Best-guess action ID for Consolidate (see CONSOLIDATE_ACTION_ID_CANDIDATES
-// diagnostic dump in init(), which logs every real action whose id/name
-// contains "consolidat" once at startup - check the console and correct
-// this if it's wrong). Guessed in the same snake_case style DRAW's real,
-// confirmed action ids use (e.g. "select_object_selection_tool" - see
-// ARRANGER_TOOL_ACTIONS above), not the capitalized-word style guessed
-// before that pattern was confirmed.
-var CONSOLIDATE_ACTION_ID = "consolidate_time_selection";
+// Confirmed via the console diagnostic (see init() history - now removed
+// since this is settled): the real action id is the plain word
+// "Consolidate", not a snake_case id like DRAW's tool actions use -
+// Bitwig's action ids aren't consistently snake_case across the board.
+var CONSOLIDATE_ACTION_ID = "Consolidate";
 
 function invokeFKeyFunction(name) {
    if (name === "None") {
@@ -782,22 +779,6 @@ function init() {
    transport = host.createTransport();
    application = host.createApplication();
    arranger = host.createArranger();
-
-   // DIAGNOSTIC: logs every real Bitwig action whose id or name contains
-   // "consolidat" - run once at startup to find/confirm the real action id
-   // for CONSOLIDATE_ACTION_ID above (currently a best guess). Check the
-   // console after reloading the script; once confirmed, this can be
-   // removed. Same technique already used (and since removed) to find
-   // ARRANGER_TOOL_ACTIONS' real ids for the DRAW button.
-   var allActions = application.getActions();
-   for (var actionIdx = 0; actionIdx < allActions.length; actionIdx++) {
-      var actionEntry = allActions[actionIdx];
-      var actionId = actionEntry.getId();
-      var actionName = actionEntry.getName();
-      if (actionId.toLowerCase().indexOf("consolidat") >= 0 || actionName.toLowerCase().indexOf("consolidat") >= 0) {
-         println("Consolidate action candidate - id: \"" + actionId + "\", name: \"" + actionName + "\"");
-      }
-   }
 
    // Read on-demand (not observed) by END, CTRL+PUNCH IN/OUT, and the jog
    // wheel's bar-jump/loop-shift handling, so they need markInterested() or

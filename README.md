@@ -148,15 +148,13 @@ Controller API** (checked `Application`/`Track`/`Clip`/`Arranger` - none
 of them have it), so it goes through `safeInvokeAction(CONSOLIDATE_ACTION_ID,
 "Consolidate")` (the same generic `application.getAction(id).invoke()`
 helper DRAW's tool-cycling uses for its own real, confirmed action ids -
-see `ARRANGER_TOOL_ACTIONS`) with `CONSOLIDATE_ACTION_ID =
-"consolidate_time_selection"` as a best guess, in the same snake_case
-style as DRAW's confirmed ids - **not yet confirmed on hardware**. A
-diagnostic added to `init()` logs every real action whose id or name
-contains "consolidat" to the console at startup specifically to nail this
-down - check there after reloading; if the guessed ID is wrong,
-`safeInvokeAction` will show a `Consolidate (unavailable)` popup and log
-`Action not found: consolidate_time_selection`, and the console dump
-should have the real one to swap in.
+see `ARRANGER_TOOL_ACTIONS`). First guess (`"consolidate_time_selection"`,
+snake_case matching DRAW's ids) was wrong - **confirmed via a one-time
+console diagnostic** (temporarily logging every real action whose id/name
+contained "consolidat") that the real id is just the plain word
+`"Consolidate"`. Bitwig's action ids aren't consistently snake_case
+across the board, apparently - `CONSOLIDATE_ACTION_ID = "Consolidate"` is
+now confirmed correct and the diagnostic has been removed.
 
 The request was for each dropdown to remove an already-picked function
 from the other 7 (so you can't double-assign one), but **Bitwig's
@@ -423,14 +421,15 @@ sends note 100 directly, same as the note 100 already bound above.
    overlay rather than trusting any more inherited assumptions. Notes 50
    and 51 are both currently unbound pending confirmation of what they
    actually do now.
-1. **Green-state F1-F8 (notes 62-69) now configurable, not yet tested on
-   hardware.** See Function Keys settings above. `Duplicate`/`Cut`/
-   `Copy`/`Paste`/`Delete`/`Rename`/`Select All`/`Select None`/`Undo`/
-   `Redo` all use guaranteed-correct typed `Application` methods, but
-   `Consolidate` (F2's default) uses a best-guess action ID that needs
-   hardware confirmation - watch the console for a "returned nothing"
-   warning when pressing it. The red/orange state (54-61) still directly
-   selects device 1-8, unaffected. SMPTE/BEATS (note 53) toggles between
+1. **Green-state F1-F8 (notes 62-69) configurable, all defaults confirmed
+   working on hardware.** See Function Keys settings above. `Duplicate`/
+   `Cut`/`Copy`/`Paste`/`Delete`/`Rename`/`Select All`/`Select None`/
+   `Undo`/`Redo` all use guaranteed-correct typed `Application` methods;
+   `Consolidate` (F2's default) initially used a wrong best-guess action
+   ID, now fixed and console-confirmed (see Function Keys settings above -
+   the real id turned out to be the plain word `"Consolidate"`, not
+   snake_case). The red/orange state (54-61) still directly selects
+   device 1-8, unaffected. SMPTE/BEATS (note 53) toggles between
    the two states in hardware firmware only - it's not bound to anything
    in Bitwig itself (previously toggled Automation Write - removed per
    request, see git history).
