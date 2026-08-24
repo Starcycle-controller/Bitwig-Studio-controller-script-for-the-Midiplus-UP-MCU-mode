@@ -1568,9 +1568,13 @@ function handleButtonPressInner(note) {
                // this was previously the bare/Logic-label "INST" guess,
                // never actually confirmed under this overlay).
          isViewingReturns = !isViewingReturns;
-         midiOut.sendMidi(0x90, 45, isViewingReturns ? 127 : 0);
          host.showPopupNotification(isViewingReturns ? "Viewing Return Tracks" : "Viewing Tracks");
          refreshChannelStripLEDs();
+         // Note 45 shares the Assignment-row LED matrix (see
+         // updateModeLEDs()) - always call it rather than sending note 45
+         // directly, so RETURNS/SENDS/DEVICE/default never fight over
+         // which one's actually lit.
+         updateModeLEDs();
          if (currentMode === MODE_MIXER) {
             refreshDisplayText();
             rebindFaders();
@@ -1906,15 +1910,20 @@ function handleButtonPressInner(note) {
 }
 
 // Update Mode Assignment LEDs. The Assignment row (TRACK/IO=40, SEND=41,
-// PAN=42, PLUG-INS=44) is hardware-managed as a mutually-exclusive group -
-// confirmed our own note-off is ignored, and lighting one is what clears
-// whichever sibling was lit before (same as the documented BANK/CHANNEL
-// LED quirk). There is no achievable "all off" state on this hardware -
-// this mirrors genuine Mackie Control protocol, where the assignment
-// indicator always shows exactly one active function. So rather than
-// trying to turn any of them off, always send exactly one "on" and trust
-// the hardware to clear the rest - TRACK/IO (40) is the persistent
-// default/"Mixer, nothing special assigned" indicator.
+// PAN=42, PLUG-INS=44, RETURNS=45 - confirmed via testing that pressing
+// SEND clears a stuck RETURNS LED too) is hardware-managed as a
+// mutually-exclusive group - confirmed our own note-off is ignored, and
+// lighting one is what clears whichever sibling was lit before (same as
+// the documented BANK/CHANNEL LED quirk). There is no achievable "all
+// off" state on this hardware - this mirrors genuine Mackie Control
+// protocol, where the assignment indicator always shows exactly one
+// active function. So rather than trying to turn any of them off, always
+// send exactly one "on" and trust the hardware to clear the rest -
+// TRACK/IO (40) is the persistent default/"Mixer, nothing special
+// assigned" indicator. RETURNS only visibly affects anything while
+// currentMode is MIXER (see case 45), so it only takes priority here in
+// that case too - otherwise whichever of SENDS/DEVICE is active wins, as
+// before.
 function updateModeLEDs() {
    var assignmentNote = 40;
    if (currentMode === MODE_SENDS) {
@@ -1923,6 +1932,8 @@ function updateModeLEDs() {
       assignmentNote = 42;
    } else if (currentMode === MODE_DEVICE) {
       assignmentNote = 44;
+   } else if (currentMode === MODE_MIXER && isViewingReturns) {
+      assignmentNote = 45;
    }
    midiOut.sendMidi(0x90, assignmentNote, 127);
    midiOut.sendMidi(0x90, 80, currentMode === MODE_SCENE ? 127 : 0); // B.T.A. LED - not confirmed part of the same matrix

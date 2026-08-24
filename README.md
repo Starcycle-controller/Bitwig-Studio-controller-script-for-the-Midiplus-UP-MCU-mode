@@ -117,24 +117,28 @@ packing `(stripIndex<<4)|level`) - all cross-checked against Ableton's own
 `ChannelStrip.py`. Button LEDs are plain Note On/Off (`midiOut.sendMidi(
 0x90, note, 127/0)`).
 
-**Assignment row (notes 40/41/42/44) LEDs are hardware-managed as a
-mutually-exclusive group with no achievable "all off" state - confirmed
-our own note-off is ignored, and there's no way to force one off
-directly.** Console-tested: pressing PLUG-INS a second time (to exit
-Device mode) correctly runs `updateModeLEDs()`, which sends note-off for
-44 - but the LED stays lit; pressing SEND afterward (lighting note 41)
-clears it as a side effect, same as the already-documented BANK/CHANNEL
-LED quirk. A first attempt at working around this by briefly flashing a
-sibling LED (`flashLed(40, 60)`) backfired - TRACK/IO's own LED turned out
-to belong to the same matrix, so the flash's own "off" got ignored too,
-just moving the stuck-LED problem onto a different note. This mirrors
-genuine Mackie Control protocol, where the assignment indicator always
-shows exactly one active function - there's no real "nothing selected"
-state to aim for. `updateModeLEDs()` now embraces that: it always sends
-exactly one "on" for whichever of the 4 notes applies (defaulting to
-TRACK/IO=40 for plain Mixer mode with no special assignment active) and
-never tries to turn any of them off, trusting the hardware's own mutual
-exclusion to clear the rest.
+**Assignment row (notes 40/41/42/44/45 - TRACK/IO, SEND, PAN, PLUG-INS,
+RETURNS) LEDs are hardware-managed as a mutually-exclusive group with no
+achievable "all off" state - confirmed our own note-off is ignored, and
+there's no way to force one off directly.** Console-tested: pressing
+PLUG-INS a second time (to exit Device mode) correctly runs
+`updateModeLEDs()`, which sends note-off for 44 - but the LED stays lit;
+pressing SEND afterward (lighting note 41) clears it as a side effect,
+same as the already-documented BANK/CHANNEL LED quirk - and pressing SEND
+also clears a stuck RETURNS LED (note 45) the same way, confirming it's
+the same 5-note matrix. A first attempt at working around this by briefly
+flashing a sibling LED (`flashLed(40, 60)`) backfired - TRACK/IO's own LED
+turned out to belong to the same matrix, so the flash's own "off" got
+ignored too, just moving the stuck-LED problem onto a different note.
+This mirrors genuine Mackie Control protocol, where the assignment
+indicator always shows exactly one active function - there's no real
+"nothing selected" state to aim for. `updateModeLEDs()` now embraces
+that: it always sends exactly one "on" for whichever of the 5 notes
+applies (defaulting to TRACK/IO=40 for plain Mixer mode with no special
+assignment active; RETURNS=45 only takes priority while `currentMode` is
+Mixer, matching where toggling it has any visible effect at all - see
+case 45) and never tries to turn any of them off, trusting the
+hardware's own mutual exclusion to clear the rest.
 
 Each encoder also has its own small position-indicator LED ring (a single
 lit dot moving around it), separate from the 2-row text display - real MCU
