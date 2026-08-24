@@ -70,6 +70,24 @@ FLIP (note 43, not 50 - see the button-map correction below) swaps faders
 and encoders between volume and pan in `MODE_MIXER`, and faders (only -
 see `MODE_DEVICE` above) between volume and macros in `MODE_DEVICE`.
 
+Every button that changes `currentMode` (or the `isToolVolumeMode`/
+`isViewingReturns`/`sendBankPage` state that acts like a sub-mode of it) -
+TRACK/IO, SEND, PAN, PLUG-INS, RETURNS, F1-F8, the CTRL "expanded view"
+shortcut, and B.T.A./Scene mode - fully resolves the new state first
+(including closing a Device-mode plugin window it's leaving, and
+resetting `sendBankPage`/`isToolVolumeMode` on entry) and then calls
+`applyModeChange()` exactly once, which re-syncs the mode LEDs, LCD text,
+channel-strip LEDs, and fader/encoder bindings together as a single unit.
+This replaced a bunch of hand-rolled per-button sequences that didn't
+always agree with each other - e.g. pressing RETURNS while already in
+Sends mode used to update `isViewingReturns` and the channel-strip LEDs
+immediately but skip `rebindFaders()` (it was gated on "only if already
+in Mixer mode"), leaving the faders bound to the old target - a real
+input/output desync, not just a cosmetic LED glitch, for as long as you
+stayed in that mode. Jumping directly between any two modes (Sends ->
+Returns, Plugin -> Sends, etc.) now always lands in one fully-consistent
+state instead of layering the new mode on top of leftover old state.
+
 ### Plugin Mode settings (Controller Preferences panel)
 
 Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
@@ -118,27 +136,30 @@ packing `(stripIndex<<4)|level`) - all cross-checked against Ableton's own
 0x90, note, 127/0)`).
 
 **Assignment row (notes 40/41/42/44/45 - TRACK/IO, SEND, PAN, PLUG-INS,
-RETURNS) LEDs are hardware-managed as a mutually-exclusive group with no
-achievable "all off" state - confirmed our own note-off is ignored, and
-there's no way to force one off directly.** Console-tested: pressing
+RETURNS) LEDs are hardware-managed and inconsistent about clearing each
+other - our own plain note-off is always ignored, and even lighting a
+sibling doesn't reliably clear a given note.** Console-tested: pressing
 PLUG-INS a second time (to exit Device mode) correctly runs
 `updateModeLEDs()`, which sends note-off for 44 - but the LED stays lit;
 pressing SEND afterward (lighting note 41) clears it as a side effect,
 same as the already-documented BANK/CHANNEL LED quirk - and pressing SEND
-also clears a stuck RETURNS LED (note 45) the same way, confirming it's
-the same 5-note matrix. A first attempt at working around this by briefly
-flashing a sibling LED (`flashLed(40, 60)`) backfired - TRACK/IO's own LED
-turned out to belong to the same matrix, so the flash's own "off" got
-ignored too, just moving the stuck-LED problem onto a different note.
-This mirrors genuine Mackie Control protocol, where the assignment
-indicator always shows exactly one active function - there's no real
-"nothing selected" state to aim for. `updateModeLEDs()` now embraces
-that: it always sends exactly one "on" for whichever of the 5 notes
-applies (defaulting to TRACK/IO=40 for plain Mixer mode with no special
-assignment active; RETURNS=45 only takes priority while `currentMode` is
-Mixer, matching where toggling it has any visible effect at all - see
-case 45) and never tries to turn any of them off, trusting the
-hardware's own mutual exclusion to clear the rest.
+also clears a stuck RETURNS LED (note 45) the same way. But lighting
+TRACK/IO (note 40) does **not** reliably clear a stuck RETURNS LED
+(confirmed: pressing RETURNS a second time correctly reverts
+`isViewingReturns`/`currentMode` back to plain Mixer internally, but the
+note-45 LED itself stayed lit) - so unlike genuine Mackie Control
+hardware, this unit's 5 assignment LEDs aren't all equally capable of
+clearing one another; a first attempt at forcing it by briefly flashing a
+sibling LED (`flashLed(40, 60)`) backfired the same way for the same
+reason (TRACK/IO's own "off" got ignored too, just moving the stuck-LED
+problem onto a different note).
+
+`updateModeLEDs()` now tracks the last note it lit (`lastAssignmentNote`)
+and, whenever the target changes, sends an explicit note-off for that
+specific note in addition to the note-on for the new one - cheap, and
+gives the hardware the best available chance of clearing it regardless of
+which internal mechanism it's actually using, without relying solely on
+sibling-clears-sibling behavior that's now known to be inconsistent.
 
 Each encoder also has its own small position-indicator LED ring (a single
 lit dot moving around it), separate from the 2-row text display - real MCU
@@ -290,16 +311,21 @@ sends note 100 directly, same as the note 100 already bound above.
 3. Debug logging (`RAW Note-On received`, `RAW CC received`, `Button
    pressed - Note:`) is still left in intentionally - useful while wiring
    up the remaining F1-F8 slots (item 1). Fine to remove once that's done.
-4. **PLUG-INS/Device-mode LED (note 44) still gets cleared by FLIP,
-   unresolved.** `currentMode` itself is confirmed unaffected (Device mode
-   stays active) and `updateModeLEDs()` is explicitly re-called right
-   after FLIP's toggle, re-sending note 44's LED - but it still visibly
-   clears, meaning the hardware is likely managing this LED locally and
-   ignoring/overriding our echo, similar to the documented BANK/CHANNEL
-   quirk (case 48). Purely cosmetic (doesn't affect actual mode/behavior).
-   Next step if revisited: try continuously re-asserting it every flush()
-   cycle rather than only right after the FLIP press, in case the
-   firmware's local clearing happens on a delay.
+4. **Needs a fresh hardware pass: Assignment-row LED explicit-off fix +
+   unified mode switching.** Two bugs reported after the RETURNS/matrix
+   fix - pressing RETURNS a second time correctly reverted the mode
+   internally but left note 45 lit, and jumping straight from Sends to
+   Returns left things in a visibly wrong state. Fixed by (a) having
+   `updateModeLEDs()` send an explicit note-off for the previously-lit
+   note in addition to lighting the new one (see LCD/meters/LEDs section),
+   and (b) routing every mode-changing button through a single
+   `applyModeChange()` choke point that fully resolves state before
+   touching any hardware output (see Modes section) - not yet re-tested on
+   hardware. If note 45 (or any other assignment note) still sticks after
+   this, the explicit-off approach isn't enough and the hardware's
+   clearing behavior needs more targeted probing (e.g. does 44 clear 45?
+   does 42 clear anything? does 45 clear itself reliably on a genuinely
+   clean 2nd press with nothing else going on?).
 5. **Channel colors confirmed not working (ICON variant) - try an
    alternative protocol if this is still wanted.** `updateChannelColorOutput()`
    is left in as a harmless no-op; see the LCD/meters/LEDs section above

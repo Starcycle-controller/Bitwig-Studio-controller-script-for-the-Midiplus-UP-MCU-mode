@@ -63,6 +63,7 @@ var TOOL_DEVICE_NAME = "TRLVL";
 var TOOL_DEVICE_SCAN_DEPTH = 4;
 var currentMode = MODE_MIXER;
 var sendBankPage = 0; // 0 = Sends 1-8, 1 = Sends 9-16
+var lastAssignmentNote = 40; // last note updateModeLEDs() lit in the Assignment row - see there
 var isFlipped = false;
 
 // Hardware Modifier States (note numbers confirmed against Ableton's own
@@ -257,10 +258,10 @@ function handleModifierTap(note, isPressed) {
          // closes the window again.
          if (currentMode !== MODE_DEVICE) {
             currentMode = MODE_DEVICE;
+            sendBankPage = 0;
+            isToolVolumeMode = false;
             cursorDevice.selectFirst();
-            updateModeLEDs();
-            refreshDisplayText();
-            rebindFaders();
+            applyModeChange(null);
          }
          var nowExpanded = !cursorDevice.isExpanded().get();
          if (nowExpanded) {
@@ -1423,42 +1424,49 @@ function handleButtonPressInner(note) {
             if (isShiftPressed) { shiftUsedForCombo = true; }
             safeCall(application, "toggleInspector", "Toggle Track Inspector / I/O Panel");
          } else {
+            if (currentMode === MODE_DEVICE) {
+               cursorDevice.isWindowOpen().set(false);
+            }
             currentMode = MODE_MIXER;
+            sendBankPage = 0;
+            isToolVolumeMode = false;
             host.showPopupNotification("Mode: Mixer (Volume / Pan)");
-            updateModeLEDs();
-            refreshDisplayText();
-            rebindFaders();
-            showModePopup("MIXER");
+            applyModeChange("MIXER");
          }
          break;
 
       case 41: // SEND -> 3-State Send Mode: 1st Press (Sends 1-8) -> 2nd Press (Sends 9-16) -> 3rd Press (Exit Send Mode)
          if (currentMode !== MODE_SENDS) {
+            // Leaving whatever we were in before - Device mode's open
+            // plugin window doesn't belong once Sends takes over (see
+            // applyModeChange()'s doc comment - every mode jump needs to
+            // fully clean up the mode it's leaving, not just enter the
+            // new one).
+            if (currentMode === MODE_DEVICE) {
+               cursorDevice.isWindowOpen().set(false);
+            }
             currentMode = MODE_SENDS;
             sendBankPage = 0;
+            isToolVolumeMode = false;
             host.showPopupNotification("Mode: Send Faders (Sends 1 - 8)");
-            updateModeLEDs();
-            refreshDisplayText();
-            rebindFaders();
-            showModePopup("SENDS");
+            applyModeChange("SENDS");
          } else if (sendBankPage === 0) {
             sendBankPage = 1;
             host.showPopupNotification("Mode: Send Faders (Sends 9 - 16)");
-            updateModeLEDs();
-            refreshDisplayText();
-            rebindFaders();
+            applyModeChange(null);
          } else {
             currentMode = MODE_MIXER;
             host.showPopupNotification("Mode: Mixer (Track Volume / Pan)");
-            updateModeLEDs();
-            refreshDisplayText();
-            rebindFaders();
-            showModePopup("MIXER");
+            applyModeChange("MIXER");
          }
          break;
 
       case 42: // PAN -> toggle TOOL_DEVICE_NAME Gain/Pan control (see isToolVolumeMode)
+         if (currentMode === MODE_DEVICE) {
+            cursorDevice.isWindowOpen().set(false);
+         }
          currentMode = MODE_MIXER;
+         sendBankPage = 0;
          isToolVolumeMode = !isToolVolumeMode;
          if (isToolVolumeMode && cursorToolSlot < 0) {
             // Selected track has no TOOL_DEVICE_NAME device yet. Scripts
@@ -1472,9 +1480,7 @@ function handleButtonPressInner(note) {
          } else {
             host.showPopupNotification(isToolVolumeMode ? "Faders: " + TOOL_DEVICE_NAME + " Gain / Pan" : "Faders: Track Volume / Pan");
          }
-         updateModeLEDs();
-         refreshDisplayText();
-         rebindFaders();
+         applyModeChange(null);
          break;
 
       case 43: // FLIP -> Swap Faders and Encoders. Moved here from note 50
@@ -1515,22 +1521,18 @@ function handleButtonPressInner(note) {
                // 44, not 43.
          if (currentMode !== MODE_DEVICE) {
             currentMode = MODE_DEVICE;
+            sendBankPage = 0;
+            isToolVolumeMode = false;
             cursorDevice.selectFirst();
             closeOtherDeviceWindowsIfConfigured();
             cursorDevice.isWindowOpen().set(true);
             host.showPopupNotification("Device: First Plugin");
-            updateModeLEDs();
-            refreshDisplayText();
-            rebindFaders();
-            showModePopup("PLUGIN");
+            applyModeChange("PLUGIN");
          } else {
             currentMode = MODE_MIXER;
             cursorDevice.isWindowOpen().set(false);
             host.showPopupNotification("Mode: Mixer (Track Volume / Pan)");
-            updateModeLEDs();
-            refreshDisplayText();
-            rebindFaders();
-            showModePopup("MIXER");
+            applyModeChange("MIXER");
          }
          break;
 
@@ -1539,12 +1541,16 @@ function handleButtonPressInner(note) {
          // notes 62-69 instead - see the note-53 comment above; that green
          // state isn't bound to anything yet). Select device 1-8 directly
          // on the selected track's device chain, entering Device mode if
-         // not already active.
+         // not already active. Unlike PLUG-INS (case 44) this never toggles
+         // back OUT of Device mode - it always lands on the requested
+         // device, whether that means entering Device mode fresh or just
+         // switching devices while already in it.
          var fkeyDeviceIdx = note - 54;
          var wasAlreadyInDeviceMode = currentMode === MODE_DEVICE;
+         currentMode = MODE_DEVICE;
          if (!wasAlreadyInDeviceMode) {
-            currentMode = MODE_DEVICE;
-            updateModeLEDs();
+            sendBankPage = 0;
+            isToolVolumeMode = false;
          }
          cursorDevice.selectDevice(cursorDeviceBank.getItemAt(fkeyDeviceIdx));
          // Every F-key press opens that device's own window (not just the
@@ -1552,12 +1558,8 @@ function handleButtonPressInner(note) {
          // applies when switching devices via F1-F8 too, not just on entry.
          closeOtherDeviceWindowsIfConfigured();
          cursorDevice.isWindowOpen().set(true);
-         refreshDisplayText();
-         if (!wasAlreadyInDeviceMode) {
-            showModePopup("PLUGIN");
-         }
-         rebindFaders();
          host.showPopupNotification("Device " + (fkeyDeviceIdx + 1));
+         applyModeChange(wasAlreadyInDeviceMode ? null : "PLUGIN");
          break;
 
       case 45: // RETURNS -> swap the 8 channel strips to/from the Return
@@ -1567,19 +1569,22 @@ function handleButtonPressInner(note) {
                // note-number assumption as the FLIP/note-43 fix above -
                // this was previously the bare/Logic-label "INST" guess,
                // never actually confirmed under this overlay).
+               //
+               // Always forces a clean MODE_MIXER, same as every other
+               // Assignment-row button - jumping here straight from Sends
+               // or Device mode used to leave stale state behind (Sends'
+               // fader bindings kept pointing at the old target because
+               // rebindFaders() was only called when already in Mixer
+               // mode) - see applyModeChange().
+         if (currentMode === MODE_DEVICE) {
+            cursorDevice.isWindowOpen().set(false);
+         }
+         currentMode = MODE_MIXER;
+         sendBankPage = 0;
+         isToolVolumeMode = false;
          isViewingReturns = !isViewingReturns;
          host.showPopupNotification(isViewingReturns ? "Viewing Return Tracks" : "Viewing Tracks");
-         refreshChannelStripLEDs();
-         // Note 45 shares the Assignment-row LED matrix (see
-         // updateModeLEDs()) - always call it rather than sending note 45
-         // directly, so RETURNS/SENDS/DEVICE/default never fight over
-         // which one's actually lit.
-         updateModeLEDs();
-         if (currentMode === MODE_MIXER) {
-            refreshDisplayText();
-            rebindFaders();
-            showModePopup(isViewingReturns ? "RETURNS" : "MIXER");
-         }
+         applyModeChange(isViewingReturns ? "RETURNS" : "MIXER");
          break;
 
       case 46: // BANK PREV (<) -> jump to bank 0 with SHIFT, else page back
@@ -1739,7 +1744,12 @@ function handleButtonPressInner(note) {
                // AND back to the Arrange panel layout, same toggle pattern
                // as PLUGIN/SEND.
          if (currentMode !== MODE_SCENE) {
+            if (currentMode === MODE_DEVICE) {
+               cursorDevice.isWindowOpen().set(false);
+            }
             currentMode = MODE_SCENE;
+            sendBankPage = 0;
+            isToolVolumeMode = false;
             sceneCursorIndex = 0;
             sceneStepAccumulator = 0;
             arranger.isClipLauncherVisible().set(true);
@@ -1759,9 +1769,7 @@ function handleButtonPressInner(note) {
             }
             host.showPopupNotification("Mode: Mixer (Track Volume / Pan)");
          }
-         updateModeLEDs();
-         refreshDisplayText();
-         rebindFaders();
+         applyModeChange(null);
          break;
 
       case 81: // DRAW -> cycle through the 6 arranger edit tools, one per
@@ -1912,18 +1920,26 @@ function handleButtonPressInner(note) {
 // Update Mode Assignment LEDs. The Assignment row (TRACK/IO=40, SEND=41,
 // PAN=42, PLUG-INS=44, RETURNS=45 - confirmed via testing that pressing
 // SEND clears a stuck RETURNS LED too) is hardware-managed as a
-// mutually-exclusive group - confirmed our own note-off is ignored, and
-// lighting one is what clears whichever sibling was lit before (same as
-// the documented BANK/CHANNEL LED quirk). There is no achievable "all
-// off" state on this hardware - this mirrors genuine Mackie Control
-// protocol, where the assignment indicator always shows exactly one
-// active function. So rather than trying to turn any of them off, always
-// send exactly one "on" and trust the hardware to clear the rest -
-// TRACK/IO (40) is the persistent default/"Mixer, nothing special
-// assigned" indicator. RETURNS only visibly affects anything while
-// currentMode is MIXER (see case 45), so it only takes priority here in
-// that case too - otherwise whichever of SENDS/DEVICE is active wins, as
-// before.
+// mutually-exclusive group - confirmed our own note-off is ignored while
+// nothing else changes. TRACK/IO (40) is the persistent default/"Mixer,
+// nothing special assigned" indicator. RETURNS only visibly affects
+// anything while currentMode is MIXER (see case 45), so it only takes
+// priority here in that case too - otherwise whichever of SENDS/DEVICE is
+// active wins, as before.
+//
+// Sending "on" for the new note alone was confirmed reliable when the
+// new note is 41 (SEND) - it correctly cleared a stuck 44 or 45. But
+// lighting 40 (TRACK/IO) alone was confirmed NOT to clear a stuck 45
+// (RETURNS pressed a 2nd time correctly reverts isViewingReturns/
+// currentMode internally, but the note-45 LED itself stayed lit) - so
+// this hardware's assignment group evidently doesn't treat every member
+// as equally capable of clearing its siblings. Since we can't fully
+// reverse-engineer which notes have that power, this now also sends an
+// explicit note-off for whichever note we lit last (tracked in
+// lastAssignmentNote) before lighting the new one - cheap, can't make
+// things worse, and gives the hardware the best chance of actually
+// clearing it regardless of which "clearing" mechanism it's using
+// internally.
 function updateModeLEDs() {
    var assignmentNote = 40;
    if (currentMode === MODE_SENDS) {
@@ -1935,8 +1951,38 @@ function updateModeLEDs() {
    } else if (currentMode === MODE_MIXER && isViewingReturns) {
       assignmentNote = 45;
    }
+   if (assignmentNote !== lastAssignmentNote) {
+      midiOut.sendMidi(0x80, lastAssignmentNote, 0);
+   }
    midiOut.sendMidi(0x90, assignmentNote, 127);
+   lastAssignmentNote = assignmentNote;
    midiOut.sendMidi(0x90, 80, currentMode === MODE_SCENE ? 127 : 0); // B.T.A. LED - not confirmed part of the same matrix
+}
+
+// Single choke point for "we just changed which mode/assignment is
+// active" - every Assignment-row button (SEND/PAN/PLUG-INS/RETURNS) and
+// the F1-F8 device-select case call this exactly once, right after fully
+// updating currentMode/isToolVolumeMode/isViewingReturns/sendBankPage and
+// any device-selection side effects, instead of each hand-rolling its own
+// updateModeLEDs()/refreshDisplayText()/rebindFaders() sequence.
+// Previously some paths (e.g. RETURNS pressed while already in Sends
+// mode) updated state and the channel-strip LEDs immediately but skipped
+// rebindFaders() entirely, because it was gated on "only if currentMode
+// is already MIXER" - leaving the faders silently still bound to the OLD
+// assignment for as long as you stayed in that mode (reported as faders
+// "jumping"/moving out of sync with what's actually selected). Routing
+// every mode change through here guarantees the LEDs, display text,
+// channel-strip LEDs, and fader/encoder bindings are always resynced
+// together in one place - so there's never a in-between state where they
+// disagree about what's currently active.
+function applyModeChange(popupText) {
+   updateModeLEDs();
+   refreshDisplayText();
+   refreshChannelStripLEDs();
+   rebindFaders();
+   if (popupText) {
+      showModePopup(popupText);
+   }
 }
 
 // Fire-and-forget LED flash for actions with no real on/off state to
