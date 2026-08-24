@@ -479,6 +479,12 @@ var arrangerToolCycleIndex = 0;
 var loopScaleAccumulator = 0;
 var LOOP_SCALE_THRESHOLD = 16;
 
+// SHIFT+CTRL + Jog Wheel scales the selected clip's content the same
+// exponential way (see onMidi) - shares LOOP_SCALE_THRESHOLD/the same
+// Controller Preferences setting rather than a separate constant, same
+// "wheel ticks per halve/double" granularity.
+var clipScaleAccumulator = 0;
+
 // RETURNS (note 51): swap the 8 channel strips between the main track bank
 // and the effect ("return") track bank.
 var isViewingReturns = false;
@@ -1309,18 +1315,25 @@ function onMidi(status, data1, data2) {
       }
 
       if (isControlPressed && isShiftPressed) {
-         // SHIFT+CTRL + Jog Wheel: jump straight to the first/last item
-         // (turn left/right) via Bitwig's real "Select first item"/
-         // "Select last item" actions - same family as plain CTRL's
-         // "Select next/previous item" below, but idempotent (turning
-         // further past the first/last is a harmless no-op), so unlike
-         // the step-through-sequentially actions below this doesn't need
-         // a throttling accumulator. Checked before the plain CTRL branch
-         // so it isn't swallowed by it - CTRL alone (step next/previous)
-         // still fires normally when SHIFT isn't also held.
+         // SHIFT+CTRL + Jog Wheel: scale the selected clip's content -
+         // turn right doubles it (Bitwig's real "Scale 200%" action, id
+         // "scale_time_double"), turn left halves it ("Scale 50%", id
+         // "scale_time_half") - confirmed from bitwig-actions-reference.txt.
+         // Exponential per repeat, same as OPTION + Jog Wheel's loop halve/
+         // double, so it shares that same accumulate-then-fire throttling
+         // (clipScaleAccumulator/LOOP_SCALE_THRESHOLD above) rather than
+         // firing on every raw wheel message, which would compound far too
+         // fast. Replaces the previous "jump to first/last item" behavior
+         // per request. Checked before the plain CTRL branch so it isn't
+         // swallowed by it - CTRL alone (step next/previous) still fires
+         // normally when SHIFT isn't also held.
          ctrlUsedForCombo = true;
          shiftUsedForCombo = true;
-         safeInvokeAction(backwards ? "Select first item" : "Select last item", null);
+         clipScaleAccumulator += Math.abs(rawStep);
+         if (clipScaleAccumulator >= LOOP_SCALE_THRESHOLD) {
+            clipScaleAccumulator -= LOOP_SCALE_THRESHOLD;
+            safeInvokeAction(backwards ? "scale_time_half" : "scale_time_double", null);
+         }
          return;
       }
 

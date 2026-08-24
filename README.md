@@ -426,26 +426,32 @@ was still in Live mode, is confirmed still correct.
 
 In priority order (each returns before the next is checked, so only one
 applies per turn): `MODE_SCENE` active (move the scene cursor) >
-**SHIFT+CTRL** (jump to first/last item, see below) > **CTRL alone**
-(device-mode: step devices; otherwise: select next/previous arranger
-clip/item, see below) > **SHIFT+ALT** (nudge the selected arranger item,
-see below) > **ALT alone** (adjust the last-clicked GUI parameter, see
-below) > PLUG-INS held (step devices) > BANK held (page remote-control
-pages) > OPTION alone (halve/double loop length) > SHIFT alone (shift
-loop by a bar) > SCRUB toggle or wheel press (jump by a bar, or
-select-at-cursor with ALT or SHIFT+CTRL held, see below) > default
+**SHIFT+CTRL** (scale the selected clip's content, see below) > **CTRL
+alone** (device-mode: step devices; otherwise: select next/previous
+arranger clip/item, see below) > **SHIFT+ALT** (nudge the selected
+arranger item, see below) > **ALT alone** (adjust the last-clicked GUI
+parameter, see below) > PLUG-INS held (step devices) > BANK held (page
+remote-control pages) > OPTION alone (halve/double loop length) > SHIFT
+alone (shift loop by a bar) > SCRUB toggle or wheel press (jump by a bar,
+or select-at-cursor with ALT or SHIFT+CTRL held, see below) > default
 (scrub, one quarter note per message, no longer ALT-modified - see
 below).
 
 **SHIFT+CTRL + Jog Wheel** (turn, as opposed to SHIFT+CTRL + Jog Wheel
 *Press* below - same two modifiers, different gesture, different action)
-jumps straight to the first item (turn left) or last item (turn right)
-via Bitwig's real `"Select first item"`/`"Select last item"` actions -
-same family as CTRL alone's `"Select next item"`/`"Select previous
-item"` below, but idempotent (turning further past the first/last is a
-harmless no-op), so no throttling accumulator needed. Checked before the
-plain-CTRL branch so it isn't swallowed by it. Not yet tested on
-hardware.
+scales the selected clip's content - turn right doubles it (Bitwig's
+real `"Scale 200%"` action, id `scale_time_double`), turn left halves it
+(`"Scale 50%"`, id `scale_time_half`), confirmed from
+`bitwig-actions-reference.txt`. Exponential per repeat like OPTION + Jog
+Wheel's loop halve/double, so it shares that same accumulate-then-fire
+throttling (`clipScaleAccumulator`, reuses `LOOP_SCALE_THRESHOLD`/the
+"Loop Halve/Double Wheel Ticks" setting rather than a separate constant)
+instead of firing on every raw wheel message, which would compound far
+too fast. Replaced the earlier "jump to first/last item" behavior (which
+worked, but this was requested instead) - the first/last-item actions
+are no longer bound anywhere, freed up if wanted again later. Checked
+before the plain-CTRL branch so it isn't swallowed by it. Not yet tested
+on hardware.
 
 **CTRL + Jog Wheel** (outside `MODE_DEVICE`, where it still steps devices
 as before) now selects the next/previous arranger clip/item instead of
