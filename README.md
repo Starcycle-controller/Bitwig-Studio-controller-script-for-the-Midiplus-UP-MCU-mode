@@ -193,9 +193,11 @@ doesn't consume a digit cell - it flags the *next* (further left) digit
 to get `+0x40` added to its ASCII code, which is how this protocol
 encodes "this digit has a decimal dot after it" on a 7-segment display.
 Per-digit de-duped against `segmentDisplayBuffer` so only cells that
-actually changed get re-sent. Not yet tested on hardware - next step is
-confirming it actually renders bars/beats/ticks (and isn't, say, off by
-a digit or using the wrong CC range for this specific unit).
+actually changed get re-sent. **Confirmed working on hardware** -
+consistent bars:beats numbers, updating live while playing. The "blue"
+from the original question turned out to be this display's fixed
+background/backlight color, sitting behind white digits - not something
+the data content controls, and not something to chase further.
 
 **Assignment row (notes 40/41/42/44/45 - TRACK/IO, SEND, PAN, PLUG-INS,
 RETURNS) LEDs are hardware-managed and inconsistent about clearing each
