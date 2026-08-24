@@ -139,6 +139,79 @@ function closeOtherDeviceWindowsIfConfigured() {
    }
 }
 
+// Green-state F1-F8 (notes 62-69, see case 62-69 below) - configurable
+// "editing function" keys, set via the 8 "F1-F8 Function (Green State)"
+// Controller Preferences dropdowns in init(). Everything below except
+// Consolidate goes through a dedicated, typed Application method
+// (guaranteed correct, not guessed) - Consolidate has no such method in
+// the Controller API (confirmed: not in Track/Clip/Arranger/Application),
+// so it goes through the generic application.getAction(id)/invoke()
+// mechanism instead, with a best-guess action ID that hasn't been
+// confirmed on hardware yet - see README Open Items if it doesn't fire.
+var FKEY_FUNCTION_NAMES = [
+   "None", "Duplicate", "Consolidate", "Cut", "Copy", "Paste", "Delete",
+   "Rename", "Select All", "Select None", "Undo", "Redo"
+];
+
+function invokeFKeyFunction(name) {
+   switch (name) {
+      case "Duplicate": application.duplicate(); break;
+      case "Cut": application.cut(); break;
+      case "Copy": application.copy(); break;
+      case "Paste": application.paste(); break;
+      case "Delete": application.remove(); break;
+      case "Rename": application.rename(); break;
+      case "Select All": application.selectAll(); break;
+      case "Select None": application.selectNone(); break;
+      case "Undo": application.undo(); break;
+      case "Redo": application.redo(); break;
+      case "Consolidate":
+         var consolidateAction = application.getAction("Consolidate");
+         if (consolidateAction) {
+            consolidateAction.invoke();
+         } else {
+            println("F-key function 'Consolidate': application.getAction(\"Consolidate\") " +
+               "returned nothing - the action ID guess is wrong. Needs the real ID, found by " +
+               "logging application.getActions().map(a => a.getId()+' / '+a.getName()) once " +
+               "and searching for the real Consolidate entry.");
+         }
+         break;
+      case "None":
+      default:
+         break;
+   }
+}
+
+// Currently-configured function per green-state F-key (index 0 = F1/note
+// 62 ... index 7 = F8/note 69). Defaults match the user's own examples
+// (F1 = Duplicate, F2 = Consolidate); populated live by the 8 Controller
+// Preferences dropdowns in init().
+var fKeyFunctionAssignment = ["Duplicate", "Consolidate", "None", "None", "None", "None", "None", "None"];
+
+// Bitwig's getEnumSetting() dropdowns can't have their option list
+// changed at runtime (confirmed against the Controller API Javadoc - no
+// such method on Preferences/SettableEnumValue), so there's no way to
+// make an already-picked function disappear from the other 7 dropdowns
+// the way real "pick from a shrinking list" UI would. This is the closest
+// available substitute: whenever any of the 8 change, re-scan all 8 for
+// the same function (other than "None") assigned twice, and surface it
+// via a popup + console warning instead of silently allowing it (or
+// being able to structurally prevent it).
+function warnIfDuplicateFKeyFunctions() {
+   for (var i = 0; i < 8; i++) {
+      if (fKeyFunctionAssignment[i] === "None") {
+         continue;
+      }
+      for (var j = i + 1; j < 8; j++) {
+         if (fKeyFunctionAssignment[j] === fKeyFunctionAssignment[i]) {
+            var msg = "F" + (i + 1) + " and F" + (j + 1) + " are both set to " + fKeyFunctionAssignment[i];
+            println("Duplicate F-key function assignment: " + msg);
+            host.showPopupNotification(msg);
+         }
+      }
+   }
+}
+
 // Press-start timestamp for whichever note is currently EXPANDED_VIEW_BUTTON
 // (only meaningful when EXPANDED_VIEW_INSTANT is false - see
 // handleModifierTap() below).
@@ -663,6 +736,26 @@ function init() {
    closeOtherWindowsSetting.addValueObserver(function (value) {
       CLOSE_OTHER_PLUGIN_WINDOWS = value;
    });
+
+   // Function Keys settings (Controller Preferences panel -> "Function
+   // Keys" category) - what each of the 8 green-state F1-F8 buttons (see
+   // FKEY_FUNCTION_NAMES/invokeFKeyFunction above, and case 62-69 below)
+   // does. All 8 dropdowns offer the same full option list - Bitwig has
+   // no API to prune already-picked options from the others - so a
+   // duplicate pick is only caught after the fact, via
+   // warnIfDuplicateFKeyFunctions().
+   for (var fkIdx = 0; fkIdx < 8; fkIdx++) {
+      (function (fkIndex) {
+         var fkSetting = host.getPreferences().getEnumSetting(
+            "F" + (fkIndex + 1) + " Function (Green State)", "Function Keys",
+            FKEY_FUNCTION_NAMES, fKeyFunctionAssignment[fkIndex]);
+         fkSetting.markInterested();
+         fkSetting.addValueObserver(function (value) {
+            fKeyFunctionAssignment[fkIndex] = value;
+            warnIfDuplicateFKeyFunctions();
+         });
+      })(fkIdx);
+   }
 
    // User-configurable wheel-tick threshold for OPTION + Jog Wheel's
    // loop-length halve/double (see loopScaleAccumulator above) - lower
@@ -1614,6 +1707,16 @@ function handleButtonPressInner(note) {
          cursorDevice.isWindowOpen().set(true);
          host.showPopupNotification("Device " + (fkeyDeviceIdx + 1));
          applyModeChange(wasAlreadyInDeviceMode ? null : "PLUGIN");
+         break;
+
+      case 62: case 63: case 64: case 65: case 66: case 67: case 68: case 69:
+         // F1-F8, green-lit state (SMPTE/BEATS toggles this, see note 53
+         // above). Configurable editing-function keys - see
+         // FKEY_FUNCTION_NAMES/invokeFKeyFunction above and the
+         // "Function Keys" Controller Preferences category in init() -
+         // rather than a fixed built-in action like the orange/default
+         // state (case 54-61).
+         invokeFKeyFunction(fKeyFunctionAssignment[note - 62]);
          break;
 
       case 45: // RETURNS -> swap the 8 channel strips to/from the Return

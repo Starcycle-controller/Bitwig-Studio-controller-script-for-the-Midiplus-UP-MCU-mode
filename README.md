@@ -125,6 +125,44 @@ press and release one without using it to modify anything else:
   (`cursorDeviceBank`) - there's no Controller API way to enumerate open
   plugin windows project-wide, so windows on other tracks aren't affected.
 
+### Function Keys settings (Controller Preferences panel)
+
+Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
+-> **Function Keys** category. F1-F8's green-lit state (notes 62-69,
+toggled by SMPTE/BEATS - see note 53; the orange/default state, 54-61,
+still directly selects device 1-8 and isn't affected by this) is
+configurable per-key via 8 dropdowns, **F1 Function (Green State)**
+through **F8 Function (Green State)**, each offering the same list:
+`None`, `Duplicate`, `Consolidate`, `Cut`, `Copy`, `Paste`, `Delete`,
+`Rename`, `Select All`, `Select None`, `Undo`, `Redo`. Defaults: F1 =
+`Duplicate`, F2 = `Consolidate`, F3-F8 = `None`.
+
+Everything except `Consolidate` calls a dedicated, typed `Application`
+method (`application.duplicate()`, `.cut()`, `.remove()` for Delete,
+etc.) - guaranteed correct, not guessed, straight from the Controller API
+Javadoc. **`Consolidate` has no dedicated method anywhere in the
+Controller API** (checked `Application`/`Track`/`Clip`/`Arranger` - none
+of them have it), so it goes through the generic
+`application.getAction("Consolidate").invoke()` mechanism instead, with
+`"Consolidate"` as a best-guess action ID - **not yet confirmed on
+hardware**. If pressing F2 doesn't do anything, check the console for a
+`Consolidate... returned nothing` warning - the fix is finding the real
+ID by temporarily logging `application.getActions().map(a => a.getId() +
+" / " + a.getName())` once and searching the output for the real entry
+(see `invokeFKeyFunction()` in the code).
+
+The request was for each dropdown to remove an already-picked function
+from the other 7 (so you can't double-assign one), but **Bitwig's
+`getEnumSetting()` dropdowns have no API to change their option list at
+runtime** - confirmed against the Javadoc, `SettableEnumValue` only has
+`set(value)`, nothing to reduce the choices. All 8 dropdowns therefore
+independently offer the full list; `warnIfDuplicateFKeyFunctions()` is
+the closest available substitute - it re-scans all 8 whenever one
+changes and, if two keys end up with the same function, prints a console
+warning and shows a Bitwig popup naming which two keys collided. It
+doesn't prevent the duplicate, just flags it immediately instead of
+leaving it to be discovered by a key silently doing nothing.
+
 ### Diagnostics settings (Controller Preferences panel)
 
 Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
@@ -328,7 +366,7 @@ was still in Live mode, is confirmed still correct.
 | 52 | NAME/VALUE | Unbound (no Bitwig equivalent) |
 | 53 | SMPTE/BEATS | Pure mode key, deliberately unbound - toggles the F1-F8 row's backlight red/green (and which note range F1-F8 sends) entirely in hardware firmware; no longer bound to Automation Write |
 | 54-61 | F1-F8 (default/orange-lit state) | Select device 1-8 directly on the current track (enters `MODE_DEVICE` if needed) |
-| 62-69 | F1-F8 (green-lit state, toggled via SMPTE/BEATS) | Unbound - 8 more function-key slots awaiting assignment |
+| 62-69 | F1-F8 (green-lit state, toggled via SMPTE/BEATS) | Configurable editing function per key, see Function Keys settings above (defaults: F1=Duplicate, F2=Consolidate, F3-F8=None) |
 | 70-73 | SHIFT / OPTION / CTRL / ALT | Modifier hold state; standalone tap action is configurable, see Plugin Mode settings above |
 | 74 | (Live label: SESS/ARR) | Toggle clip launcher / arranger view |
 | 75 | (Live label: CLIP/FX) | Toggle device / clip view |
@@ -378,11 +416,17 @@ sends note 100 directly, same as the note 100 already bound above.
    overlay rather than trusting any more inherited assumptions. Notes 50
    and 51 are both currently unbound pending confirmation of what they
    actually do now.
-1. **Green-state F1-F8 (notes 62-69) still unassigned.** The red/orange
-   state (54-61) now selects device 1-8 directly. SMPTE/BEATS (note 53)
-   toggles between the two states in hardware firmware only - it's not
-   bound to anything in Bitwig itself (previously toggled Automation
-   Write - removed per request, see git history).
+1. **Green-state F1-F8 (notes 62-69) now configurable, not yet tested on
+   hardware.** See Function Keys settings above. `Duplicate`/`Cut`/
+   `Copy`/`Paste`/`Delete`/`Rename`/`Select All`/`Select None`/`Undo`/
+   `Redo` all use guaranteed-correct typed `Application` methods, but
+   `Consolidate` (F2's default) uses a best-guess action ID that needs
+   hardware confirmation - watch the console for a "returned nothing"
+   warning when pressing it. The red/orange state (54-61) still directly
+   selects device 1-8, unaffected. SMPTE/BEATS (note 53) toggles between
+   the two states in hardware firmware only - it's not bound to anything
+   in Bitwig itself (previously toggled Automation Write - removed per
+   request, see git history).
 2. **Metering confirmed working on hardware, all 8 channels.** Console +
    visual confirmation: Channel Pressure level data fluctuates correctly
    and the on-screen LCD bar tracks it in real time on every channel,
