@@ -382,7 +382,7 @@ was still in Live mode, is confirmed still correct.
 | 78 | (Live label: DETAIL) | Toggle note/automation editor panel |
 | 79 | (Live label: REDO) | `application.redo()` |
 | 80 | (Live label: B.T.A.) | Toggle `MODE_SCENE` |
-| 81 | (Live label: DRAW) | Cycle the 6 arranger edit tools; SHIFT+DRAW toggles Arranger Automation Write |
+| 81 | (Live label: DRAW) | Cycle the 6 arranger edit tools; SHIFT+DRAW toggles Arranger Automation Write (popup shows `Automation Write: ENABLED`/`DISABLED`) |
 | 82 | (Live label: MARKER) | Add cue marker at playhead |
 | 83 | (Live label: FOLLOW) | Toggle playback follow (SHIFT = toggle metronome) |
 | 84 | - | Jump to previous cue marker |

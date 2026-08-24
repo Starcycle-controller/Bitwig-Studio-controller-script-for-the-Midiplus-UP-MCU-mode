@@ -807,6 +807,9 @@ function init() {
    transport.arrangerLoopDuration().markInterested();
    transport.timeSignature().numerator().markInterested();
    transport.timeSignature().denominator().markInterested();
+   // Read on-demand by SHIFT+DRAW (case 81) to show the resulting ON/OFF
+   // state in its popup, rather than a generic "toggled" message.
+   transport.isArrangerAutomationWriteEnabled().markInterested();
 
    // Segment display (the separate "BEATS" transport-position display,
    // notes 40-53 are NOT it - this is CC 0x40-0x49, 10 digit cells,
@@ -1965,8 +1968,12 @@ function handleButtonPressInner(note) {
                // pure hardware-local mode key).
          if (isShiftPressed) {
             shiftUsedForCombo = true;
+            // Resulting state, not "toggled" - computed before toggling
+            // (rather than reading it back after) since that's guaranteed
+            // correct regardless of whether the value updates synchronously.
+            var newAutomationWriteState = !transport.isArrangerAutomationWriteEnabled().get();
             transport.isArrangerAutomationWriteEnabled().toggle();
-            host.showPopupNotification("Toggle Automation Write");
+            host.showPopupNotification("Automation Write: " + (newAutomationWriteState ? "ENABLED" : "DISABLED"));
          } else {
             var nextTool = ARRANGER_TOOL_ACTIONS[arrangerToolCycleIndex];
             safeInvokeAction(nextTool.id, nextTool.name);
