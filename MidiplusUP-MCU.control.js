@@ -334,6 +334,45 @@ var panSnapToCenterEnabled = true;
 var PAN_SNAP_THRESHOLD = 0.02;
 var PAN_SNAP_IDLE_MS = 300;
 
+// "Select Channel on Fader Touch" (Mixer category, default on) - see the
+// Fader Touch handling in onMidi (notes 104-112) below. Overridden live
+// from the Controller Preferences panel setting created in init() below.
+var selectChannelOnFaderTouch = true;
+
+// "Select Channel on Fader Touch Delay (ms)" (Mixer category, default 0 =
+// immediate/instant, matching classic MCU behavior) - riding several
+// faders together means touching them in quick succession, and selecting
+// on every individual touch would make the selected track (and anything
+// following it, like the device panel) flicker between channels through
+// the whole grab instead of settling once. A nonzero delay debounces
+// that: each touch (re)arms a single shared, gesture-wide generation
+// token (bumped every touch across ANY of the 8+1 faders, not per-fader -
+// see scheduleSelectChannelOnTouch() below) and only the touch that's
+// still the latest one once the delay has elapsed without another touch
+// actually fires the selection - so a fast multi-finger grab settles on
+// whichever fader you're still holding once things go quiet, rather than
+// selecting each one in turn as you reach for it. Overridden live from
+// the Controller Preferences panel setting created in init() below.
+var SELECT_ON_TOUCH_DELAY_MS = 0;
+var selectOnTouchGeneration = 0;
+
+function scheduleSelectChannelOnTouch(track) {
+   if (SELECT_ON_TOUCH_DELAY_MS <= 0) {
+      track.selectInMixer();
+      cursorTrack.selectChannel(track);
+      return;
+   }
+   selectOnTouchGeneration++;
+   var myGeneration = selectOnTouchGeneration;
+   host.scheduleTask(function () {
+      if (selectOnTouchGeneration !== myGeneration) {
+         return;
+      }
+      track.selectInMixer();
+      cursorTrack.selectChannel(track);
+   }, SELECT_ON_TOUCH_DELAY_MS);
+}
+
 // Same debounce-generation-token pattern as revealPanTemporarily() below
 // (and lcdOverrideGeneration) - only the LAST scheduled check for a given
 // encoder actually fires; every further tick before it bumps the token
@@ -1087,6 +1126,27 @@ function init() {
    panSnapIdleDelaySetting.markInterested();
    panSnapIdleDelaySetting.addRawValueObserver(function(value) {
       PAN_SNAP_IDLE_MS = value;
+   });
+
+   // Select Channel on Fader Touch - see the Fader Touch handling in
+   // onMidi (notes 104-112) above. Same name/idea as the identically-named
+   // setting in Mossgraber's DrivenByMoss MCU driver.
+   var selectChannelOnFaderTouchSetting = host.getPreferences().getBooleanSetting(
+      "Select Channel on Fader Touch", "Mixer", true);
+   selectChannelOnFaderTouchSetting.markInterested();
+   selectChannelOnFaderTouchSetting.addValueObserver(function(value) {
+      selectChannelOnFaderTouch = value;
+   });
+
+   // See scheduleSelectChannelOnTouch() above - debounces Select Channel
+   // on Fader Touch so riding several faders together settles on one
+   // selection instead of flickering through each one as you grab it. 0
+   // (default) selects immediately, same as classic MCU behavior.
+   var selectOnTouchDelaySetting = host.getPreferences().getNumberSetting(
+      "Select Channel on Fader Touch Delay (ms)", "Mixer", 0, 1000, 10, "ms", 0);
+   selectOnTouchDelaySetting.markInterested();
+   selectOnTouchDelaySetting.addRawValueObserver(function(value) {
+      SELECT_ON_TOUCH_DELAY_MS = value;
    });
 
    // Remote Controls (8 Macros for selected device)
@@ -1933,6 +1993,38 @@ function onMidi(status, data1, data2) {
          if (isPressed) {
             isScrubToggled = !isScrubToggled;
             midiOut.sendMidi(0x90, 101, isScrubToggled ? 127 : 0);
+         }
+         return;
+      }
+
+      // Fader Touch (Notes 104-111 = channels 1-8, 112 = Master) - the
+      // motorized faders send a separate Note-On/Off for touching/
+      // releasing the physical cap, independent of the pitch-bend position
+      // data the fader itself is driven by (see the top-of-file comment -
+      // faders are handled entirely via native hardware-binding, not
+      // manual pitch-bend parsing). "Select Channel on Fader Touch"
+      // (Mixer category, default on - see selectChannelOnFaderTouch) opts
+      // into selecting that channel's track on touch, same call as the
+      // SELECT1-8 buttons use (note 24-31 above) - inspired by
+      // Mossgraber's DrivenByMoss MCU driver, which offers the identical
+      // setting. Master (112) always selects the master track, since the
+      // master fader's binding never changes with mode (see hwMasterFader
+      // in init()). The 8 channel faders only select a track while in
+      // MODE_MIXER - in MODE_SENDS/MODE_DEVICE a fader doesn't correspond
+      // to a distinct track per channel (all 8 faders act on the SAME
+      // cursor track's sends, or on device macros), so there's nothing
+      // sensible to select there. Goes through
+      // scheduleSelectChannelOnTouch() (see above) rather than selecting
+      // immediately, so riding several faders together can be debounced
+      // via "Select Channel on Fader Touch Delay (ms)" instead of the
+      // selection flickering through each one as you grab it.
+      if (data1 >= 104 && data1 <= 112) {
+         if (isPressed && selectChannelOnFaderTouch) {
+            var touchedTrack = data1 === 112 ? masterTrack :
+               (currentMode === MODE_MIXER ? activeTrackBank().getItemAt(data1 - 104) : null);
+            if (touchedTrack) {
+               scheduleSelectChannelOnTouch(touchedTrack);
+            }
          }
          return;
       }

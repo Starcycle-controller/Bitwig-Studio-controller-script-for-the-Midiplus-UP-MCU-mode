@@ -262,6 +262,36 @@ overshoot-past-the-zone problem, since it no longer matters how big or
 small each individual MIDI message's step was. Not yet tested on
 hardware since this redesign.
 
+**Select Channel on Fader Touch** (on/off, default ON) - touching one of
+the motorized faders (notes 104-111 for channels 1-8, note 112 for the
+master fader - a separate Note-On/Off the hardware sends independent of
+the pitch-bend position data, previously logged only, see the button map
+above) selects that channel's track, the same `selectInMixer()`/
+`cursorTrack.selectChannel()` call the SELECT1-8 buttons already use.
+Named and modeled directly after the identically-named setting in
+Mossgraber's DrivenByMoss MCU driver (see its manual's Mackie MCU
+"Workflow" preferences). The 8 channel faders only select while in
+`MODE_MIXER` - in `MODE_SENDS`/`MODE_DEVICE` all 8 faders act on the same
+cursor track's sends or on device macros rather than one distinct track
+per fader, so there's no per-channel track to select there; the master
+fader always selects the master track regardless of mode, since its
+binding never changes with mode (see `hwMasterFader` in `init()`).
+
+**Select Channel on Fader Touch Delay (ms)** (default 0 = select
+immediately, range 0-1000) - requested alongside the toggle above with
+riding multiple faders together in mind: grabbing several faders in quick
+succession touches each one a few milliseconds apart, and selecting
+immediately on every touch would make the selected track (and anything
+that follows it, like the device panel) flicker through each channel
+during the grab instead of settling on one. `scheduleSelectChannelOnTouch()`
+implements the delay as one shared, gesture-wide debounce (not
+per-fader) - every touch on *any* of the 9 faders bumps a single
+generation token and (re)arms a `host.scheduleTask()` check after the
+delay; only the touch that's still the most recent one once the delay
+elapses without a further touch actually fires the selection. At the
+default of 0 it selects synchronously with no debounce at all, identical
+to the immediate behavior described above. Not yet tested on hardware.
+
 ### Diagnostics settings (Controller Preferences panel)
 
 Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
@@ -488,7 +518,8 @@ was still in Live mode, is confirmed still correct.
 | 96-99 | Cursor arrows | Arrow keys, or zoom (while ZOOM/note 100 toggled), or device select in `MODE_DEVICE` |
 | 100 | ZOOM | Toggle zoom mode for cursor arrows |
 | 101 | SCRUB | Toggle fine-scrub mode for jog wheel |
-| 104-111 | Fader touch 1-8 | Not currently used for anything (logged only) |
+| 104-111 | Fader touch 1-8 | Optionally selects that channel's track, see Mixer settings below |
+| 112 | Fader touch (Master) | Optionally selects the master track, see Mixer settings below |
 | CC 16-23 | Rotary encoders 1-8 | Mode-dependent (pan/send/macro), SHIFT = fine adjust |
 | CC 60 | Jog wheel | Arranger scrub, or bar/loop/tempo nudge with modifiers held, or scene navigation in `MODE_SCENE` |
 | Pitch bend ch 0-7 / 8 | Faders 1-8 / Master | See Architecture above |
