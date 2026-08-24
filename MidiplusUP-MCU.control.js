@@ -101,13 +101,20 @@ function wasUsedForCombo(note) {
 // Plugin Mode settings (Controller Preferences panel -> this controller ->
 // "Plugin Mode" category, set up in init() below) - which modifier button
 // toggles the expanded device view, whether that's an instant tap or a
-// long press, and which modifier button cycles the selected device's
-// macro bank. -1 means "None" (disabled). Defaults match this session's
-// original hardcoded behavior (CTRL long-press for expanded view, ALT tap
-// for macro bank).
+// long press, whether that also opens the plugin window (jumping into
+// Device mode from anywhere, not just toggling the view while already
+// there), and which modifier button cycles the selected device's macro
+// bank. -1 means "None" (disabled). Defaults: CTRL long-press for
+// expanded view (also opening the plugin window), ALT tap for macro
+// bank.
 var MODIFIER_NAME_TO_NOTE = { "SHIFT": 70, "OPTION": 71, "CTRL": 72, "ALT": 73, "None": -1 };
 var EXPANDED_VIEW_BUTTON = 72;
 var EXPANDED_VIEW_INSTANT = false; // false = long press, true = instant tap
+// Whether the Expanded Device View action also opens the plugin window
+// (cursorDevice.isWindowOpen().set(true)) - so the button both expands
+// AND shows the device, in one press, instead of needing PLUG-INS/F1-F8
+// pressed first. Never closes the window - only ever opens it.
+var EXPANDED_VIEW_OPENS_WINDOW = true;
 var MACRO_CYCLE_BUTTON = 73;
 
 // Press-start timestamp for whichever note is currently EXPANDED_VIEW_BUTTON
@@ -133,8 +140,24 @@ function handleModifierTap(note, isPressed) {
 
    var usedForCombo = wasUsedForCombo(note);
 
-   if (note === EXPANDED_VIEW_BUTTON && EXPANDED_VIEW_BUTTON >= 0 && currentMode === MODE_DEVICE && !usedForCombo) {
-      if (EXPANDED_VIEW_INSTANT || (Date.now() - expandedViewPressStartTime) >= CTRL_LONG_PRESS_MS) {
+   if (note === EXPANDED_VIEW_BUTTON && EXPANDED_VIEW_BUTTON >= 0 && !usedForCombo) {
+      var longPressOk = EXPANDED_VIEW_INSTANT || (Date.now() - expandedViewPressStartTime) >= CTRL_LONG_PRESS_MS;
+      if (longPressOk && EXPANDED_VIEW_OPENS_WINDOW) {
+         // Also opens the plugin window - so this works as a one-press
+         // shortcut into the expanded device view from any mode, not just
+         // while already looking at Device mode.
+         if (currentMode !== MODE_DEVICE) {
+            currentMode = MODE_DEVICE;
+            cursorDevice.selectFirst();
+            updateModeLEDs();
+            refreshDisplayText();
+            rebindFaders();
+         }
+         cursorDevice.isWindowOpen().set(true);
+         cursorDevice.isExpanded().toggle();
+      } else if (longPressOk && currentMode === MODE_DEVICE) {
+         // Window-opening disabled - only toggle expanded view, and only
+         // while already in Device mode (original behavior).
          cursorDevice.isExpanded().toggle();
       }
    }
@@ -470,6 +493,13 @@ function init() {
    ctrlHoldTimeSetting.markInterested();
    ctrlHoldTimeSetting.addRawValueObserver(function(value) {
       CTRL_LONG_PRESS_MS = value;
+   });
+
+   var expandedViewOpensWindowSetting = host.getPreferences().getBooleanSetting(
+      "Expanded Device View Also Opens Plugin Window", "Plugin Mode", true);
+   expandedViewOpensWindowSetting.markInterested();
+   expandedViewOpensWindowSetting.addValueObserver(function (value) {
+      EXPANDED_VIEW_OPENS_WINDOW = value;
    });
 
    var macroCycleButtonSetting = host.getPreferences().getEnumSetting(
