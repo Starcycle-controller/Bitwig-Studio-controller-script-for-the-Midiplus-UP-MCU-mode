@@ -66,9 +66,9 @@ Two independent halves, both required:
   panel layout, and the jog wheel selects/launches scenes instead of its
   usual transport scrub.
 
-FLIP (note 50) swaps faders and encoders between volume and pan in
-`MODE_MIXER`, and faders (only - see `MODE_DEVICE` above) between volume
-and macros in `MODE_DEVICE`.
+FLIP (note 43, not 50 - see the button-map correction below) swaps faders
+and encoders between volume and pan in `MODE_MIXER`, and faders (only -
+see `MODE_DEVICE` above) between volume and macros in `MODE_DEVICE`.
 
 ### Plugin Mode settings (Controller Preferences panel)
 
@@ -123,11 +123,22 @@ protocol per Mossgraber's DrivenByMoss driver: CC `(0x30 + channel)` with a
 value packing the display mode (single dot/boost-cut/wrap/spread, bits
 4-5) and a 0-11 rescaled position (bits 0-3). Wired up in
 `updateVPotRingOutputs()` (called every `flush()`, same polling-and-diff
-pattern as the fader motor output) to show whatever `getFaderTarget()`
-currently returns for that channel - i.e. track volume when unflipped,
-the macro value when flipped in Device mode - so there's a compact,
-always-visible readout of "what the fader controls" even while the LCD
-text is showing something else (the macro name/value).
+pattern as the fader motor output) to show whatever `getEncoderTarget()`
+currently returns for that channel - i.e. **always** what the encoder
+itself controls (pan in Mixer mode, sends in Sends mode, always the macro
+in Device mode regardless of FLIP), matching the physical V-Pot ring's
+own encoder rather than the fader.
+
+**EXPERIMENTAL - per-channel LCD/strip colors**, matching each track's own
+Bitwig color, via `updateChannelColorOutput()` (same flush()-polling
+pattern): one SysEx `F0 00 02 4E 16 14 <8x R,G,B (0-127)> F7` covering all
+8 channels at once (the "ICON"-vendor variant of this MCU extension, per
+Mossgraber's driver - there are at least two other known vendor-specific
+variants, e.g. Behringer's single-byte 3-bit color index, and this isn't
+documented in the Midiplus manual at all). **Not yet confirmed working on
+this hardware** - if channel colors don't visibly change, this protocol
+variant is likely wrong for this unit and would need trying one of the
+alternatives instead.
 
 ## Confirmed button map
 
@@ -225,6 +236,22 @@ sends note 100 directly, same as the note 100 already bound above.
 3. Debug logging (`RAW Note-On received`, `RAW CC received`, `Button
    pressed - Note:`) is still left in intentionally - useful while wiring
    up the remaining F1-F8 slots (item 1). Fine to remove once that's done.
+4. **PLUG-INS/Device-mode LED (note 44) still gets cleared by FLIP,
+   unresolved.** `currentMode` itself is confirmed unaffected (Device mode
+   stays active) and `updateModeLEDs()` is explicitly re-called right
+   after FLIP's toggle, re-sending note 44's LED - but it still visibly
+   clears, meaning the hardware is likely managing this LED locally and
+   ignoring/overriding our echo, similar to the documented BANK/CHANNEL
+   quirk (case 48). Purely cosmetic (doesn't affect actual mode/behavior).
+   Next step if revisited: try continuously re-asserting it every flush()
+   cycle rather than only right after the FLIP press, in case the
+   firmware's local clearing happens on a delay.
+5. **Channel colors (`updateChannelColorOutput()`) need hardware
+   confirmation.** Sends the "ICON"-vendor MCU SysEx variant as a
+   best-guess, since the Midiplus manual doesn't document this feature at
+   all - if colors don't visibly change on the hardware, this is the
+   wrong protocol variant for this unit (see the LCD/meters/LEDs section
+   above for the two other known alternatives).
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 

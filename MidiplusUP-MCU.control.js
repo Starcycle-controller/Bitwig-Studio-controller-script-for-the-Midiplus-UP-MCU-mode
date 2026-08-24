@@ -355,14 +355,25 @@ var lastSentFaderValue = [-1, -1, -1, -1, -1, -1, -1, -1, -1];
 // encoder, separate from the 2-row LCD text) - real MCU protocol per
 // Mossgraber's DrivenByMoss MCU driver: CC (0x30 + channel) with a value
 // packing the display mode (bits 4-5) and a 0-11 rescaled position (bits
-// 0-3). Shows the CURRENT FADER TARGET's value (track volume when
-// unflipped, macro when flipped in Device mode - i.e. whatever
-// getFaderTarget() returns), giving a compact non-text readout of "what
-// the fader controls" even while the LCD text is showing something else
-// (e.g. the macro name/value in Device mode). -1 = never sent, same reset
-// pattern as lastSentFaderValue.
+// 0-3). Shows whatever that encoder itself currently controls (see
+// getEncoderTarget()) - pan in Mixer mode, sends in Sends mode, always
+// the macro in Device mode regardless of FLIP - consistent with the
+// physical V-Pot ring always reflecting its own encoder, never the
+// fader. -1 = never sent, same reset pattern as lastSentFaderValue.
 var lastSentVPotRing = [-1, -1, -1, -1, -1, -1, -1, -1];
 var VPOT_LED_MODE_SINGLE_DOT = 0;
+
+// Per-channel LCD/strip color, matching each track's own Bitwig color -
+// EXPERIMENTAL, not confirmed working on this hardware yet. Sent as one
+// SysEx covering all 8 channels (real MCU protocol per Mossgraber's
+// DrivenByMoss driver, the "ICON"-vendor variant - there are at least two
+// other known vendor-specific variants for this same feature, and it's
+// not documented in the Midiplus manual at all, so this is a best-guess
+// attempt pending hardware confirmation - see updateChannelColorOutput()
+// below). Cached as 24 flat ints (8 channels x R,G,B, 0-127 each) so it's
+// only re-sent when something actually changed, polled every flush()
+// like the fader/V-Pot ring outputs. null = never sent.
+var lastSentChannelColors = null;
 
 // SELECT button double-press detection (fold/unfold a group track) - one
 // timestamp per physical channel-strip slot, shared across whichever bank
@@ -745,6 +756,12 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
 
          track.pan().value().markInterested();
 
+         // Track Color - read on-demand (not observed) by
+         // updateChannelColorOutput(), polled every flush() like the
+         // fader/V-Pot ring outputs - see there for why. markInterested()
+         // needed for .color().red()/.green()/.blue() to be valid.
+         track.color().markInterested();
+
          // Track Meter Observer - real MCU protocol per Ableton's own
          // driver (ChannelStrip.py): meter level (0-12) is sent as a
          // Channel Pressure message on MIDI channel 1 (status 0xD0, always
@@ -926,38 +943,13 @@ function onMidi(status, data1, data2) {
       var delta = isShiftPressed ? (rawDelta * 0.2) : rawDelta;
       var resolution = isShiftPressed ? 512 : 128;
 
-      if (!isFlipped) {
-         if (currentMode === MODE_MIXER) {
-            if (isToolVolumeMode) {
-               var encPanParam = getToolParam(encoderIndex, 1);
-               if (encPanParam) {
-                  encPanParam.inc(delta, resolution);
-               }
-            } else {
-               activeTrackBank().getItemAt(encoderIndex).pan().inc(delta, resolution);
-            }
-         } else if (currentMode === MODE_SENDS) {
-            var encSendIdx = (sendBankPage * 8) + encoderIndex;
-            cursorTrack.sendBank().getItemAt(encSendIdx).inc(delta, resolution);
-         } else if (currentMode === MODE_DEVICE) {
-            remoteControls.getParameter(encoderIndex).inc(delta, resolution);
-         }
-      } else if (currentMode === MODE_DEVICE) {
-         // Encoders always control macros in Device mode, regardless of
-         // FLIP - only the faders swap between track volume and macros
-         // (see getFaderTarget()). FLIP still swaps everything else
-         // (Mixer volume/pan, Sends) as usual.
-         remoteControls.getParameter(encoderIndex).inc(delta, resolution);
-      } else {
-         // Flipped Encoder -> Track Volume (or Tool Gain in isToolVolumeMode)
-         if (currentMode === MODE_MIXER && isToolVolumeMode) {
-            var encGainParam = getToolParam(encoderIndex, 0);
-            if (encGainParam) {
-               encGainParam.inc(delta, resolution);
-            }
-         } else {
-            activeTrackBank().getItemAt(encoderIndex).volume().inc(delta, resolution);
-         }
+      // See getEncoderTarget() below for the exact per-mode/flip rules
+      // (encoders always control macros in MODE_DEVICE regardless of
+      // FLIP - only the faders swap there; MODE_MIXER's encoder is pan
+      // unflipped / volume flipped, the opposite of the fader).
+      var encTarget = getEncoderTarget(encoderIndex);
+      if (encTarget) {
+         encTarget.inc(delta, resolution);
       }
       return;
    }
@@ -1823,6 +1815,34 @@ function getFaderTarget(i) {
    return activeTrackBank().getItemAt(i).pan();
 }
 
+// Returns whichever Parameter encoder `i` (0-7) should currently control -
+// shared by the encoder CC handler in onMidi (input side) and
+// updateVPotRingOutputs() (the V-Pot ring LED, output side) below, so the
+// ring always reflects exactly what the encoder itself controls. Not the
+// same set of rules as getFaderTarget(): encoders always control macros
+// in MODE_DEVICE regardless of FLIP (only the faders swap with FLIP
+// there), and in MODE_MIXER the encoder controls pan (unflipped) or
+// volume (flipped) - the opposite of the fader in that mode.
+function getEncoderTarget(i) {
+   if (currentMode === MODE_SENDS) {
+      var sendIdx = (sendBankPage * 8) + i;
+      return cursorTrack.sendBank().getItemAt(sendIdx);
+   }
+   if (currentMode === MODE_DEVICE) {
+      return remoteControls.getParameter(i);
+   }
+   if (!isFlipped) {
+      if (currentMode === MODE_MIXER && isToolVolumeMode) {
+         return getToolParam(i, 1);
+      }
+      return activeTrackBank().getItemAt(i).pan();
+   }
+   if (currentMode === MODE_MIXER && isToolVolumeMode) {
+      return getToolParam(i, 0);
+   }
+   return activeTrackBank().getItemAt(i).volume();
+}
+
 // Re-binds each of the 8 hwFaders to whichever Parameter they should
 // currently control, whenever the active mode/flip/tool state changes
 // (called everywhere the old manual refreshFaders() used to be). This is
@@ -1844,6 +1864,10 @@ function rebindFaders() {
    // previous target (see updateFaderOutputs()/lastSentFaderValue below).
    lastSentFaderValue = [-1, -1, -1, -1, -1, -1, -1, -1, -1];
    lastSentVPotRing = [-1, -1, -1, -1, -1, -1, -1, -1];
+   // Also force the channel-color SysEx to re-send - rebindFaders() is
+   // called on every bank scroll / RETURNS toggle, which is exactly when
+   // the active bank's 8 tracks (and so their colors) change.
+   lastSentChannelColors = null;
 }
 
 // OUTPUT side: motorized fader feedback is NOT automatic just because a
@@ -1894,9 +1918,40 @@ function sendVPotRingIfChanged(channel, normalizedValue) {
 
 function updateVPotRingOutputs() {
    for (var i = 0; i < 8; i++) {
-      var target = getFaderTarget(i);
+      var target = getEncoderTarget(i);
       sendVPotRingIfChanged(i, target ? target.value().get() : 0);
    }
+}
+
+// EXPERIMENTAL - see lastSentChannelColors above. Sends the active bank's
+// 8 track colors as one SysEx, only when at least one of the 24 R/G/B
+// bytes has actually changed since the last flush.
+function updateChannelColorOutput() {
+   var bytes = [];
+   for (var i = 0; i < 8; i++) {
+      var color = activeTrackBank().getItemAt(i).color();
+      bytes.push(Math.round(Math.max(0, Math.min(1, color.red())) * 127));
+      bytes.push(Math.round(Math.max(0, Math.min(1, color.green())) * 127));
+      bytes.push(Math.round(Math.max(0, Math.min(1, color.blue())) * 127));
+   }
+
+   var changed = lastSentChannelColors === null;
+   if (!changed) {
+      for (var c = 0; c < 24; c++) {
+         if (bytes[c] !== lastSentChannelColors[c]) {
+            changed = true;
+            break;
+         }
+      }
+   }
+   if (!changed) {
+      return;
+   }
+   lastSentChannelColors = bytes;
+
+   var sysex = [0xF0, 0x00, 0x02, 0x4E, 0x16, 0x14].concat(bytes);
+   sysex.push(0xF7);
+   midiOut.sendSysexBytes(sysex);
 }
 
 // Force Refresh LCD Text Cache
@@ -1997,11 +2052,13 @@ function onSysex(data) {
 // required in general per the API docs); updateFaderOutputs() is the
 // actual motor-feedback push - see its comment above for why that can't
 // just be automatic. updateVPotRingOutputs() is the same idea for the
-// V-Pot ring LEDs (see lastSentVPotRing above).
+// V-Pot ring LEDs (see lastSentVPotRing above), and
+// updateChannelColorOutput() for the (experimental) per-channel colors.
 function flush() {
    hwSurface.updateHardware();
    updateFaderOutputs();
    updateVPotRingOutputs();
+   updateChannelColorOutput();
 }
 
 function exit() {
