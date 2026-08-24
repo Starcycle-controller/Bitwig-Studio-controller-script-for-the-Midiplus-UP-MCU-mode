@@ -1479,15 +1479,24 @@ function onMidi(status, data1, data2) {
       // unflipped / volume flipped, the opposite of the fader).
       var encTarget = getEncoderTarget(encoderIndex);
       if (encTarget) {
-         encTarget.inc(delta, resolution);
          // Pan Snap to Center - see panSnapToCenterEnabled above. Only
          // meaningful in Mixer mode (unflipped = pan, real track or
          // TOOL_DEVICE_NAME's Pan macro) - MODE_DEVICE macros/MODE_SENDS
-         // levels have no guaranteed center to snap to.
-         if (panSnapToCenterEnabled && currentMode === MODE_MIXER && !isFlipped) {
-            if (Math.abs(encTarget.get() - 0.5) <= PAN_SNAP_THRESHOLD) {
-               encTarget.set(0.5);
-            }
+         // levels have no guaranteed center to snap to. Snaps only on the
+         // tick that CROSSES INTO the snap zone from outside it (value
+         // was beyond PAN_SNAP_THRESHOLD before this turn, within it
+         // after) - checking the post-turn value alone would re-trigger
+         // on every single subsequent tick once already at/near center,
+         // since one tick's raw increment is normally smaller than even a
+         // 1% threshold: each tick would land back inside the zone and
+         // get yanked straight back to 0.5, permanently trapping the pan
+         // at center no matter which way the encoder turns (confirmed on
+         // hardware - reported as "pan does not move in any direction").
+         var isPanSnapTarget = panSnapToCenterEnabled && currentMode === MODE_MIXER && !isFlipped;
+         var wasOutsideSnapZone = isPanSnapTarget && Math.abs(encTarget.get() - 0.5) > PAN_SNAP_THRESHOLD;
+         encTarget.inc(delta, resolution);
+         if (wasOutsideSnapZone && Math.abs(encTarget.get() - 0.5) <= PAN_SNAP_THRESHOLD) {
+            encTarget.set(0.5);
          }
       }
       // The bottom LCD row otherwise always shows volume in Mixer mode
