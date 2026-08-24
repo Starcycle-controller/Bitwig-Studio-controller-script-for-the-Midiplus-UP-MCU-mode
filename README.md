@@ -135,7 +135,10 @@ configurable per-key via 8 dropdowns, **F1 Function (Green State)**
 through **F8 Function (Green State)**, each offering the same list:
 `None`, `Duplicate`, `Consolidate`, `Cut`, `Copy`, `Paste`, `Delete`,
 `Rename`, `Select All`, `Select None`, `Undo`, `Redo`. Defaults: F1 =
-`Duplicate`, F2 = `Consolidate`, F3-F8 = `None`.
+`Duplicate`, F2 = `Consolidate`, F3-F8 = `None`. Every press shows a
+Bitwig popup naming the action that just ran (e.g. `Duplicate`), same as
+the `Device N` popup the orange/default state already shows - so it's
+always visible which function fired, not just a silent side effect.
 
 Everything except `Consolidate` calls a dedicated, typed `Application`
 method (`application.duplicate()`, `.cut()`, `.remove()` for Delete,

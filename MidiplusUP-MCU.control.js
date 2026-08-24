@@ -141,7 +141,10 @@ function closeOtherDeviceWindowsIfConfigured() {
 
 // Green-state F1-F8 (notes 62-69, see case 62-69 below) - configurable
 // "editing function" keys, set via the 8 "F1-F8 Function (Green State)"
-// Controller Preferences dropdowns in init(). Everything below except
+// Controller Preferences dropdowns in init(). Shows a Bitwig popup naming
+// the action every time one fires (e.g. "Duplicate"), same as the
+// "Device N" popup the orange/default F-key state already shows - so
+// it's always visible which function just ran. Everything below except
 // Consolidate goes through a dedicated, typed Application method
 // (guaranteed correct, not guessed) - Consolidate has no such method in
 // the Controller API (confirmed: not in Track/Clip/Arranger/Application),
@@ -154,6 +157,10 @@ var FKEY_FUNCTION_NAMES = [
 ];
 
 function invokeFKeyFunction(name) {
+   if (name === "None") {
+      return;
+   }
+   host.showPopupNotification(name);
    switch (name) {
       case "Duplicate": application.duplicate(); break;
       case "Cut": application.cut(); break;
@@ -176,7 +183,6 @@ function invokeFKeyFunction(name) {
                "and searching for the real Consolidate entry.");
          }
          break;
-      case "None":
       default:
          break;
    }
