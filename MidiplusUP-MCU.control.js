@@ -1556,17 +1556,21 @@ function handleButtonPressInner(note) {
          host.showPopupNotification("Device " + (fkeyDeviceIdx + 1));
          break;
 
-      case 45: // PAGE NEXT / INST -> Focus Instrument / Next Parameter Page
-         if (currentMode === MODE_DEVICE) {
-            remoteControls.selectNextPage(true);
-            host.showPopupNotification("Device Page Next");
-         } else {
-            try {
-               cursorTrack.selectFirst();
-            } catch (e) {
-               println("Warning: selectFirst() not available: " + e);
-            }
-            host.showPopupNotification("Track Instrument Selected");
+      case 45: // RETURNS -> swap the 8 channel strips to/from the Return
+               // Tracks bank. Moved here from note 51 after the user
+               // reported pressing the overlay's printed RETURNS button
+               // produces note 45, not 51 (same kind of wrong inherited
+               // note-number assumption as the FLIP/note-43 fix above -
+               // this was previously the bare/Logic-label "INST" guess,
+               // never actually confirmed under this overlay).
+         isViewingReturns = !isViewingReturns;
+         midiOut.sendMidi(0x90, 45, isViewingReturns ? 127 : 0);
+         host.showPopupNotification(isViewingReturns ? "Viewing Return Tracks" : "Viewing Tracks");
+         refreshChannelStripLEDs();
+         if (currentMode === MODE_MIXER) {
+            refreshDisplayText();
+            rebindFaders();
+            showModePopup(isViewingReturns ? "RETURNS" : "MIXER");
          }
          break;
 
@@ -1669,17 +1673,11 @@ function handleButtonPressInner(note) {
       // actually does under the current overlay - press it and check the
       // console for "RAW Note-On received".
 
-      case 51: // RETURNS -> swap the 8 channel strips to/from the Return Tracks bank
-         isViewingReturns = !isViewingReturns;
-         midiOut.sendMidi(0x90, 51, isViewingReturns ? 127 : 0);
-         host.showPopupNotification(isViewingReturns ? "Viewing Return Tracks" : "Viewing Tracks");
-         refreshChannelStripLEDs();
-         if (currentMode === MODE_MIXER) {
-            refreshDisplayText();
-            rebindFaders();
-            showModePopup(isViewingReturns ? "RETURNS" : "MIXER");
-         }
-         break;
+      // Note 51 - RETURNS was previously (wrongly) assumed to be here;
+      // moved to note 45 above after console-log confirmation. Deliberately
+      // left unbound until it's confirmed what, if anything, this button
+      // actually does under the current overlay - press it and check the
+      // console for "RAW Note-On received".
 
       // Note 52 is the generic MCU "Name/Value display" toggle - no
       // meaningful equivalent surfaced in Bitwig's API, left unbound.

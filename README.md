@@ -194,13 +194,13 @@ was still in Live mode, is confirmed still correct.
 | 42 | PAN | Toggle `TRLVL` tool-device Gain/Pan control |
 | 43 | FLIP | Swap faders/encoders - moved here from note 50 after console-log confirmation that the overlay's printed FLIP button actually sends this note, not 50 |
 | 44 | PLUG-INS | Toggle Device mode (first device, opens panel; second press also closes the panel) - confirmed via console testing that the Live overlay's "PLUG-INS" sticker is over this note, not 43 |
-| 45 | No Live-overlay label (bare-label printing: INST) | Select first track instrument / next device page - unconfirmed whether this is reachable at all under the Live overlay |
+| 45 | RETURNS | Swap channel strips to/from the Return Tracks bank - moved here from note 51 after console-log confirmation (the bare-label "INST" binding that used to live here was never actually reachable under this overlay) |
 | 46 | BANK PREV | Page track bank back (SHIFT = jump to first) |
 | 47 | BANK NEXT | Page track bank forward (SHIFT = jump to last) |
 | 48 | CHANNEL PREV | Nudge one channel back (CTRL = prev device / tempo down) |
 | 49 | CHANNEL NEXT | Nudge one channel forward (CTRL = next device / tempo up) |
 | 50 | Unconfirmed - previously (wrongly) assumed to be FLIP | Unbound - needs testing, see Open Items |
-| 51 | RETURNS (unconfirmed with current overlay placement - see Open Items) | Swap channel strips to/from the Return Tracks bank |
+| 51 | Unconfirmed - previously (wrongly) assumed to be RETURNS | Unbound - needs testing |
 | 52 | NAME/VALUE | Unbound (no Bitwig equivalent) |
 | 53 | SMPTE/BEATS | Pure mode key, deliberately unbound - toggles the F1-F8 row's backlight red/green (and which note range F1-F8 sends) entirely in hardware firmware; no longer bound to Automation Write |
 | 54-61 | F1-F8 (default/orange-lit state) | Select device 1-8 directly on the current track (enters `MODE_DEVICE` if needed) |
@@ -244,16 +244,16 @@ sends note 100 directly, same as the note 100 already bound above.
 
 ## Open items for next session
 
-0. **Note 50 and RETURNS (note 51) need re-testing with the current
-   overlay placement.** FLIP was found to actually be at note 43, not the
-   previously-assumed 50 (confirmed via console log - the note-43-is-
-   unlabeled conclusion from earlier this session was wrong, likely
-   because it was reached before the overlay got reattached/repositioned).
-   Note 50 is now unbound pending confirmation of what it actually does;
-   RETURNS is still assumed to be note 51 but hasn't been independently
-   re-verified the same way. Worth doing a fresh full sweep of the 40-53
-   range against the current overlay rather than trusting inherited
-   assumptions, given this one was wrong.
+0. **Notes 50 and 51 need testing with the current overlay placement.**
+   Both FLIP and RETURNS turned out to be at different notes than
+   originally assumed (43 and 45, not 50 and 51 - both confirmed via
+   console log after the buttons stopped working as expected). The old
+   note-43/45-are-unlabeled conclusions were reached before the overlay
+   got reattached/repositioned and turned out wrong twice in a row - worth
+   doing a fresh full sweep of the whole 40-53 range against the current
+   overlay rather than trusting any more inherited assumptions. Notes 50
+   and 51 are both currently unbound pending confirmation of what they
+   actually do now.
 1. **Green-state F1-F8 (notes 62-69) still unassigned.** The red/orange
    state (54-61) now selects device 1-8 directly. SMPTE/BEATS (note 53)
    toggles between the two states in hardware firmware only - it's not
