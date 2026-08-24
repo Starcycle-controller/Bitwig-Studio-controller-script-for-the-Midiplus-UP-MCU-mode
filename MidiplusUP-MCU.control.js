@@ -110,12 +110,33 @@ function wasUsedForCombo(note) {
 var MODIFIER_NAME_TO_NOTE = { "SHIFT": 70, "OPTION": 71, "CTRL": 72, "ALT": 73, "None": -1 };
 var EXPANDED_VIEW_BUTTON = 72;
 var EXPANDED_VIEW_INSTANT = false; // false = long press, true = instant tap
-// Whether the Expanded Device View action also opens the plugin window
-// (cursorDevice.isWindowOpen().set(true)) - so the button both expands
-// AND shows the device, in one press, instead of needing PLUG-INS/F1-F8
-// pressed first. Never closes the window - only ever opens it.
+// Whether the Expanded Device View action also opens (and, on the next
+// press, closes) the plugin window - so the button both expands AND shows
+// the device, in one press, instead of needing PLUG-INS/F1-F8 pressed
+// first.
 var EXPANDED_VIEW_OPENS_WINDOW = true;
 var MACRO_CYCLE_BUTTON = 73;
+// Whether opening a device's plugin window (PLUG-INS, F1-F8 direct
+// select, or the Expanded Device View action above) first closes every
+// OTHER device's window on the current track's chain, for an "only one
+// plugin window open at a time" workflow - see
+// closeOtherDeviceWindowsIfConfigured() below. Scoped to the current
+// track's 8-slot device chain (cursorDeviceBank) only - the Controller
+// API has no way to enumerate open plugin windows project-wide.
+var CLOSE_OTHER_PLUGIN_WINDOWS = false;
+
+// Closes every other device's plugin window on the current track's chain
+// (see CLOSE_OTHER_PLUGIN_WINDOWS above) - call this BEFORE opening the
+// target device's own window, not after, so if the target happens to be
+// one of the 8 bank slots this doesn't immediately re-close it.
+function closeOtherDeviceWindowsIfConfigured() {
+   if (!CLOSE_OTHER_PLUGIN_WINDOWS) {
+      return;
+   }
+   for (var closeIdx = 0; closeIdx < 8; closeIdx++) {
+      cursorDeviceBank.getItemAt(closeIdx).isWindowOpen().set(false);
+   }
+}
 
 // Press-start timestamp for whichever note is currently EXPANDED_VIEW_BUTTON
 // (only meaningful when EXPANDED_VIEW_INSTANT is false - see
@@ -158,6 +179,9 @@ function handleModifierTap(note, isPressed) {
             rebindFaders();
          }
          var nowExpanded = !cursorDevice.isExpanded().get();
+         if (nowExpanded) {
+            closeOtherDeviceWindowsIfConfigured();
+         }
          cursorDevice.isExpanded().set(nowExpanded);
          cursorDevice.isWindowOpen().set(nowExpanded);
       } else if (longPressOk && currentMode === MODE_DEVICE) {
@@ -512,6 +536,13 @@ function init() {
    macroCycleButtonSetting.markInterested();
    macroCycleButtonSetting.addValueObserver(function (value) {
       MACRO_CYCLE_BUTTON = MODIFIER_NAME_TO_NOTE[value];
+   });
+
+   var closeOtherWindowsSetting = host.getPreferences().getBooleanSetting(
+      "Close Other Plugin Windows", "Plugin Mode", false);
+   closeOtherWindowsSetting.markInterested();
+   closeOtherWindowsSetting.addValueObserver(function (value) {
+      CLOSE_OTHER_PLUGIN_WINDOWS = value;
    });
 
    // User-configurable wheel-tick threshold for OPTION + Jog Wheel's
@@ -1325,6 +1356,7 @@ function handleButtonPressInner(note) {
          if (currentMode !== MODE_DEVICE) {
             currentMode = MODE_DEVICE;
             cursorDevice.selectFirst();
+            closeOtherDeviceWindowsIfConfigured();
             cursorDevice.isWindowOpen().set(true);
             host.showPopupNotification("Device: First Plugin");
          } else {
@@ -1346,10 +1378,14 @@ function handleButtonPressInner(note) {
          var fkeyDeviceIdx = note - 54;
          if (currentMode !== MODE_DEVICE) {
             currentMode = MODE_DEVICE;
-            cursorDevice.isWindowOpen().set(true);
             updateModeLEDs();
          }
          cursorDevice.selectDevice(cursorDeviceBank.getItemAt(fkeyDeviceIdx));
+         // Every F-key press opens that device's own window (not just the
+         // first one that enters Device mode), so CLOSE_OTHER_PLUGIN_WINDOWS
+         // applies when switching devices via F1-F8 too, not just on entry.
+         closeOtherDeviceWindowsIfConfigured();
+         cursorDevice.isWindowOpen().set(true);
          refreshDisplayText();
          rebindFaders();
          host.showPopupNotification("Device " + (fkeyDeviceIdx + 1));

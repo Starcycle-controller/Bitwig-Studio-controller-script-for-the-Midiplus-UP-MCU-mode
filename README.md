@@ -96,6 +96,13 @@ press and release one without using it to modify anything else:
   ALT) - which button's tap calls `remoteControls.selectNextPage()`. If
   set to the same button as Expanded Device View, that button's tap always
   triggers Expanded Device View, never the macro cycle.
+- **Close Other Plugin Windows** (on/off, default OFF) - when on, opening
+  a device's plugin window (via PLUG-INS, F1-F8 direct select, or the
+  Expanded Device View action) first closes every *other* device's window
+  on the current track's chain, for an "only one plugin window open at a
+  time" workflow. Scoped to the current track's 8-slot device chain
+  (`cursorDeviceBank`) - there's no Controller API way to enumerate open
+  plugin windows project-wide, so windows on other tracks aren't affected.
 
 ### LCD / meters / LEDs
 
