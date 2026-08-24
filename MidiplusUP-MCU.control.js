@@ -780,26 +780,6 @@ function init() {
    application = host.createApplication();
    arranger = host.createArranger();
 
-   // TEMPORARY DIAGNOSTIC: dumps every action Bitwig exposes via
-   // getActionCategories()/getActions() - id, name, and category - to the
-   // console once at startup, grouped by category. One-shot, requested to
-   // build a saved local reference so future "bind X to a button" requests
-   // can check a real list instead of guessing an action id (like
-   // Consolidate needed a guess-test-fix round trip for). Remove this
-   // block once the console output has been captured.
-   var allCategories = application.getActionCategories();
-   var totalActionCount = 0;
-   for (var catIdx = 0; catIdx < allCategories.length; catIdx++) {
-      var category = allCategories[catIdx];
-      var categoryActions = category.getActions();
-      println("=== Category: " + category.getName() + " (" + categoryActions.length + " actions) ===");
-      for (var catActionIdx = 0; catActionIdx < categoryActions.length; catActionIdx++) {
-         println("  \"" + categoryActions[catActionIdx].getId() + "\" / \"" + categoryActions[catActionIdx].getName() + "\"");
-         totalActionCount++;
-      }
-   }
-   println("=== Total: " + totalActionCount + " actions across " + allCategories.length + " categories ===");
-
    // Read on-demand (not observed) by END, CTRL+PUNCH IN/OUT, and the jog
    // wheel's bar-jump/loop-shift handling, so they need markInterested() or
    // .get() throws.
