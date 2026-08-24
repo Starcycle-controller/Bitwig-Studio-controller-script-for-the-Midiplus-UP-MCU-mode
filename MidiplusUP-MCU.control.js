@@ -458,12 +458,6 @@ var positionFormatter = null;
 var lastSegmentDisplayText = null;
 var segmentDisplayBuffer = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1];
 
-// "Flash Bar Counter On All Channels" Diagnostics setting (see init()) -
-// SHOW_BAR_COUNTER_ON_CHANNELS gates it, lastAnnouncedBar de-dupes so the
-// popup only fires once per actual bar change, not every flush().
-var SHOW_BAR_COUNTER_ON_CHANNELS = false;
-var lastAnnouncedBar = null;
-
 // Per-channel LCD/strip color, matching each track's own Bitwig color -
 // EXPERIMENTAL, not confirmed working on this hardware yet. Sent as one
 // SysEx covering all 8 channels (real MCU protocol per Mossgraber's
@@ -743,25 +737,6 @@ function init() {
    meterTestModeSetting.markInterested();
    meterTestModeSetting.addValueObserver(function (value) {
       midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, 7, meterTestModeValues[value], 0xF7]);
-   });
-
-   // The segment display (see updateSegmentDisplay()) is a single global
-   // 10-digit strip, not addressable per-channel - there's no way to
-   // literally duplicate it onto the other 7 channel LCDs, and both rows
-   // of every channel LCD are already fully used (track name, volume/
-   // pan), so there's no free space to add a persistent bar counter
-   // there without displacing something. This is the compromise: reuses
-   // the existing showModePopup() mechanism (same one SOLO/MUTE/mode
-   // changes use) to briefly flash the current bar number across all 8
-   // channels' bottom row whenever it changes, then revert - visible,
-   // but not permanently stealing the space. Off by default since it
-   // would otherwise compete with those other popups for the same
-   // per-channel LCD real estate on every single bar.
-   var showBarCounterSetting = host.getPreferences().getBooleanSetting(
-      "Flash Bar Counter On All Channels", "Diagnostics", false);
-   showBarCounterSetting.markInterested();
-   showBarCounterSetting.addValueObserver(function (value) {
-      SHOW_BAR_COUNTER_ON_CHANNELS = value;
    });
 
    // Track each bank's per-track TOOL_DEVICE_NAME device, if any (see isToolVolumeMode).
@@ -2275,19 +2250,6 @@ function updateSegmentDisplay() {
       }
       i++;
       addDot = false;
-   }
-
-   // Optional: flash the bar number across all 8 channel LCDs too (see
-   // the "Flash Bar Counter On All Channels" Diagnostics setting) - reuses
-   // the first 3 characters of `text` (the Bars portion of the same
-   // Bars:Beats:Subdivision:Ticks string above) rather than recomputing
-   // it separately, so the two displays can't disagree.
-   if (SHOW_BAR_COUNTER_ON_CHANNELS) {
-      var barText = text.substring(0, 3);
-      if (barText !== lastAnnouncedBar) {
-         lastAnnouncedBar = barText;
-         showModePopup("Bar " + parseInt(barText, 10));
-      }
    }
 }
 

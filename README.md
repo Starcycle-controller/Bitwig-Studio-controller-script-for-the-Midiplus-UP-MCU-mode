@@ -145,14 +145,6 @@ Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
   byte values the way genuine Mackie hardware does; the LCD meter bar
   seems to always be driven directly by the incoming Channel Pressure
   level data regardless of the mode SysEx. Conclusion below.
-- **Flash Bar Counter On All Channels** (on/off, default OFF) - the
-  segment display's bar number can't be shown persistently on the 8
-  channel LCDs too (see the segment display writeup below for why), so
-  when on, this briefly flashes it across all 8 channels' bottom row
-  (reusing the same `showModePopup()` mechanism as SOLO/MUTE/mode-change
-  popups) every time the bar number changes, then reverts. Off by default
-  since at typical tempos this would otherwise compete with those other
-  popups on every single bar.
 
 ### LCD / meters / LEDs
 
@@ -206,14 +198,6 @@ consistent bars:beats numbers, updating live while playing. The "blue"
 from the original question turned out to be this display's fixed
 background/backlight color, sitting behind white digits - not something
 the data content controls, and not something to chase further.
-
-This is a single, global 10-digit strip, not addressable per-channel -
-there's no protocol mechanism to "duplicate" it onto the 8 channel LCDs,
-and both of those LCDs' rows are already fully used (track name, volume/
-pan) with no free space to add a persistent counter without displacing
-something. The closest available compromise is a brief flash instead of
-a persistent readout - see the **Flash Bar Counter On All Channels**
-Diagnostics setting above.
 
 **Assignment row (notes 40/41/42/44/45 - TRACK/IO, SEND, PAN, PLUG-INS,
 RETURNS) LEDs are hardware-managed and inconsistent about clearing each
