@@ -145,14 +145,18 @@ method (`application.duplicate()`, `.cut()`, `.remove()` for Delete,
 etc.) - guaranteed correct, not guessed, straight from the Controller API
 Javadoc. **`Consolidate` has no dedicated method anywhere in the
 Controller API** (checked `Application`/`Track`/`Clip`/`Arranger` - none
-of them have it), so it goes through the generic
-`application.getAction("Consolidate").invoke()` mechanism instead, with
-`"Consolidate"` as a best-guess action ID - **not yet confirmed on
-hardware**. If pressing F2 doesn't do anything, check the console for a
-`Consolidate... returned nothing` warning - the fix is finding the real
-ID by temporarily logging `application.getActions().map(a => a.getId() +
-" / " + a.getName())` once and searching the output for the real entry
-(see `invokeFKeyFunction()` in the code).
+of them have it), so it goes through `safeInvokeAction(CONSOLIDATE_ACTION_ID,
+"Consolidate")` (the same generic `application.getAction(id).invoke()`
+helper DRAW's tool-cycling uses for its own real, confirmed action ids -
+see `ARRANGER_TOOL_ACTIONS`) with `CONSOLIDATE_ACTION_ID =
+"consolidate_time_selection"` as a best guess, in the same snake_case
+style as DRAW's confirmed ids - **not yet confirmed on hardware**. A
+diagnostic added to `init()` logs every real action whose id or name
+contains "consolidat" to the console at startup specifically to nail this
+down - check there after reloading; if the guessed ID is wrong,
+`safeInvokeAction` will show a `Consolidate (unavailable)` popup and log
+`Action not found: consolidate_time_selection`, and the console dump
+should have the real one to swap in.
 
 The request was for each dropdown to remove an already-picked function
 from the other 7 (so you can't double-assign one), but **Bitwig's
@@ -378,7 +382,7 @@ was still in Live mode, is confirmed still correct.
 | 78 | (Live label: DETAIL) | Toggle note/automation editor panel |
 | 79 | (Live label: REDO) | `application.redo()` |
 | 80 | (Live label: B.T.A.) | Toggle `MODE_SCENE` |
-| 81 | (Live label: DRAW) | Cycle the 6 arranger edit tools |
+| 81 | (Live label: DRAW) | Cycle the 6 arranger edit tools; SHIFT+DRAW toggles Arranger Automation Write |
 | 82 | (Live label: MARKER) | Add cue marker at playhead |
 | 83 | (Live label: FOLLOW) | Toggle playback follow (SHIFT = toggle metronome) |
 | 84 | - | Jump to previous cue marker |

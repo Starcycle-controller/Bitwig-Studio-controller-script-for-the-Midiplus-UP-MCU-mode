@@ -156,8 +156,21 @@ var FKEY_FUNCTION_NAMES = [
    "Rename", "Select All", "Select None", "Undo", "Redo"
 ];
 
+// Best-guess action ID for Consolidate (see CONSOLIDATE_ACTION_ID_CANDIDATES
+// diagnostic dump in init(), which logs every real action whose id/name
+// contains "consolidat" once at startup - check the console and correct
+// this if it's wrong). Guessed in the same snake_case style DRAW's real,
+// confirmed action ids use (e.g. "select_object_selection_tool" - see
+// ARRANGER_TOOL_ACTIONS above), not the capitalized-word style guessed
+// before that pattern was confirmed.
+var CONSOLIDATE_ACTION_ID = "consolidate_time_selection";
+
 function invokeFKeyFunction(name) {
    if (name === "None") {
+      return;
+   }
+   if (name === "Consolidate") {
+      safeInvokeAction(CONSOLIDATE_ACTION_ID, "Consolidate");
       return;
    }
    host.showPopupNotification(name);
@@ -172,17 +185,6 @@ function invokeFKeyFunction(name) {
       case "Select None": application.selectNone(); break;
       case "Undo": application.undo(); break;
       case "Redo": application.redo(); break;
-      case "Consolidate":
-         var consolidateAction = application.getAction("Consolidate");
-         if (consolidateAction) {
-            consolidateAction.invoke();
-         } else {
-            println("F-key function 'Consolidate': application.getAction(\"Consolidate\") " +
-               "returned nothing - the action ID guess is wrong. Needs the real ID, found by " +
-               "logging application.getActions().map(a => a.getId()+' / '+a.getName()) once " +
-               "and searching for the real Consolidate entry.");
-         }
-         break;
       default:
          break;
    }
@@ -780,6 +782,22 @@ function init() {
    transport = host.createTransport();
    application = host.createApplication();
    arranger = host.createArranger();
+
+   // DIAGNOSTIC: logs every real Bitwig action whose id or name contains
+   // "consolidat" - run once at startup to find/confirm the real action id
+   // for CONSOLIDATE_ACTION_ID above (currently a best guess). Check the
+   // console after reloading the script; once confirmed, this can be
+   // removed. Same technique already used (and since removed) to find
+   // ARRANGER_TOOL_ACTIONS' real ids for the DRAW button.
+   var allActions = application.getActions();
+   for (var actionIdx = 0; actionIdx < allActions.length; actionIdx++) {
+      var actionEntry = allActions[actionIdx];
+      var actionId = actionEntry.getId();
+      var actionName = actionEntry.getName();
+      if (actionId.toLowerCase().indexOf("consolidat") >= 0 || actionName.toLowerCase().indexOf("consolidat") >= 0) {
+         println("Consolidate action candidate - id: \"" + actionId + "\", name: \"" + actionName + "\"");
+      }
+   }
 
    // Read on-demand (not observed) by END, CTRL+PUNCH IN/OUT, and the jog
    // wheel's bar-jump/loop-shift handling, so they need markInterested() or
@@ -1938,10 +1956,22 @@ function handleButtonPressInner(note) {
       case 81: // DRAW -> cycle through the 6 arranger edit tools, one per
                // press (Pointer -> Time Selection -> Pencil -> Spray Can ->
                // Eraser -> Knife -> back to Pointer) - see
-               // ARRANGER_TOOL_ACTIONS above.
-         var nextTool = ARRANGER_TOOL_ACTIONS[arrangerToolCycleIndex];
-         safeInvokeAction(nextTool.id, nextTool.name);
-         arrangerToolCycleIndex = (arrangerToolCycleIndex + 1) % ARRANGER_TOOL_ACTIONS.length;
+               // ARRANGER_TOOL_ACTIONS above. SHIFT+DRAW toggles Arranger
+               // Automation Write instead (transport.
+               // isArrangerAutomationWriteEnabled() - a real
+               // SettableBooleanValue, same call this hardware used for
+               // Automation Write when it was briefly bound to SMPTE/BEATS
+               // earlier this session, before that was repurposed as a
+               // pure hardware-local mode key).
+         if (isShiftPressed) {
+            shiftUsedForCombo = true;
+            transport.isArrangerAutomationWriteEnabled().toggle();
+            host.showPopupNotification("Toggle Automation Write");
+         } else {
+            var nextTool = ARRANGER_TOOL_ACTIONS[arrangerToolCycleIndex];
+            safeInvokeAction(nextTool.id, nextTool.name);
+            arrangerToolCycleIndex = (arrangerToolCycleIndex + 1) % ARRANGER_TOOL_ACTIONS.length;
+         }
          break;
 
       case 82: // MARKER -> Add Cue Marker at Playhead
