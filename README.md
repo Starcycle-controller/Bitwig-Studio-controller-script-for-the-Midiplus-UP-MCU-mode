@@ -425,15 +425,31 @@ was still in Live mode, is confirmed still correct.
 ### Jog wheel modifier combos
 
 In priority order (each returns before the next is checked, so only one
-applies per turn): `MODE_SCENE` active (move the scene cursor) > CTRL
-(device-mode: step devices; otherwise: nudge tempo, fine with ALT) >
-**SHIFT+ALT** (nudge the selected arranger item, see below) > **ALT
-alone** (adjust the last-clicked GUI parameter, see below) > PLUG-INS
-held (step devices) > BANK held (page remote-control pages) > OPTION
-alone (halve/double loop length) > SHIFT alone (shift loop by a bar) >
-SCRUB toggle or wheel press (jump by a bar, or select-at-cursor with ALT
-held, see below) > default (scrub, one quarter note per message, no
-longer ALT-modified - see below).
+applies per turn): `MODE_SCENE` active (move the scene cursor) > **CTRL**
+(device-mode: step devices; otherwise: select next/previous arranger
+clip/item, see below) > **SHIFT+ALT** (nudge the selected arranger item,
+see below) > **ALT alone** (adjust the last-clicked GUI parameter, see
+below) > PLUG-INS held (step devices) > BANK held (page remote-control
+pages) > OPTION alone (halve/double loop length) > SHIFT alone (shift
+loop by a bar) > SCRUB toggle or wheel press (jump by a bar, or
+select-at-cursor with ALT held, see below) > default (scrub, one quarter
+note per message, no longer ALT-modified - see below).
+
+**CTRL + Jog Wheel** (outside `MODE_DEVICE`, where it still steps devices
+as before) now selects the next/previous arranger clip/item instead of
+its previous job, nudging the project tempo - via Bitwig's real "Select
+Next Item"/"Select Previous Item" actions (ids `"Select next item"`/
+`"Select previous item"`, confirmed from `bitwig-actions-reference.txt`),
+throttled once every `PLUGIN_DEVICE_STEP_MESSAGES` (4) wheel messages,
+same as device-stepping. Repurposed per request - **tempo nudging no
+longer has a jog-wheel binding** (CTRL+ALT no longer means "fine tempo
+nudge" either, since there's no longer a continuous nudge to make fine -
+CTRL+ALT+wheel now just selects the next/previous item same as CTRL
+alone). Not yet tested on hardware. Note this is a different thing from
+CHANNEL PREV/NEXT (notes 48/49) + CTRL, which still independently nudges
+tempo when this hardware's own CHANNEL wheel-assignment mode is active
+(see case 48/49) - untouched, since that's a separate firmware-level
+input path, not the plain jog wheel.
 
 **ALT + Jog Wheel** adjusts whatever parameter was last clicked in
 Bitwig's own GUI - click any knob/slider/fader once in Bitwig

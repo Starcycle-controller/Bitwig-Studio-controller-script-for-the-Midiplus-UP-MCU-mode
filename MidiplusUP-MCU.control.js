@@ -428,6 +428,12 @@ var isPluginHeld = false;
 var pluginDeviceStepAccumulator = 0;
 var PLUGIN_DEVICE_STEP_MESSAGES = 4;
 
+// CTRL + Jog Wheel (outside MODE_DEVICE) - selects the next/previous
+// arranger clip/item, throttled the same way as device-stepping above
+// (reuses PLUGIN_DEVICE_STEP_MESSAGES rather than a separate constant,
+// since it's the same "step through a list" granularity).
+var clipSelectStepAccumulator = 0;
+
 // MODE_SCENE (BTA, note 80): which of the 8 scenes in sceneBank's window is
 // currently selected - the jog wheel moves this, note 87 (wheel push)
 // launches it. Same wheel-message debounce pattern as the combos above.
@@ -1271,9 +1277,13 @@ function onMidi(status, data1, data2) {
 
    // 3. Jog / Scroll Wheel (CC 60 on Channel 1: 0xB0)
    // Default: smooth, un-quantized scrub through the arranger timeline.
-   // CTRL held = nudge tempo instead; SHIFT held = shift the arranger loop
-   // by whole bars; SCRUB toggle (note 101) = jump the playhead by whole
-   // bars instead of scrubbing smoothly; ALT halves the default scrub step.
+   // CTRL held = select next/previous arranger clip/item instead (device
+   // stepping in MODE_DEVICE); SHIFT+ALT = nudge the selected item left/
+   // right; ALT alone = adjust the last-clicked GUI parameter; SHIFT held
+   // = shift the arranger loop by whole bars; SCRUB toggle (note 101) =
+   // jump the playhead by whole bars instead of scrubbing smoothly. See
+   // the full priority-ordered writeup in README.md's "Jog wheel modifier
+   // combos" section.
    if (msgType === 0xB0 && data1 === 60) {
       // Same sign-magnitude fix as the encoders above
       var backwards = data2 >= 64;
@@ -1301,9 +1311,8 @@ function onMidi(status, data1, data2) {
       if (isControlPressed) {
          // Using CTRL to modify the wheel means a long-press expanded-view
          // toggle shouldn't also fire when it's released - see the CTRL
-         // block above. Checked before the plain ALT branch below so
-         // CTRL+ALT (fine tempo nudge) still works - CTRL always takes
-         // priority over ALT here, same as before.
+         // block above. Checked before the plain ALT/SHIFT+ALT branches
+         // below, so CTRL always takes priority over ALT here.
          ctrlUsedForCombo = true;
 
          if (currentMode === MODE_DEVICE) {
@@ -1323,13 +1332,20 @@ function onMidi(status, data1, data2) {
             return;
          }
 
-         // CTRL + Jog Wheel (outside Device mode): Nudge Tempo (fine with
-         // ALT held)
-         if (isAltPressed) {
-            altUsedForCombo = true;
+         // CTRL + Jog Wheel (outside Device mode): select the next/
+         // previous arranger clip/item, via Bitwig's real "Select Next
+         // Item"/"Select Previous Item" actions (ids "Select next item"/
+         // "Select previous item", confirmed from
+         // bitwig-actions-reference.txt) - once every
+         // PLUGIN_DEVICE_STEP_MESSAGES messages, same throttling as the
+         // device-step case above. Replaces the previous tempo-nudge
+         // behavior per request; use SHIFT+ALT + Jog Wheel Press/Turn (see
+         // below) to select and then move a clip instead.
+         clipSelectStepAccumulator++;
+         if (clipSelectStepAccumulator >= PLUGIN_DEVICE_STEP_MESSAGES) {
+            clipSelectStepAccumulator = 0;
+            safeInvokeAction(backwards ? "Select previous item" : "Select next item", null);
          }
-         var tempoStep = isAltPressed ? 0.1 : 1.0;
-         transport.tempo().incRaw(rawStep * tempoStep);
          return;
       }
 
