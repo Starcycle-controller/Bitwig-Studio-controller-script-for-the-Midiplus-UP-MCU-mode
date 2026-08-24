@@ -425,7 +425,8 @@ was still in Live mode, is confirmed still correct.
 ### Jog wheel modifier combos
 
 In priority order (each returns before the next is checked, so only one
-applies per turn): `MODE_SCENE` active (move the scene cursor) > **CTRL**
+applies per turn): `MODE_SCENE` active (move the scene cursor) >
+**SHIFT+CTRL** (jump to first/last item, see below) > **CTRL alone**
 (device-mode: step devices; otherwise: select next/previous arranger
 clip/item, see below) > **SHIFT+ALT** (nudge the selected arranger item,
 see below) > **ALT alone** (adjust the last-clicked GUI parameter, see
@@ -435,6 +436,16 @@ loop by a bar) > SCRUB toggle or wheel press (jump by a bar, or
 select-at-cursor with ALT or SHIFT+CTRL held, see below) > default
 (scrub, one quarter note per message, no longer ALT-modified - see
 below).
+
+**SHIFT+CTRL + Jog Wheel** (turn, as opposed to SHIFT+CTRL + Jog Wheel
+*Press* below - same two modifiers, different gesture, different action)
+jumps straight to the first item (turn left) or last item (turn right)
+via Bitwig's real `"Select first item"`/`"Select last item"` actions -
+same family as CTRL alone's `"Select next item"`/`"Select previous
+item"` below, but idempotent (turning further past the first/last is a
+harmless no-op), so no throttling accumulator needed. Checked before the
+plain-CTRL branch so it isn't swallowed by it. Not yet tested on
+hardware.
 
 **CTRL + Jog Wheel** (outside `MODE_DEVICE`, where it still steps devices
 as before) now selects the next/previous arranger clip/item instead of
@@ -446,8 +457,13 @@ same as device-stepping. Repurposed per request - **tempo nudging no
 longer has a jog-wheel binding** (CTRL+ALT no longer means "fine tempo
 nudge" either, since there's no longer a continuous nudge to make fine -
 CTRL+ALT+wheel now just selects the next/previous item same as CTRL
-alone). Not yet tested on hardware. Note this is a different thing from
-CHANNEL PREV/NEXT (notes 48/49) + CTRL, which still independently nudges
+alone). **Confirmed working on hardware** - steps between arranger clips
+when one is selected; falls back to stepping between tracks (above/
+below) when nothing's selected, which is real Bitwig behavior from the
+same action, not something this script special-cases, and confirmed to
+be a liked side effect ("gives freedom to move around the arrangement").
+Note this is a different thing from CHANNEL PREV/NEXT (notes 48/49) + CTRL,
+which still independently nudges
 tempo when this hardware's own CHANNEL wheel-assignment mode is active
 (see case 48/49) - untouched, since that's a separate firmware-level
 input path, not the plain jog wheel.
@@ -507,17 +523,16 @@ is feedback enough. Checked before the plain-ALT branch so it isn't
 swallowed by it - ALT alone (parameter adjust) still fires normally when
 SHIFT isn't also held. Not yet tested on hardware.
 
-**SHIFT+CTRL + Jog Wheel Press** selects whichever clip/item is closest
-to the playhead - a one-shot "jump to it" gesture (unlike CTRL alone's
-step-through-sequentially turn combo above), so it's bound to the press,
-not the turn. Reuses the same `select_item_at_cursor` action as ALT +
-Jog Wheel Press above. **Unverified which "cursor" the action name
-means** - the arranger edit cursor/playhead position (what's wanted
-here) or a generic UI keyboard-focus position (what it's used for above,
-activating whatever element currently has focus) are both plausible
-readings of the bare action name; needs a hardware test to know which -
-if it just repeats the ALT-press behavior instead of actually jumping
-to the playhead, that's the answer. Not yet tested on hardware.
+**SHIFT+CTRL + Jog Wheel Press** was tried as a "select whichever clip is
+closest to the playhead" gesture, reusing the same `select_item_at_cursor`
+action as ALT + Jog Wheel Press above - **confirmed on hardware NOT to do
+that**. So "cursor" in that action's name is the generic UI keyboard-focus
+reading, not the arranger edit cursor/playhead - it just repeats the
+ALT-press behavior. Left bound for now (harmless, if redundant with
+ALT+press) since nothing better has replaced it yet; the SHIFT+CTRL
+*turn* combo above (jump to first/last item) covers a related but
+different need instead. If jump-to-playhead-clip is still wanted, it
+needs a different real action or approach - not yet found one.
 
 ### Jog-wheel "mode" buttons (CURSOR / SCROLL / ZOOM / MASTER / MARKER /
 NUDGE / BANK / CHANNEL, per the manual's "Multi-Purpose Jog Wheel Section")

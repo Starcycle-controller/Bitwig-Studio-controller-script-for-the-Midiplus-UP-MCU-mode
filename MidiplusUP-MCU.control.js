@@ -1308,6 +1308,22 @@ function onMidi(status, data1, data2) {
          return;
       }
 
+      if (isControlPressed && isShiftPressed) {
+         // SHIFT+CTRL + Jog Wheel: jump straight to the first/last item
+         // (turn left/right) via Bitwig's real "Select first item"/
+         // "Select last item" actions - same family as plain CTRL's
+         // "Select next/previous item" below, but idempotent (turning
+         // further past the first/last is a harmless no-op), so unlike
+         // the step-through-sequentially actions below this doesn't need
+         // a throttling accumulator. Checked before the plain CTRL branch
+         // so it isn't swallowed by it - CTRL alone (step next/previous)
+         // still fires normally when SHIFT isn't also held.
+         ctrlUsedForCombo = true;
+         shiftUsedForCombo = true;
+         safeInvokeAction(backwards ? "Select first item" : "Select last item", null);
+         return;
+      }
+
       if (isControlPressed) {
          // Using CTRL to modify the wheel means a long-press expanded-view
          // toggle shouldn't also fire when it's released - see the CTRL
