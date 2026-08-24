@@ -1413,7 +1413,12 @@ function handleButtonPressInner(note) {
 
    // MCU / Ableton Live Overlay Assignment & Navigation Buttons
    switch (note) {
-      case 40: // TRACK / I/O -> Toggle Track Mixer / Track Inspector I/O Panel
+      case 40: // TRACK / I/O -> Toggle Track Mixer / Track Inspector I/O Panel.
+               // No flashLed() here (unlike before) - note 40 is now a
+               // persistent state indicator (see updateModeLEDs()), not a
+               // one-off tactile flash; flashing it here would incorrectly
+               // turn it off even while legitimately still the active
+               // Assignment-row LED.
          if (currentMode === MODE_MIXER || isShiftPressed) {
             if (isShiftPressed) { shiftUsedForCombo = true; }
             safeCall(application, "toggleInspector", "Toggle Track Inspector / I/O Panel");
@@ -1425,7 +1430,6 @@ function handleButtonPressInner(note) {
             rebindFaders();
             showModePopup("MIXER");
          }
-         flashLed(40, 150);
          break;
 
       case 41: // SEND -> 3-State Send Mode: 1st Press (Sends 1-8) -> 2nd Press (Sends 9-16) -> 3rd Press (Exit Send Mode)
@@ -1450,10 +1454,6 @@ function handleButtonPressInner(note) {
             refreshDisplayText();
             rebindFaders();
             showModePopup("MIXER");
-            // Same Assignment-row mutual-exclusion LED quirk as PLUG-INS
-            // (case 44) - our own note-off for 41 here is likely ignored
-            // too, so force the hardware to clear it the same way.
-            flashLed(40, 60);
          }
          break;
 
@@ -1475,12 +1475,6 @@ function handleButtonPressInner(note) {
          updateModeLEDs();
          refreshDisplayText();
          rebindFaders();
-         if (!isToolVolumeMode) {
-            // Same Assignment-row mutual-exclusion LED quirk as PLUG-INS/
-            // SEND above - turning PAN's own LED off via our note-off is
-            // likely ignored too.
-            flashLed(40, 60);
-         }
          break;
 
       case 43: // FLIP -> Swap Faders and Encoders. Moved here from note 50
@@ -1537,14 +1531,6 @@ function handleButtonPressInner(note) {
             refreshDisplayText();
             rebindFaders();
             showModePopup("MIXER");
-            // The hardware manages the Assignment row (40/41/42/44) LEDs
-            // as a mutually-exclusive group on its own - confirmed via
-            // testing that our own note-off for 44 here is ignored, but
-            // pressing SEND (lighting note 41) does clear it. Force the
-            // same effect by briefly flashing a sibling (TRACK/IO, note
-            // 40 - same one case 40 itself already flashes on every
-            // press) instead of relying on our own note-off working.
-            flashLed(40, 60);
          }
          break;
 
@@ -1919,13 +1905,27 @@ function handleButtonPressInner(note) {
    }
 }
 
-// Update Mode Assignment LEDs
+// Update Mode Assignment LEDs. The Assignment row (TRACK/IO=40, SEND=41,
+// PAN=42, PLUG-INS=44) is hardware-managed as a mutually-exclusive group -
+// confirmed our own note-off is ignored, and lighting one is what clears
+// whichever sibling was lit before (same as the documented BANK/CHANNEL
+// LED quirk). There is no achievable "all off" state on this hardware -
+// this mirrors genuine Mackie Control protocol, where the assignment
+// indicator always shows exactly one active function. So rather than
+// trying to turn any of them off, always send exactly one "on" and trust
+// the hardware to clear the rest - TRACK/IO (40) is the persistent
+// default/"Mixer, nothing special assigned" indicator.
 function updateModeLEDs() {
-   // Note 40 (TRACK/IO) isn't handled here - see flashLed() in case 40.
-   midiOut.sendMidi(0x90, 41, currentMode === MODE_SENDS ? 127 : 0); // SEND LED
-   midiOut.sendMidi(0x90, 42, isToolVolumeMode ? 127 : 0); // PAN LED - lit while Tool Gain/Pan mode is active
-   midiOut.sendMidi(0x90, 44, currentMode === MODE_DEVICE ? 127 : 0); // PLUG-INS LED
-   midiOut.sendMidi(0x90, 80, currentMode === MODE_SCENE ? 127 : 0); // B.T.A. LED
+   var assignmentNote = 40;
+   if (currentMode === MODE_SENDS) {
+      assignmentNote = 41;
+   } else if (isToolVolumeMode) {
+      assignmentNote = 42;
+   } else if (currentMode === MODE_DEVICE) {
+      assignmentNote = 44;
+   }
+   midiOut.sendMidi(0x90, assignmentNote, 127);
+   midiOut.sendMidi(0x90, 80, currentMode === MODE_SCENE ? 127 : 0); // B.T.A. LED - not confirmed part of the same matrix
 }
 
 // Fire-and-forget LED flash for actions with no real on/off state to
