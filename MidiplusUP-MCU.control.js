@@ -92,7 +92,7 @@ var CTRL_LONG_PRESS_MS = 500;
 // default quarter-note scrub (same jump-target math as toggling SCRUB).
 var isWheelPressed = false;
 
-// PLUGIN Button (Note 43): a press still reaches handleButtonPress() for
+// PLUG-INS Button (Note 44): a press still reaches handleButtonPress() for
 // its own action (jump to the first device on the selected track and open
 // its panel), but held state is also tracked here so the jog wheel can
 // step through devices while it's held - see isPluginHeld below.
@@ -988,11 +988,11 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // PLUGIN Button (Note 43) - track hold state for the jog wheel device
-      // navigation combo, but (unlike the pure modifiers above) only
-      // `return` on release: a press still needs to fall through to
-      // handleButtonPress() below for its own action.
-      if (data1 === 43) {
+      // PLUG-INS Button (Note 44 - see case 44 below) - track hold state
+      // for the jog wheel device navigation combo, but (unlike the pure
+      // modifiers above) only `return` on release: a press still needs to
+      // fall through to handleButtonPress() below for its own action.
+      if (data1 === 44) {
          isPluginHeld = isPressed;
          if (!isPressed) {
             pluginDeviceStepAccumulator = 0;
@@ -1158,13 +1158,20 @@ function handleButtonPressInner(note) {
          rebindFaders();
          break;
 
-      case 43: // PLUG-IN / DEVICE -> toggle into Device mode, jumping to the
-               // first device on the selected track and opening its panel
-               // (does NOT touch the expanded device view - that's CTRL
+      // Note 43 has no label on the Ableton Live overlay (confirmed via
+      // console testing - the printed PLUG-INS button actually sends note
+      // 44, see below) and the manual documents unlabeled buttons as "not
+      // available in Live" - deliberately left unbound.
+
+      case 44: // PLUG-INS -> toggle into Device mode, jumping to the first
+               // device on the selected track and opening its panel (does
+               // NOT touch the expanded device view - that's CTRL
                // long-press, see the CTRL block in onMidi). Pressing again
                // while already in Device mode exits back to Mixer mode.
                // Hold + jog wheel steps through devices instead (see
-               // isPluginHeld).
+               // isPluginHeld). Moved here from note 43 after confirming
+               // via console testing that this hardware's Live overlay
+               // prints "PLUG-INS" over note 44, not 43.
          if (currentMode !== MODE_DEVICE) {
             currentMode = MODE_DEVICE;
             cursorDevice.selectFirst();
@@ -1177,18 +1184,6 @@ function handleButtonPressInner(note) {
          updateModeLEDs();
          refreshDisplayText();
          rebindFaders();
-         break;
-
-      case 44: // PAGE PREV / EQ -> Focus EQ / Prev Parameter Page
-         if (currentMode === MODE_DEVICE) {
-            remoteControls.selectPreviousPage(true);
-            host.showPopupNotification("Device Page Previous");
-         } else {
-            // No Bitwig API equivalent to "jump to the first EQ device on
-            // the track" (cursorDevice.selectFirstInKeyTrack() doesn't
-            // exist on this API version - confirmed via console error).
-            host.showPopupNotification("EQ (no Bitwig equivalent)");
-         }
          break;
 
       case 45: // PAGE NEXT / INST -> Focus Instrument / Next Parameter Page

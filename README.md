@@ -93,12 +93,12 @@ was still in Live mode, is confirmed still correct.
 | 16-23 | Mute 1-8 | `track.mute().toggle()` |
 | 24-31 | Select 1-8 (double-press folds/unfolds a group track) | `selectInMixer()` / `isGroupExpanded().toggle()` |
 | 32-39 | Encoder push-click | Center pan (Mixer) / reset send (Sends) / reset macro (Device) |
-| 40 | TRACK / I/O | Toggle Track Inspector, or switch to Mixer mode |
+| 40 | I/O (TRACK on the bare Logic-label printing) | Toggle Track Inspector, or switch to Mixer mode |
 | 41 | SEND | 3-state Sends mode toggle |
 | 42 | PAN | Toggle `TRLVL` tool-device Gain/Pan control |
-| 43 | PLUG-IN | Toggle Device mode (first device, opens panel) |
-| 44 | EQ | No Bitwig equivalent - shows a popup only (was crashing before this session's fix) |
-| 45 | INST | Select first track instrument / next device page |
+| 43 | No Live-overlay label ("not available in Live" per the manual) | Unbound |
+| 44 | PLUG-INS | Toggle Device mode (first device, opens panel) - confirmed via console testing that the Live overlay's "PLUG-INS" sticker is over this note, not 43 |
+| 45 | No Live-overlay label (bare-label printing: INST) | Select first track instrument / next device page - unconfirmed whether this is reachable at all under the Live overlay |
 | 46 | BANK PREV | Page track bank back (SHIFT = jump to first) |
 | 47 | BANK NEXT | Page track bank forward (SHIFT = jump to last) |
 | 48 | CHANNEL PREV | Nudge one channel back (CTRL = prev device / tempo down) |
