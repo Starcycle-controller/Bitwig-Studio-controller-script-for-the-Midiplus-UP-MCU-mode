@@ -1,9 +1,5 @@
 # Midiplus UP - Bitwig Controller Script
 
-Custom Bitwig Studio controller extension for the Midiplus UP (MCU-protocol
-DAW controller: 8 motorized touch-sensitive faders, 8 clickable rotary
-encoders, RGB-backlit buttons, jog wheel).
-
 **File:** `MidiplusUP-MCU.control.js`
 **Hardware mode:** standard **MCU mode** (see the unit's manual, section 3.3
 and section 8) - not one of the Logic/Cubase/Live "customized" modes. The
