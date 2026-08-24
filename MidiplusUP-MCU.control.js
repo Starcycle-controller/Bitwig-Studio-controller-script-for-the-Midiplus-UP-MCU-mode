@@ -204,7 +204,10 @@ var FKEY_FUNCTIONS = {
    "Import Wavetables...": { actionId: "import_wavetables" },
    "Import Impulses...": { actionId: "import_impulses" },
    // Selection category.
-   "Select item at cursor": { actionId: "select_item_at_cursor" }
+   "Select item at cursor": { actionId: "select_item_at_cursor" },
+   // General category - a keyboard-focus click (activates whatever UI
+   // element currently has keyboard focus), not a mouse-position click.
+   "Click button": { actionId: "Click button" }
 };
 
 // Explicit ordered list (rather than Object.keys(FKEY_FUNCTIONS), whose

@@ -140,12 +140,15 @@ toggled by SMPTE/BEATS - see note 53; the orange/default state, 54-61,
 still directly selects device 1-8 and isn't affected by this) is
 configurable per-key via 8 dropdowns, **F1 Function (Green State)**
 through **F8 Function (Green State)**, each offering the same list -
-`None`, plus every key of `FKEY_FUNCTIONS` in the code (currently 37
+`None`, plus every key of `FKEY_FUNCTIONS` in the code (currently 38
 entries: `Duplicate`/`Cut`/`Copy`/`Paste`/`Delete`/`Rename`/`Select All`/
 `Select None`/`Undo`/`Redo`/`Consolidate`, all 22 of Bitwig's own
 **Editing** category actions, all 11 of its **File** category actions,
-and `Select item at cursor` from its **Selection** category - see
-`bitwig-actions-reference.txt` for the full names). Defaults: F1 =
+`Select item at cursor` from its **Selection** category, and
+`Click button` from its **General** category (a keyboard-focus click -
+activates whatever UI element currently has focus, not a mouse-position
+click) - see `bitwig-actions-reference.txt` for the full names).
+Defaults: F1 =
 `Duplicate`, F2 = `Consolidate`, F3-F8 = `None`.
 
 Every press shows the action name **twice**: as a Bitwig on-screen popup
