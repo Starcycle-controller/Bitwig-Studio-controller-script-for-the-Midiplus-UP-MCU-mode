@@ -416,14 +416,13 @@ function init() {
    setupChannelStripObservers(trackBank, mainLedState, false);
    setupChannelStripObservers(effectTrackBank, returnsLedState, true);
 
-   // TEMPORARILY sending the DISABLE form (mode=0) instead of the enable
-   // (mode=3) sent in earlier sessions - a prior session's enable may have
-   // left the hardware toggled into meter mode persistently (surviving a
-   // power cycle), and just not re-sending "enable" this session wouldn't
-   // undo that. Explicitly reverting it to test whether that's what's
-   // blocking pitch-bend fader updates. Re-enable properly once diagnosed.
+   // Enable metering (mode=3: LED + LCD) for each of the 8 channel strips -
+   // real MCU protocol per Ableton's own driver (ChannelStrip.py). The
+   // fader-motor bug this was once suspected of causing (and briefly
+   // disabled to rule out) turned out to be unrelated - see
+   // updateFaderOutputs() below - so this is back to its intended state.
    for (var meterStripIdx = 0; meterStripIdx < 8; meterStripIdx++) {
-      midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, meterStripIdx, 0, 0xF7]);
+      midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, meterStripIdx, 3, 0xF7]);
    }
 
    // Track each bank's per-track TOOL_DEVICE_NAME device, if any (see isToolVolumeMode).
@@ -580,11 +579,9 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          // Channel Pressure message on MIDI channel 1 (status 0xD0, always
          // - not per-strip), with a single data byte packing the strip
          // index into the high nibble and the level into the low nibble.
-         // Requires the meter-enable SysEx sent once in init() below.
+         // Requires the meter-enable SysEx sent once in init() above.
          track.addVuMeterObserver(13, -1, true, function (level) {
-            if (false && currentMode === MODE_MIXER && isViewingReturns === isReturnsBank) {
-               // TEMPORARILY DISABLED for diagnosis (see the meter-enable
-               // SysEx comment in init()) - re-enable by removing "false &&".
+            if (currentMode === MODE_MIXER && isViewingReturns === isReturnsBank) {
                midiOut.sendMidi(0xD0, (index << 4) | level, 0);
             }
          });
@@ -733,11 +730,9 @@ function onMidi(status, data1, data2) {
 
    // DEBUG: catches any Control Change not otherwise logged below (encoders
    // 16-23 and the jog wheel's CC 60 have their own more specific handling
-   // further down) - the manual documents a separate CC-based mapping table
-   // (its raw "MIDI mode", distinct from the note-based MCU/Live mode this
-   // unit is actually running in), so this helps confirm whether any given
-   // button really sends nothing, or sends a CC instead of the expected
-   // Note-On.
+   // further down) - helps confirm whether an unmapped button really sends
+   // nothing, or sends a CC instead of the expected Note-On. Still actively
+   // used for verifying remaining button assignments - leave in for now.
    if (msgType === 0xB0 && data1 !== 60 && !(data1 >= 16 && data1 <= 23)) {
       println("RAW CC received - CC#: " + data1 + ", Value: " + data2);
    }
