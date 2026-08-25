@@ -153,55 +153,70 @@ Defaults: F1 =
 
 Every press shows the pressed key's action name as a Bitwig on-screen
 popup (`host.showPopupNotification`, the full name, same as the orange
-state's `Device N` popup) - and, on the hardware LCD, reveals **all 8
-F-keys' assignments at once**, not just the one pressed: each channel
-strip's bottom row shows what *that* channel's F-key is currently mapped
-to (`showAllFKeyAssignments()`), so holding down any single F-key doubles
-as a "what could I press" reference for the whole row, not just a
-confirmation of the one you happened to use. Requested specifically so
-holding a button reveals to the user what they could possibly do with the
-others, not only the one already known. Unassigned keys (`None`) show
-`-`, so it's clear they're deliberately empty rather than not yet
-revealed.
+state's `Device N` popup) plus a brief LCD popup of just that one key's
+own abbreviated name on its own channel strip - a lightweight "here's
+what I just did" confirmation, same as any other one-shot LCD popup, not
+a big learning overlay on every single tap.
 
-This is **while the button stays held down**, not a momentary flash:
-`showBottomRowPopupWhileHeld()` displays each channel's text with no
-auto-revert timeout at all, and only the button's own Note-Off
-(`revertAllFKeyAssignments()`, wired up alongside the press in onMidi's
-"F1-F8 Green State" block) brings all 8 rows back to normal track info -
-so however long you hold it, the whole reveal stays legible for exactly
-that long, rather than disappearing after a fixed timeout that a quick
-tap might not give you time to read. This needed intercepting notes 62-69
-directly in `onMidi` (both press *and* release) instead of leaving them
-to `handleButtonPress()`'s switch like the orange state (54-61) still
-does, since that switch only ever sees presses. If two F-keys were ever
-held at once (unlikely with one hand on this hardware), releasing one
-reverts all 8 rows, including the still-held key's own channel - which
-would immediately re-populate correctly on the next tick anyway, so not
-worth extra bookkeeping to prevent.
+Only an actual **hold** past **F-Key Hold Threshold (ms)** (Timing
+category, default 400, range 100-2000) escalates to something bigger: the
+LCD reveals **all 8 F-keys' assignments at once**, not just the one held -
+each channel strip's bottom row shows what *that* channel's F-key is
+currently mapped to (`showAllFKeyAssignments()`), so holding down any
+single F-key doubles as a "what could I press" reference for the whole
+row. Requested specifically so holding a button reveals to the user what
+they could possibly do with the others, without having to constantly
+reference the manual - while a normal quick press still just confirms the
+one action it actually performed, same as before. Unassigned keys
+(`None`) show `-`, so it's clear they're deliberately empty rather than
+not yet revealed.
+
+`handleFKeyPress()`/`handleFKeyRelease()` implement the split: press
+invokes the assigned function and shows the brief single-key popup
+immediately (unconditionally - it doesn't yet know whether this press
+will turn into a hold), then arms a `host.scheduleTask()` check after
+**F-Key Hold Threshold (ms)**; if the button is *still* held when that
+check fires, it escalates to `showAllFKeyAssignments()` (which then
+displays with **no** auto-revert timeout, unlike the tap-sized popup - see
+`showBottomRowPopupWhileHeld()`), and release only needs to revert all 8
+rows (`revertAllFKeyAssignments()`) if that escalation actually happened;
+otherwise the tap's own popup already scheduled its own ordinary revert
+and there's nothing further to do. A per-key generation token (same
+debounce pattern used everywhere else in this file) cancels the pending
+hold-check the moment the button is released early, so a normal tap never
+triggers the full reveal even for an instant. This needed intercepting
+notes 62-69 directly in `onMidi` (both press *and* release) instead of
+leaving them to `handleButtonPress()`'s switch like the orange state
+(54-61) still does, since that switch only ever sees presses. If two
+F-keys were ever held past the threshold at once (unlikely with one hand
+on this hardware), releasing one reverts all 8 rows, including the
+still-held key's own channel - which would immediately re-populate
+correctly on the next tick anyway, so not worth extra bookkeeping to
+prevent.
 
 The LCD is still only 7 characters per cell, and the real action names
 are often much longer - plain left-truncation collided for several of
 them (`Select All`/`Select None`/`Select item at cursor` all truncated to
 the identical `Select `; the three `Toggle...` entries all truncated to
-`Toggle `), which would defeat the point of a name you can actually read
-while holding the button. `FKEY_SHORT_NAMES` hand-picks a distinct
-<=7-character abbreviation (e.g. `SelAll`/`SelNone`/`SelCurs`,
-`TglMute`/`TglHold`/`TglOnOf`) for every entry that needs one; the on-screen
-Bitwig popup always shows the real full name regardless, since that one
-isn't width-constrained.
+`Toggle `), which would defeat the point of a name you can actually read.
+`FKEY_SHORT_NAMES` hand-picks a distinct <=7-character abbreviation (e.g.
+`SelAll`/`SelNone`/`SelCurs`, `TglMute`/`TglHold`/`TglOnOf`) for every
+entry that needs one, used for both the tap popup and the hold reveal;
+the on-screen Bitwig popup always shows the real full name regardless,
+since that one isn't width-constrained.
 
 **F-Key LCD Hold Linger (ms)** (Timing category, default 300, range
-0-2000) - the name display doesn't necessarily vanish the instant the
-button is released: a genuinely quick tap could release before there was
-ever enough time to actually read it, so `revertBottomRowPopup()` keeps
-it up this much longer past release before reverting, same debounce-
-generation-token pattern used everywhere else in this file (a fresh press
-before the linger elapses cancels the pending revert, same as re-pressing
-during any other timed popup). Only pads out the *minimum* - a long hold
-already gets however long it was actually held, unaffected by this
-setting. Set to 0 to revert the instant the button is released, no
-linger at all.
+0-2000) - once the hold reveal has actually kicked in, it doesn't
+necessarily vanish the instant the button is released: `revertBottomRowPopup()`
+(called per-channel by `revertAllFKeyAssignments()`) keeps it up this
+much longer past release before reverting, same debounce-generation-token
+pattern used everywhere else in this file (a fresh press before the
+linger elapses cancels the pending revert, same as re-pressing during any
+other timed popup). Only pads out the *minimum* - a long hold already
+gets however long it was actually held, unaffected by this setting; a
+plain tap's own brief popup is unaffected too, since it never escalates
+to the hold reveal at all. Set to 0 to revert the instant the button is
+released, no linger at all.
 
 Ten entries (`Duplicate` through `Redo`) call a dedicated, typed
 `Application` method (`application.duplicate()`, `.cut()`, `.remove()`

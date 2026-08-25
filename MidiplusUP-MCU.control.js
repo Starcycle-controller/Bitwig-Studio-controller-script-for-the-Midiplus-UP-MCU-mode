@@ -150,16 +150,20 @@ function closeOtherDeviceWindowsIfConfigured() {
 }
 
 // Green-state F1-F8 (notes 62-69, intercepted directly in onMidi - see the
-// "F1-F8 Green State" block there) - configurable "editing function" keys,
-// set via the 8 "F1-F8 Function (Green State)" Controller Preferences
+// "F1-F8 Green State" block there, and handleFKeyPress()/
+// handleFKeyRelease() below) - configurable "editing function" keys, set
+// via the 8 "F1-F8 Function (Green State)" Controller Preferences
 // dropdowns in init(). Every press shows the pressed key's action name as
 // a Bitwig on-screen popup (host.showPopupNotification, full name, same
-// as the orange state's "Device N" popup - see invokeFKeyFunction()) AND
-// reveals EVERY F-key's assigned name (abbreviated to <=7 characters -
-// see FKEY_SHORT_NAMES below) across all 8 channel strips' bottom LCD
-// rows at once (showAllFKeyAssignments()), staying there for as long as
-// the button is physically held rather than a fixed timeout
-// (showBottomRowPopupWhileHeld/revertBottomRowPopup).
+// as the orange state's "Device N" popup - see invokeFKeyFunction()) plus
+// a brief LCD popup of just that key's own abbreviated name (<=7
+// characters - see FKEY_SHORT_NAMES below), same as any other one-shot
+// LCD popup. Only an actual HOLD (past FKEY_HOLD_THRESHOLD_MS) escalates
+// to revealing EVERY F-key's assigned name across all 8 channel strips'
+// bottom LCD rows at once (showAllFKeyAssignments()), staying there for
+// as long as the button is physically held rather than a fixed timeout -
+// a quick tap stays a lightweight confirmation, not the full "what could
+// I press" overlay every single time.
 //
 // Entries with a `method` call a dedicated, typed Application method
 // (guaranteed correct, not guessed). Entries with an `actionId` have no
@@ -263,10 +267,10 @@ function invokeFKeyFunction(name) {
       return;
    }
    host.showPopupNotification(name);
-   // The LCD side (per-key abbreviated name, held for as long as the
-   // button stays down) is handled by showAllFKeyAssignments() in the
-   // F1-F8 Note-On handler below, alongside the other 7 keys' names - see
-   // there.
+   // The LCD side is handled by the caller (handleFKeyPress() above) -
+   // a brief single-key popup by default, escalating to the full all-8
+   // reveal only on an actual hold - not here, since this function alone
+   // can't tell a tap from a hold.
 
    var entry = FKEY_FUNCTIONS[name];
    if (!entry) {
@@ -291,6 +295,57 @@ var fKeyFunctionAssignment = ["Duplicate", "Consolidate", "None", "None", "None"
 // revertBottomRowPopup() above. Default; overridden live from the
 // Controller Preferences panel setting created in init() below.
 var FKEY_HOLD_LINGER_MS = 300;
+
+// A normal quick press still just shows the ONE pressed key's own name
+// as a brief, auto-reverting popup (showBottomRowPopup, same as any other
+// one-shot LCD popup) - the all-8-keys learning reveal
+// (showAllFKeyAssignments()) only kicks in if the button is actually held
+// past this threshold, so a quick tap gets a lightweight confirmation of
+// what it just did rather than the full "what could I press" overlay
+// every single time. See handleFKeyPress()/handleFKeyRelease() below.
+// Default; overridden live from the Controller Preferences panel setting
+// created in init() below.
+var FKEY_HOLD_THRESHOLD_MS = 400;
+
+// Per-F-key state for the tap-vs-hold distinction above: fkeyPressGeneration
+// is bumped on every press and release so a stale scheduled hold-escalation
+// check (from a press that's since been released, or superseded by a new
+// press) becomes a no-op, same debounce-generation-token pattern used
+// everywhere else in this file; fkeyHoldRevealActive tracks whether THIS
+// key's hold escalated to the all-8 reveal, so release knows whether to
+// revert it (revertAllFKeyAssignments()) or leave it alone (a plain tap's
+// own popup already scheduled its own ordinary revert).
+var fkeyPressGeneration = [0, 0, 0, 0, 0, 0, 0, 0];
+var fkeyHoldRevealActive = [false, false, false, false, false, false, false, false];
+
+function handleFKeyPress(fkeyIdx) {
+   var assigned = fKeyFunctionAssignment[fkeyIdx];
+   if (assigned !== "None") {
+      invokeFKeyFunction(assigned);
+      showBottomRowPopup(fkeyIdx, FKEY_SHORT_NAMES[assigned] || assigned);
+   }
+
+   fkeyHoldRevealActive[fkeyIdx] = false;
+   fkeyPressGeneration[fkeyIdx]++;
+   var myGeneration = fkeyPressGeneration[fkeyIdx];
+   host.scheduleTask(function () {
+      if (fkeyPressGeneration[fkeyIdx] !== myGeneration) {
+         return; // released (or pressed again) before the hold threshold
+      }
+      fkeyHoldRevealActive[fkeyIdx] = true;
+      showAllFKeyAssignments();
+   }, FKEY_HOLD_THRESHOLD_MS);
+}
+
+function handleFKeyRelease(fkeyIdx) {
+   fkeyPressGeneration[fkeyIdx]++; // cancels a still-pending hold escalation
+   if (fkeyHoldRevealActive[fkeyIdx]) {
+      fkeyHoldRevealActive[fkeyIdx] = false;
+      revertAllFKeyAssignments();
+   }
+   // else: nothing to do - a plain tap's own popup (see handleFKeyPress())
+   // already scheduled its own ordinary revert via showBottomRowPopup.
+}
 
 // Bitwig's getEnumSetting() dropdowns can't have their option list
 // changed at runtime (confirmed against the Controller API Javadoc - no
@@ -1240,6 +1295,19 @@ function init() {
       FKEY_HOLD_LINGER_MS = value;
    });
 
+   // How long an F1-F8 green-state key has to stay held before the LCD
+   // escalates from a brief single-key popup to the full all-8-key
+   // learning reveal - see handleFKeyPress()/handleFKeyRelease() above. A
+   // press shorter than this is just a normal tap: invoke + a quick
+   // confirmation popup for that one key only, same as any other one-shot
+   // LCD popup.
+   var fkeyHoldThresholdSetting = host.getPreferences().getNumberSetting(
+      "F-Key Hold Threshold (ms)", "Timing", 100, 2000, 10, "ms", 400);
+   fkeyHoldThresholdSetting.markInterested();
+   fkeyHoldThresholdSetting.addRawValueObserver(function(value) {
+      FKEY_HOLD_THRESHOLD_MS = value;
+   });
+
    // Pan Snap to Center - see panSnapToCenterEnabled/PAN_SNAP_THRESHOLD
    // above (the encoder CC handler in onMidi). Its own "Mixer" category
    // rather than piling onto "Timing", since it's a snap distance, not a
@@ -2174,21 +2242,19 @@ function onMidi(status, data1, data2) {
       // keys (see FKEY_FUNCTION_NAMES/invokeFKeyFunction/FKEY_SHORT_NAMES
       // above). Intercepted here (rather than left to fall through to
       // handleButtonPress()/its switch, like case 54-61's orange state
-      // still does) so both press AND release are available: press still
-      // invokes the assigned function immediately, same as before, AND
-      // reveals every F-key's assigned name across all 8 channels' LCD
-      // rows (showAllFKeyAssignments() - not just the one pressed, so
-      // holding any single key shows what every other one is mapped to
-      // too); release reverts all 8 (revertAllFKeyAssignments()) - so the
-      // whole reveal stays legible for exactly as long as the button is
-      // physically held, not a fixed timeout.
+      // still does) so both press AND release are available - see
+      // handleFKeyPress()/handleFKeyRelease() above: a normal press still
+      // invokes the assigned function immediately and shows a brief
+      // popup of just that one action, same as any other one-shot LCD
+      // popup; only an actual HOLD (past FKEY_HOLD_THRESHOLD_MS) escalates
+      // to revealing every F-key's assignment across all 8 channels, for
+      // learning the whole layout without a manual - not on every tap.
       if (data1 >= 62 && data1 <= 69) {
          var fkeyIdx = data1 - 62;
          if (isPressed) {
-            invokeFKeyFunction(fKeyFunctionAssignment[fkeyIdx]);
-            showAllFKeyAssignments();
+            handleFKeyPress(fkeyIdx);
          } else {
-            revertAllFKeyAssignments();
+            handleFKeyRelease(fkeyIdx);
          }
          return;
       }
