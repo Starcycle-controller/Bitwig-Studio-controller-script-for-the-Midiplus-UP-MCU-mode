@@ -297,6 +297,33 @@ macro parameters, all 16 sends, and every scanned `TRLVL` tool-device
 candidate) - added alongside each one's existing `markInterested()` calls
 in `setupChannelStripObservers()`/`init()`/`scanTrackForToolDevice()`.
 
+**`discreteValueCount()` is capped at 16 for "this counts as a switch"**
+(`MAX_NATIVE_SWITCH_STEPS`). Confirmed on hardware: a macro reporting a
+real but much finer native resolution (roughly 50 steps, i.e. 2% each)
+also took the always-native-step branch above, and always jumped a full
+native step (2%) per turn no matter what **Encoder Step Size** was
+configured to (1% in the report) - "can't select value 1, it always
+jumps to +2 or -2". Two separate resolutions were being conflated here:
+this hardware's own MIDI wire protocol (the encoders send relative,
+sign-magnitude ticks - 1-63 increment, 65-127 decrement - which is about
+how a *turn* is reported, not how finely any given *parameter* can be
+set) and Bitwig's own reported native resolution for that specific macro
+(`discreteValueCount()`, entirely independent of the MIDI side). A
+parameter with only a handful of real states (an on/off switch, a short
+mode list) genuinely IS best served by native single-step-per-turn
+behavior; a knob-shaped macro that merely happens to be internally
+quantized to ~50 steps is not the same thing and shouldn't be treated
+identically. Above the cap, `discreteCount` now falls through to the
+Stepped/Fine handling below instead, so the configured step size and
+acceleration are respected - Bitwig may still snap the result to its own
+nearest valid native value if the requested one doesn't land on it
+exactly, but at least the setting drives the intent rather than being
+silently overridden by an unrelated device's native grid. A console
+message (`"Encoder target has discreteValueCount() N (> 16) - treated as
+continuous, native grid ignored"`) logs the real count whenever this
+matters, to help confirm/recalibrate the cap against further hardware
+findings if some other macro still doesn't land where expected.
+
 For a genuinely continuous target (pan, volume, a continuous macro, a
 send level), a **plain** turn always stays today's existing smooth
 behavior, unchanged - only **SHIFT+turn**'s behavior is selectable, via

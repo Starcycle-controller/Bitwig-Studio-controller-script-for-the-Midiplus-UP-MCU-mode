@@ -530,16 +530,24 @@ var allowSteppedDuringAutomationWrite = false;
 // Unified encoder-turn handler for CC 16-23 - resolves whichever
 // behavior actually applies for this specific target and turn, then
 // performs it:
-//  1. Target is a genuine discrete/switch parameter (discreteValueCount()
-//     is a real positive count, not -1 for continuous) - always steps
-//     through its own real native states, exactly one per message,
-//     regardless of SHIFT/SHIFT+Encoder Mode/acceleration/automation
-//     write (there's no meaningful "fine" or "accelerated multi-step"
-//     adjustment of a switch). Shows the resulting state's real name
-//     (from discreteValueNames(), if the device provides one) in a
-//     popup, so turning past a macro that's actually a switch rather than
-//     a continuous knob is immediately obvious from the label instead of
-//     a raw percentage.
+//  1. Target is a genuine discrete/switch parameter - discreteValueCount()
+//     is a real positive count, not -1 for continuous, AND small enough
+//     (<= MAX_NATIVE_SWITCH_STEPS, currently 16) to actually be a switch
+//     or short mode list rather than just a knob with a finer-than-
+//     continuous native grid - always steps through its own real native
+//     states, exactly one per message, regardless of SHIFT/SHIFT+Encoder
+//     Mode/acceleration/automation write (there's no meaningful "fine" or
+//     "accelerated multi-step" adjustment of a switch). Shows the
+//     resulting state's real name (from discreteValueNames(), if the
+//     device provides one) in a popup, so turning past a macro that's
+//     actually a switch rather than a continuous knob is immediately
+//     obvious from the label instead of a raw percentage. A discreteCount
+//     ABOVE the cap falls through to cases 2-4 below instead, treated as
+//     continuous - confirmed on hardware that without this cap, a macro
+//     with a much finer native resolution (e.g. ~50 steps = 2% each) also
+//     took this branch and always jumped a full native step regardless of
+//     the configured Encoder Step Size, which is a different problem than
+//     a genuine switch and shouldn't be handled the same way.
 //  2. SHIFT held, SHIFT+Encoder Mode is "Stepped", and stepping isn't
 //     currently suppressed by Arranger Automation Write being enabled
 //     (see allowSteppedDuringAutomationWrite above) - jumps exactly ONE
@@ -562,7 +570,27 @@ function applyEncoderStep(target, rawDelta, encoderIndex) {
    // so the history is current the moment acceleration is turned on.
    var velocityRatio = computeEncoderVelocityRatio(encoderIndex, rawDelta);
    var discreteCount = target.discreteValueCount().get();
-   if (discreteCount > 0) {
+   // Only treat it as a genuine switch/enum - always step through its own
+   // native states, bypassing every setting below - if it has FEW enough
+   // states that "native step" and "a deliberate choice" are the same
+   // thing (an on/off switch, a short mode list). Confirmed on hardware:
+   // without this cap, a macro that's technically discrete but has a
+   // much finer native resolution (e.g. ~50 steps = 2% each) also took
+   // this branch, always jumping a full native step (2%) regardless of
+   // the configured Encoder Step Size (1%) - "can't select value 1, it
+   // always jumps to +2 or -2". That's not this hardware's MIDI
+   // resolution (the encoders' own relative-tick protocol, sign-magnitude
+   // 1-63/-64, is unrelated and unaffected either way) - it's Bitwig's
+   // own reported native resolution for THAT specific parameter, which a
+   // percentage-based step size can't act finer than once treated as a
+   // switch. Above this cap, it's treated as continuous instead (falls
+   // through to Stepped/Fine below, so the configured step size and
+   // acceleration are respected) - Bitwig will still snap the result to
+   // its own nearest valid native value if ours doesn't land on one
+   // exactly, but at least our own setting drives the intent instead of
+   // being silently overridden by an unrelated device's native grid.
+   var MAX_NATIVE_SWITCH_STEPS = 16;
+   if (discreteCount > 0 && discreteCount <= MAX_NATIVE_SWITCH_STEPS) {
       var curIndex = Math.round(target.get() * (discreteCount - 1));
       var newIndex = rawDelta < 0 ?
          Math.max(0, curIndex - 1) : Math.min(discreteCount - 1, curIndex + 1);
@@ -575,6 +603,14 @@ function applyEncoderStep(target, rawDelta, encoderIndex) {
          host.showPopupNotification(discreteNames[newIndex]);
       }
       return;
+   }
+   if (discreteCount > MAX_NATIVE_SWITCH_STEPS) {
+      // DEBUG: confirms the discreteCount actually reported for whatever
+      // this encoder is currently pointed at - helps verify/calibrate
+      // MAX_NATIVE_SWITCH_STEPS against real hardware/device values if a
+      // parameter still doesn't land where expected in Stepped mode.
+      println("Encoder target has discreteValueCount() " + discreteCount +
+         " (> " + MAX_NATIVE_SWITCH_STEPS + ") - treated as continuous, native grid ignored");
    }
 
    if (isShiftPressed) {
