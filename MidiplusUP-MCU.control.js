@@ -415,6 +415,136 @@ function revealPanTemporarily(index) {
    }, LCD_OVERRIDE_TIMEOUT_MS);
 }
 
+// Encoder acceleration/response curve (Controller Preferences -> new
+// "Encoders" category) - a continuous 0-100% dial, not fixed presets, so
+// it can be tuned to the user's own dexterity rather than picked from a
+// handful of buckets. 0% (default) matches the raw hardware behavior
+// exactly - no extra curve on top of whatever the encoder itself reports
+// per MIDI message. Maps to an exponent from 1.0 (0%, no curve) to 2.0
+// (100%, strongest) applied to the raw per-message tick count (rawDelta -
+// the MCU protocol's own sign-magnitude step size, which already reflects
+// how many physical clicks happened since the last message). A rawDelta
+// of 1 (a slow, deliberate single-detent turn) is unaffected at every
+// setting (1^n === 1 for any n) - only a fast turn (a larger rawDelta
+// already reported for one message) gets boosted further, so a careful
+// turn feels identical regardless of this setting; only how much a fast
+// flick "runs ahead" changes. Feeds into every continuous/stepped
+// adjustment in applyEncoderStep() below. Default; overridden live from
+// the Controller Preferences panel setting created in init() below.
+var ENCODER_ACCELERATION_PERCENT = 0;
+
+function applyEncoderAcceleration(rawDelta) {
+   if (ENCODER_ACCELERATION_PERCENT <= 0 || rawDelta === 0) {
+      return rawDelta;
+   }
+   var exponent = 1.0 + (ENCODER_ACCELERATION_PERCENT / 100);
+   var sign = rawDelta < 0 ? -1 : 1;
+   return sign * Math.pow(Math.abs(rawDelta), exponent);
+}
+
+// "SHIFT+Encoder Mode" (Controller Preferences -> "Encoders" category) -
+// "Stepped" (default) or "Fine". A plain encoder turn always stays
+// today's existing smooth continuous adjustment, unchanged. Holding
+// SHIFT is what selects between the two: "Stepped" jumps in fixed
+// ENCODER_STEP_SIZE_PERCENT increments instead, landing exactly on round
+// multiples - e.g. audio pan moves in clearly audible, evenly-spaced
+// jumps rather than a smooth sweep, easier to judge by ear than tiny
+// continuous nudges - requested specifically after noticing electronic
+// instrument hardware often prefers this for exactly that reason.
+// "Fine" keeps SHIFT's older role instead (0.2x-scaled precise
+// adjustment), for anyone who'd rather SHIFT stay a precision override
+// than become the stepping gesture. Either way this only applies to
+// genuinely continuous targets - see applyEncoderStep() below for how a
+// target that's actually a discrete/switch parameter (Bitwig's
+// Controller API exposes this via discreteValueCount() - confirmed
+// capable of telling a macro that's an on/off switch apart from a
+// continuous knob) always steps through its own real native states
+// instead, regardless of SHIFT or this setting, since there's no
+// meaningful "fine" or "stepped-by-percent" adjustment of an on/off
+// switch. When set to "Stepped", also falls back to Fine while Arranger
+// Automation Write is enabled (see
+// transport.isArrangerAutomationWriteEnabled() in applyEncoderStep()) -
+// recording automation usually wants a smooth curve, not abrupt stepped
+// jumps - UNLESS allowSteppedDuringAutomationWrite (below) is on, for the
+// specific case of someone actually wanting stepped automation recorded.
+// Defaults; overridden live from the Controller Preferences panel
+// settings created in init() below.
+var shiftEncoderMode = "Stepped";
+var ENCODER_STEP_SIZE_PERCENT = 10;
+
+// Off by default - the "Stepped" SHIFT+Encoder Mode falls back to Fine
+// while Arranger Automation Write is enabled (see applyEncoderStep()
+// above), since recording abrupt stepped jumps into automation is an
+// unusual thing to want. Its own separate setting rather than baking
+// that fallback in unconditionally, since it IS a real, if niche, use
+// case someone might deliberately want (e.g. intentionally recording
+// hard, quantized automation steps) - this is how they opt back into it.
+var allowSteppedDuringAutomationWrite = false;
+
+// Unified encoder-turn handler for CC 16-23 - resolves whichever
+// behavior actually applies for this specific target and turn, then
+// performs it:
+//  1. Target is a genuine discrete/switch parameter (discreteValueCount()
+//     is a real positive count, not -1 for continuous) - always steps
+//     through its own real native states, exactly one per message,
+//     regardless of SHIFT/SHIFT+Encoder Mode/acceleration/automation
+//     write (there's no meaningful "fine" or "accelerated multi-step"
+//     adjustment of a switch). Shows the resulting state's real name
+//     (from discreteValueNames(), if the device provides one) in a
+//     popup, so turning past a macro that's actually a switch rather than
+//     a continuous knob is immediately obvious from the label instead of
+//     a raw percentage.
+//  2. SHIFT held, SHIFT+Encoder Mode is "Stepped", and stepping isn't
+//     currently suppressed by Arranger Automation Write being enabled
+//     (see allowSteppedDuringAutomationWrite above) - jumps in fixed
+//     ENCODER_STEP_SIZE_PERCENT increments, landing exactly on round
+//     multiples.
+//  3. SHIFT held, otherwise (Mode is "Fine", or Stepped suppressed by
+//     Automation Write) - the older fine, continuous adjustment
+//     (0.2x-scaled .inc()).
+//  4. Plain turn, no SHIFT - today's existing plain continuous .inc()
+//     behavior, unchanged.
+// In cases 2-4, rawDelta first passes through applyEncoderAcceleration()
+// above; case 2 additionally rounds that into a whole number of steps (at
+// least 1) so a fast turn jumps multiple steps at once instead of only
+// ever one.
+function applyEncoderStep(target, rawDelta) {
+   var discreteCount = target.discreteValueCount().get();
+   if (discreteCount > 0) {
+      var curIndex = Math.round(target.get() * (discreteCount - 1));
+      var newIndex = rawDelta < 0 ?
+         Math.max(0, curIndex - 1) : Math.min(discreteCount - 1, curIndex + 1);
+      if (newIndex === curIndex) {
+         return;
+      }
+      target.set(discreteCount > 1 ? newIndex / (discreteCount - 1) : 0);
+      var discreteNames = target.discreteValueNames().get();
+      if (discreteNames && discreteNames[newIndex]) {
+         host.showPopupNotification(discreteNames[newIndex]);
+      }
+      return;
+   }
+
+   if (isShiftPressed) {
+      var steppingSuppressedByAutomationWrite = !allowSteppedDuringAutomationWrite &&
+         transport.isArrangerAutomationWriteEnabled().get();
+      if (shiftEncoderMode === "Stepped" && !steppingSuppressedByAutomationWrite) {
+         var accelerated = applyEncoderAcceleration(rawDelta);
+         var stepCount = Math.max(1, Math.round(Math.abs(accelerated)));
+         var stepSize = ENCODER_STEP_SIZE_PERCENT / 100;
+         var curStepIndex = Math.round(target.get() / stepSize);
+         var newStepIndex = rawDelta < 0 ? curStepIndex - stepCount : curStepIndex + stepCount;
+         var newVal = Math.min(1, Math.max(0, newStepIndex * stepSize));
+         target.set(newVal);
+         return;
+      }
+      target.inc(applyEncoderAcceleration(rawDelta) * 0.2, 512);
+      return;
+   }
+
+   target.inc(applyEncoderAcceleration(rawDelta), 128);
+}
+
 // Pan encoders are hard to land exactly on dead center by hand (no detent
 // on this hardware) - "Pan Snap to Center" (Controller Preferences ->
 // "Mixer" category) snaps the pan value to exactly center once the
@@ -1308,6 +1438,44 @@ function init() {
       FKEY_HOLD_THRESHOLD_MS = value;
    });
 
+   // SHIFT+Encoder Mode/Step Size/Acceleration - see
+   // shiftEncoderMode/ENCODER_STEP_SIZE_PERCENT/ENCODER_ACCELERATION_PERCENT
+   // and applyEncoderStep()/applyEncoderAcceleration() above (the encoder
+   // CC handler in onMidi). Own "Encoders" category since this applies to
+   // every encoder target (pan, volume, macros, sends), not just Mixer
+   // mode.
+   var shiftEncoderModeSetting = host.getPreferences().getEnumSetting(
+      "SHIFT+Encoder Mode", "Encoders", ["Stepped", "Fine"], "Stepped");
+   shiftEncoderModeSetting.markInterested();
+   shiftEncoderModeSetting.addValueObserver(function(value) {
+      shiftEncoderMode = value;
+   });
+
+   var encoderStepSizeSetting = host.getPreferences().getNumberSetting(
+      "Encoder Step Size (%)", "Encoders", 1, 50, 1, "%", 10);
+   encoderStepSizeSetting.markInterested();
+   encoderStepSizeSetting.addRawValueObserver(function(value) {
+      ENCODER_STEP_SIZE_PERCENT = value;
+   });
+
+   var encoderAccelerationSetting = host.getPreferences().getNumberSetting(
+      "Encoder Acceleration (%)", "Encoders", 0, 100, 1, "%", 0);
+   encoderAccelerationSetting.markInterested();
+   encoderAccelerationSetting.addRawValueObserver(function(value) {
+      ENCODER_ACCELERATION_PERCENT = value;
+   });
+
+   // See allowSteppedDuringAutomationWrite above - off by default (Stepped
+   // mode falls back to Fine while Arranger Automation Write is enabled),
+   // on lets Stepped mode keep working even then, for anyone who actually
+   // wants hard, quantized automation steps recorded.
+   var allowSteppedDuringAutomationWriteSetting = host.getPreferences().getBooleanSetting(
+      "Allow Stepped Encoders While Recording Automation", "Encoders", false);
+   allowSteppedDuringAutomationWriteSetting.markInterested();
+   allowSteppedDuringAutomationWriteSetting.addValueObserver(function(value) {
+      allowSteppedDuringAutomationWrite = value;
+   });
+
    // Pan Snap to Center - see panSnapToCenterEnabled/PAN_SNAP_THRESHOLD
    // above (the encoder CC handler in onMidi). Its own "Mixer" category
    // rather than piling onto "Timing", since it's a snap distance, not a
@@ -1360,6 +1528,16 @@ function init() {
 
    // Remote Controls (8 Macros for selected device)
    remoteControls = cursorDevice.createCursorRemoteControlsPage(8);
+   // discreteValueCount()/discreteValueNames() need markInterested() (or
+   // an observer) before .get() works, same as any other Value - see
+   // applyEncoderStep() for why this matters for macros specifically:
+   // it's how a macro that's actually an on/off switch (or any other
+   // discrete-valued parameter) is told apart from a continuous one.
+   for (var rcIdx = 0; rcIdx < 8; rcIdx++) {
+      var rcParam = remoteControls.getParameter(rcIdx);
+      rcParam.discreteValueCount().markInterested();
+      rcParam.discreteValueNames().markInterested();
+   }
 
    // Last-clicked-in-GUI parameter (see ALT + Jog Wheel in the wheel
    // handler above) - id is used for persistent state, per the Javadoc,
@@ -1448,6 +1626,8 @@ function init() {
          var sendItem = cursorTrack.sendBank().getItemAt(sendIdx);
 
          sendItem.value().markInterested();
+         sendItem.discreteValueCount().markInterested();
+         sendItem.discreteValueNames().markInterested();
 
          sendItem.displayedValue().addValueObserver(function (dispVal) {
             if (currentMode === MODE_SENDS) {
@@ -1568,6 +1748,10 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          });
 
          track.volume().value().markInterested();
+         track.volume().discreteValueCount().markInterested();
+         track.volume().discreteValueNames().markInterested();
+         track.pan().discreteValueCount().markInterested();
+         track.pan().discreteValueNames().markInterested();
 
          track.volume().displayedValue().addValueObserver(function (dispVal) {
             if (currentMode === MODE_MIXER && !isFlipped && isViewingReturns === isReturnsBank &&
@@ -1685,6 +1869,8 @@ function scanTrackForToolDevice(track, onSlotFound, onSlotLost) {
             param.name().markInterested();
             param.displayedValue().markInterested();
             param.value().markInterested();
+            param.discreteValueCount().markInterested();
+            param.discreteValueNames().markInterested();
          }
 
          device.name().addValueObserver(function (name) {
@@ -1783,10 +1969,10 @@ function onMidi(status, data1, data2) {
       // 1-63 = increment by that amount, 65-127 = decrement by (value - 64)
       var rawDelta = data2 < 64 ? data2 : -(data2 - 64);
 
-      // If SHIFT is held, use fine-grain adjustments (0.2x scaling)
+      // SHIFT held changes the turn's behavior - see applyEncoderStep()
+      // above for the full decision tree (SHIFT vs. SHIFT+Encoder Mode
+      // vs. discrete/switch targets vs. acceleration).
       if (isShiftPressed) { shiftUsedForCombo = true; }
-      var delta = isShiftPressed ? (rawDelta * 0.2) : rawDelta;
-      var resolution = isShiftPressed ? 512 : 128;
 
       // See getEncoderTarget() below for the exact per-mode/flip rules
       // (encoders always control macros in MODE_DEVICE regardless of
@@ -1794,7 +1980,7 @@ function onMidi(status, data1, data2) {
       // unflipped / volume flipped, the opposite of the fader).
       var encTarget = getEncoderTarget(encoderIndex);
       if (encTarget) {
-         encTarget.inc(delta, resolution);
+         applyEncoderStep(encTarget, rawDelta);
          // Pan Snap to Center - see schedulePanSnapCheck() above. Only
          // meaningful in Mixer mode (unflipped = pan, real track or
          // TOOL_DEVICE_NAME's Pan macro) - MODE_DEVICE macros/MODE_SENDS

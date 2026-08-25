@@ -269,6 +269,79 @@ no-op and only turning right (duplicate) does anything - the safer
 choice if a slightly-wrong turn deleting something outright is too
 risky; flagged as a "could be shaky" concern when requested.
 
+### Encoders settings (Controller Preferences panel)
+
+Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
+-> **Encoders** category. Applies to every one of the 8 rotary encoders
+(CC 16-23), whatever they currently control - track pan/volume in Mixer
+mode, device macros in Device mode, or sends - via a single shared
+handler, `applyEncoderStep()`.
+
+**Is a macro a knob or a switch?** Answering a question raised alongside
+this feature: yes, the Controller API can tell. Every `RangedValue`
+(which `Parameter`/`RemoteControl`/`Send` all extend - covering pan,
+volume, device macros, and sends alike) exposes `discreteValueCount()` -
+the real number of discrete steps Bitwig itself knows the parameter has,
+or `-1` for a genuinely continuous one - plus `discreteValueNames()`, the
+actual label for each of those steps. `applyEncoderStep()` checks this
+for whatever the encoder is currently pointed at: if it's a real
+discrete/switch parameter, turning it always steps through its own native
+states one at a time and pops up the resulting state's real name (e.g.
+`On`/`Off`, or whatever the device itself calls that step) - regardless
+of every other setting below, since there's no meaningful "fine" or
+"stepped-by-percent" adjustment of something that only has 2 (or a
+handful of) real states to begin with. This needed `discreteValueCount()`/
+`discreteValueNames()` marked interested up front for every possible
+encoder target (main + returns track pan/volume, the 8 remote-control
+macro parameters, all 16 sends, and every scanned `TRLVL` tool-device
+candidate) - added alongside each one's existing `markInterested()` calls
+in `setupChannelStripObservers()`/`init()`/`scanTrackForToolDevice()`.
+
+For a genuinely continuous target (pan, volume, a continuous macro, a
+send level), a **plain** turn always stays today's existing smooth
+behavior, unchanged - only **SHIFT+turn**'s behavior is selectable, via
+**SHIFT+Encoder Mode**:
+
+- `Stepped` (**default**) - jumps in fixed **Encoder Step Size (%)**
+  increments (default 10%, range 1-50%), landing exactly on round
+  multiples - e.g. pan moves in clearly audible, evenly-spaced jumps
+  rather than a smooth sweep, easier to judge by ear than tiny continuous
+  nudges. Directly inspired by how electronic instrument hardware often
+  prefers stepped encoder behavior for exactly that reason - broader,
+  more clearly-audible jumps are easier to judge than minimal continuous
+  increases.
+- `Fine` - SHIFT's older role instead: precise, 0.2x-scaled continuous
+  adjustment. Pick this if SHIFT should stay a precision override rather
+  than become the stepping gesture.
+
+**Encoder Acceleration (%)** (default 0 = off, range 0-100) - a
+continuous dial, not fixed presets, so it can be tuned to the user's own
+dexterity. Maps to an exponent from 1.0 (0%, no curve at all - matches
+the raw hardware behavior exactly) to 2.0 (100%, strongest) applied to
+the raw per-message tick count. A slow, deliberate single-detent turn is
+completely unaffected at every setting (`1^n === 1` for any exponent `n`)
+- only a fast turn (a larger raw tick count already reported for that one
+message) gets boosted further, so careful turns always feel identical and
+only how far a fast flick "runs ahead" changes. Applies to both Stepped
+mode (rounds the accelerated amount into a whole number of extra steps
+per message, so a fast flick jumps several steps at once instead of only
+ever one) and Fine/plain continuous adjustment alike. **0% is a real,
+supported "no acceleration" option**, not just a low setting - the curve
+is skipped entirely rather than approximated, so it's bit-for-bit
+identical to the pre-acceleration behavior.
+
+**Allow Stepped Encoders While Recording Automation** (default OFF) -
+Stepped mode (SHIFT+Encoder Mode) falls back to Fine while Arranger
+Automation Write is enabled (`transport.isArrangerAutomationWriteEnabled()`
+in `applyEncoderStep()`), since recording abrupt stepped jumps into
+automation is usually not what's wanted - flagged as an inconsistency
+worth calling out explicitly rather than silently hardcoding, since
+someone might genuinely want hard, quantized automation steps recorded
+on purpose. Turning this on lets Stepped mode keep working even while
+Automation Write is enabled.
+
+None of this is yet tested on hardware.
+
 ### Mixer settings (Controller Preferences panel)
 
 Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
@@ -580,7 +653,7 @@ was still in Live mode, is confirmed still correct.
 | 101 | SCRUB | Toggle fine-scrub mode for jog wheel |
 | 104-111 | Fader touch 1-8 | Optionally selects that channel's track, see Mixer settings below |
 | 112 | Fader touch (Master) | Optionally selects the master track, see Mixer settings below |
-| CC 16-23 | Rotary encoders 1-8 | Mode-dependent (pan/send/macro), SHIFT = fine adjust |
+| CC 16-23 | Rotary encoders 1-8 | Mode-dependent (pan/send/macro); SHIFT = stepped or fine adjust, see Encoders settings above |
 | CC 60 | Jog wheel | Arranger scrub, or bar/loop/tempo nudge with modifiers held, or scene navigation in `MODE_SCENE` |
 | Pitch bend ch 0-7 / 8 | Faders 1-8 / Master | See Architecture above |
 
