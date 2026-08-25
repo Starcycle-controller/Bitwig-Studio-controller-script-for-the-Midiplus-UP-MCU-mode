@@ -140,14 +140,18 @@ toggled by SMPTE/BEATS - see note 53; the orange/default state, 54-61,
 still directly selects device 1-8 and isn't affected by this) is
 configurable per-key via 8 dropdowns, **F1 Function (Green State)**
 through **F8 Function (Green State)**, each offering the same list -
-`None`, plus every key of `FKEY_FUNCTIONS` in the code (currently 38
+`None`, plus every key of `FKEY_FUNCTIONS` in the code (currently 40
 entries: `Duplicate`/`Cut`/`Copy`/`Paste`/`Delete`/`Rename`/`Select All`/
 `Select None`/`Undo`/`Redo`/`Consolidate`, all 22 of Bitwig's own
 **Editing** category actions, all 11 of its **File** category actions,
-`Select item at cursor` from its **Selection** category, and
-`Click button` from its **General** category (a keyboard-focus click -
-activates whatever UI element currently has focus, not a mouse-position
-click) - see `bitwig-actions-reference.txt` for the full names).
+`Select item at cursor` from its **Selection** category, `Click button`
+from its **General** category (a keyboard-focus click - activates
+whatever UI element currently has focus, not a mouse-position click), and
+`Add Cue Marker at Playhead`/`Toggle Follow Playhead` (moved here off
+notes 82/83 once those turned out to be printed "PAGE (left/right
+arrow)" under the Ableton overlay and got repurposed to page device
+macro banks instead - see the button map above and note 82/83's code
+comments) - see `bitwig-actions-reference.txt` for the full names).
 Defaults: F1 =
 `Duplicate`, F2 = `Consolidate`, F3-F8 = `None`.
 
@@ -716,8 +720,8 @@ was still in Live mode, is confirmed still correct.
 | 79 | (Live label: REDO) | `application.redo()` |
 | 80 | (Live label: B.T.A.) | Toggle `MODE_SCENE` |
 | 81 | (Live label: DRAW) | Cycle the 6 arranger edit tools; SHIFT+DRAW toggles Arranger Automation Write (popup shows `Automation Write: ENABLED`/`DISABLED`) |
-| 82 | (Live label: MARKER) | Add cue marker at playhead |
-| 83 | (Live label: FOLLOW) | Toggle playback follow (SHIFT = toggle metronome) |
+| 82 | Printed "PAGE (left arrow)" under the Ableton overlay (confirmed via console - previously wrongly assumed "MARKER") | Page device macro bank back, `MODE_DEVICE` only; no-op otherwise |
+| 83 | Printed "PAGE (right arrow)" under the Ableton overlay (previously wrongly assumed "FOLLOW") | Page device macro bank forward, `MODE_DEVICE` only; no-op otherwise |
 | 84 | - | Jump to previous cue marker |
 | 85 | - | Jump to next cue marker |
 | 86 | (Live label: LOOP) | Toggle arranger loop |

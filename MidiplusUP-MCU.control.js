@@ -215,7 +215,13 @@ var FKEY_FUNCTIONS = {
    "Select item at cursor": { actionId: "select_item_at_cursor" },
    // General category - a keyboard-focus click (activates whatever UI
    // element currently has keyboard focus), not a mouse-position click.
-   "Click button": { actionId: "Click button" }
+   "Click button": { actionId: "Click button" },
+   // Moved off notes 82/83 once those turned out to be printed "PAGE
+   // (left/right arrow)" under the Ableton overlay and were repurposed
+   // to page device macro banks in MODE_DEVICE instead (see case 82/83)
+   // - both real actions, ids confirmed from bitwig-actions-reference.txt.
+   "Add Cue Marker at Playhead": { actionId: "insert_arranger_cue_marker_at_play_position" },
+   "Toggle Follow Playhead": { actionId: "toggle_playhead_follow" }
 };
 
 // Explicit ordered list (rather than Object.keys(FKEY_FUNCTIONS), whose
@@ -259,7 +265,9 @@ var FKEY_SHORT_NAMES = {
    "Import Wavetables...": "ImpWave",
    "Import Impulses...": "ImpImpl",
    "Select item at cursor": "SelCurs",
-   "Click button": "ClickBt"
+   "Click button": "ClickBt",
+   "Add Cue Marker at Playhead": "CueMark",
+   "Toggle Follow Playhead": "TglFoll"
 };
 
 function invokeFKeyFunction(name) {
@@ -3079,19 +3087,41 @@ function handleButtonPressInner(note) {
          }
          break;
 
-      case 82: // MARKER -> Add Cue Marker at Playhead
-         transport.addCueMarkerAtPlaybackPosition();
-         host.showPopupNotification("Add Cue Marker at Playhead");
+      case 82: // Printed "PAGE (left arrow)" under the Ableton overlay, not
+               // "MARKER" as previously assumed - confirmed via the
+               // console (RAW Note-On 82) after the user reported these
+               // two buttons are physically labeled PAGE on their unit.
+               // Pages the device's remote-control (macro) banks backward
+               // in Plugin/Device mode - the actual "page through the
+               // plugin encoder banks" gesture these buttons are printed
+               // for, matching BANK PREV's own MODE_DEVICE behavior (see
+               // case 46 above). No-op outside Device mode - unlike BANK
+               // PREV/NEXT, these aren't shared with track-bank paging,
+               // since that already has its own dedicated buttons. Adding
+               // a cue marker at the playhead (this note's previous
+               // binding) moved to the F1-F8 configurable function list
+               // instead - see "Add Cue Marker at Playhead" in
+               // FKEY_FUNCTIONS.
+         if (currentMode === MODE_DEVICE) {
+            remoteControls.selectPreviousPage(true);
+            host.showPopupNotification("Device Page Previous");
+            refreshDisplayText();
+            rebindFaders();
+         }
          break;
 
-      case 83: // FOLLOW
-         if (isShiftPressed) {
-            shiftUsedForCombo = true;
-            transport.isMetronomeEnabled().toggle();
-            host.showPopupNotification("Toggle Metronome");
-         } else {
-            arranger.isPlaybackFollowEnabled().toggle();
-            host.showPopupNotification("Toggle Follow Playhead (Auto-Scroll)");
+      case 83: // Printed "PAGE (right arrow)" under the Ableton overlay -
+               // see case 82 above. Toggling playback follow (this note's
+               // previous binding, along with SHIFT+83's metronome toggle)
+               // moved to the F1-F8 configurable function list instead -
+               // see "Toggle Follow Playhead" in FKEY_FUNCTIONS. The
+               // metronome toggle doesn't have a new home yet; ask if it's
+               // wanted back somewhere.
+         if (currentMode === MODE_DEVICE) {
+            remoteControls.selectNextPage(true);
+            host.showPopupNotification("Device Page Next");
+            refreshDisplayText();
+            rebindFaders();
          }
          break;
 
