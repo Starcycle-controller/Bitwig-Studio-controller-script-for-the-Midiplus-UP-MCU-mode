@@ -609,6 +609,35 @@ function scheduleSelectChannelOnTouch(track) {
    }, SELECT_ON_TOUCH_DELAY_MS);
 }
 
+// Tracks which of the 8 channel faders (0-7) or the master fader (8) is
+// CURRENTLY physically held, per this hardware's own Note-On/Note-Off for
+// each fader's touch sensor (see the Fader Touch handling in onMidi
+// below) - independent of, and in addition to, the delay/debounce above.
+// Reported after testing on hardware: with "Select Channel on Fader
+// Touch" on, holding one fader steady still kept reselecting a DIFFERENT
+// channel - i.e. touch events were arriving for faders that weren't
+// actually being held, something delay alone can't fix since it only
+// debounces a fast burst of genuinely-intended touches, not a stray touch
+// arriving while another fader is already confirmed down. Whichever
+// fader touches down FIRST holds the "focus lock" - isFaderTouchLocked()
+// below - so a fader other than the one already held is not allowed to
+// steal the selection until the held one is released, however many
+// (possibly spurious) touch messages arrive for other channels in the
+// meantime. This directly matches "a held fader should keep the channel
+// in focus" - whether the extra touch messages are a deliberate second
+// hand or a hardware/touch-sense quirk on this particular unit, the
+// fix is the same either way.
+var faderTouchHeld = [false, false, false, false, false, false, false, false, false];
+
+function isFaderTouchLocked(faderTouchIndex) {
+   for (var i = 0; i < faderTouchHeld.length; i++) {
+      if (i !== faderTouchIndex && faderTouchHeld[i]) {
+         return true;
+      }
+   }
+   return false;
+}
+
 // Same debounce-generation-token pattern as revealPanTemporarily() below
 // (and lcdOverrideGeneration) - only the LAST scheduled check for a given
 // encoder actually fires; every further tick before it bumps the token
@@ -2412,14 +2441,29 @@ function onMidi(status, data1, data2) {
       // scheduleSelectChannelOnTouch() (see above) rather than selecting
       // immediately, so riding several faders together can be debounced
       // via "Select Channel on Fader Touch Delay (ms)" instead of the
-      // selection flickering through each one as you grab it.
+      // selection flickering through each one as you grab it. Also gated
+      // by isFaderTouchLocked() (see above) - a fader other than the one
+      // already held can't steal the selection while the held one is
+      // still down, whether that other touch is a deliberate second hand
+      // or a spurious touch-sense trigger from this hardware.
       if (data1 >= 104 && data1 <= 112) {
-         if (isPressed && selectChannelOnFaderTouch) {
-            var touchedTrack = data1 === 112 ? masterTrack :
-               (currentMode === MODE_MIXER ? activeTrackBank().getItemAt(data1 - 104) : null);
-            if (touchedTrack) {
-               scheduleSelectChannelOnTouch(touchedTrack);
+         var faderTouchIndex = data1 - 104;
+         if (isPressed) {
+            if (selectChannelOnFaderTouch) {
+               if (isFaderTouchLocked(faderTouchIndex)) {
+                  println("Fader touch ignored for selection - channel " +
+                     faderTouchIndex + " touched while another fader is still held");
+               } else {
+                  var touchedTrack = data1 === 112 ? masterTrack :
+                     (currentMode === MODE_MIXER ? activeTrackBank().getItemAt(faderTouchIndex) : null);
+                  if (touchedTrack) {
+                     scheduleSelectChannelOnTouch(touchedTrack);
+                  }
+               }
             }
+            faderTouchHeld[faderTouchIndex] = true;
+         } else {
+            faderTouchHeld[faderTouchIndex] = false;
          }
          return;
       }

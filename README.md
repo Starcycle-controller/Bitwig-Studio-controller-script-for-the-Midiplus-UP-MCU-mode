@@ -423,7 +423,22 @@ generation token and (re)arms a `host.scheduleTask()` check after the
 delay; only the touch that's still the most recent one once the delay
 elapses without a further touch actually fires the selection. At the
 default of 0 it selects synchronously with no debounce at all, identical
-to the immediate behavior described above. Not yet tested on hardware.
+to the immediate behavior described above.
+
+**Held-fader focus lock** - tested on hardware, and the delay setting
+alone wasn't enough: holding a single fader steady still kept reselecting
+a *different* channel, which the delay can't fix since it only debounces
+a fast burst of genuinely-intended touches, not a stray touch arriving
+for a fader that isn't actually being held (whether that stray touch is a
+deliberate second hand, or a touch-sense quirk on this particular unit -
+not yet established which). Fixed via `isFaderTouchLocked()`: whichever
+fader touches down *first* holds the channel-selection focus - any other
+fader's touch is ignored for selection purposes (logged to the console,
+`"Fader touch ignored for selection - ..."`, to help confirm whether
+further reports are genuine multi-touch or a hardware artifact) until the
+held one is released, however many other touch messages arrive in the
+meantime. Directly matches "a held fader should keep the channel in
+focus" - not yet re-tested on hardware since this fix.
 
 ### Diagnostics settings (Controller Preferences panel)
 
