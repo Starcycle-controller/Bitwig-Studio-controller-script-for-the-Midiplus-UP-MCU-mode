@@ -604,30 +604,39 @@ function applyEncoderStep(target, rawDelta, encoderIndex) {
    target.inc(applyEncoderAcceleration(rawDelta, velocityRatio), 128);
 }
 
-// Pan encoders are hard to land exactly on dead center by hand (no detent
-// on this hardware) - "Pan Snap to Center" (Controller Preferences ->
-// "Mixer" category) snaps the pan value to exactly center once the
-// encoder comes to REST within PAN_SNAP_THRESHOLD of 0.5 (2% by default),
-// rather than requiring the separate encoder-push reset. Mixer mode only
-// (real track pan and TOOL_DEVICE_NAME's Pan macro, both centered at
-// 0.5) - deliberately NOT applied to MODE_DEVICE macros, which have no
-// guaranteed center value. Idle-based (checked PAN_SNAP_IDLE_MS after the
-// last tick, see schedulePanSnapCheck() below) rather than snapping on
-// every tick that lands inside the zone - an earlier per-tick version
-// snapped every message once close to center, which meant the very next
-// tiny increment landed back inside the zone too and got yanked straight
-// back, permanently trapping the pan at center. A later "only snap on the
-// tick that crosses into the zone from outside" version fixed the
-// trapping but then often didn't snap at all on hardware - the MCU
-// protocol batches several physical clicks into one MIDI message's step
-// count, so an ordinary-speed turn frequently jumps clean across the
+// Encoders are hard to land exactly on a parameter's own "home" value by
+// hand (no detent on this hardware) - originally just pan (center = 0.5),
+// but generalized once it turned out Bitwig's Controller API exposes the
+// REAL origin of any RangedValue (pan/volume/macro/send alike) via
+// getOrigin() - 0.5 for a bipolar/centered parameter like pan or an
+// oscillator fine-tune macro (turn right to pitch up, left to pitch down,
+// centered = no detune), 0 for a plain level. "Encoder Snap to Origin"
+// (Controller Preferences -> "Encoders" category) snaps the value to
+// exactly that real origin once the encoder comes to REST within
+// ENCODER_SNAP_THRESHOLD of it (2% by default), rather than requiring the
+// separate encoder-push reset - and now applies to whatever the encoder
+// currently targets in ANY mode (Mixer pan/volume, Device/Plugin macros,
+// Sends), not just Mixer-mode pan, using each target's own real origin
+// instead of a hardcoded 0.5. Skipped entirely for a genuine
+// discrete/switch target (see applyEncoderStep() above) - there's no
+// continuous "close to origin" to land on for something that only has a
+// handful of real states. Idle-based (checked ENCODER_SNAP_IDLE_MS after
+// the last tick, see scheduleEncoderSnapCheck() below) rather than
+// snapping on every tick that lands inside the zone - an earlier per-tick
+// version snapped every message once close to center, which meant the
+// very next tiny increment landed back inside the zone too and got
+// yanked straight back, permanently trapping the value there. A later
+// "only snap on the tick that crosses into the zone from outside" version
+// fixed the trapping but then often didn't snap at all on hardware - the
+// MCU protocol batches several physical clicks into one MIDI message's
+// step count, so an ordinary-speed turn frequently jumps clean across the
 // whole zone in a single message and is never actually observed "inside"
 // it. Waiting for the encoder to stop and checking where it landed
 // sidesteps both problems. Defaults; overridden live from the Controller
 // Preferences panel settings created in init() below.
-var panSnapToCenterEnabled = true;
-var PAN_SNAP_THRESHOLD = 0.02;
-var PAN_SNAP_IDLE_MS = 300;
+var encoderSnapToOriginEnabled = true;
+var ENCODER_SNAP_THRESHOLD = 0.02;
+var ENCODER_SNAP_IDLE_MS = 300;
 
 // "Select Channel on Fader Touch" (Mixer category, default on) - see the
 // Fader Touch handling in onMidi (notes 104-112) below. Overridden live
@@ -700,24 +709,25 @@ function isFaderTouchLocked(faderTouchIndex) {
 // Same debounce-generation-token pattern as revealPanTemporarily() below
 // (and lcdOverrideGeneration) - only the LAST scheduled check for a given
 // encoder actually fires; every further tick before it bumps the token
-// and makes the earlier, now-superseded check a no-op, so the pan is only
-// evaluated once it's truly stopped moving for PAN_SNAP_IDLE_MS.
-var panSnapGeneration = [0, 0, 0, 0, 0, 0, 0, 0];
+// and makes the earlier, now-superseded check a no-op, so the value is
+// only evaluated once it's truly stopped moving for ENCODER_SNAP_IDLE_MS.
+var encoderSnapGeneration = [0, 0, 0, 0, 0, 0, 0, 0];
 
-function schedulePanSnapCheck(index, target) {
-   panSnapGeneration[index]++;
-   var myGeneration = panSnapGeneration[index];
+function scheduleEncoderSnapCheck(index, target) {
+   encoderSnapGeneration[index]++;
+   var myGeneration = encoderSnapGeneration[index];
    host.scheduleTask(function () {
-      if (panSnapGeneration[index] !== myGeneration) {
+      if (encoderSnapGeneration[index] !== myGeneration) {
          return;
       }
-      if (!panSnapToCenterEnabled || currentMode !== MODE_MIXER || isFlipped) {
+      if (!encoderSnapToOriginEnabled) {
          return;
       }
-      if (Math.abs(target.get() - 0.5) <= PAN_SNAP_THRESHOLD) {
-         target.set(0.5);
+      var origin = target.getOrigin().get();
+      if (Math.abs(target.get() - origin) <= ENCODER_SNAP_THRESHOLD) {
+         target.set(origin);
       }
-   }, PAN_SNAP_IDLE_MS);
+   }, ENCODER_SNAP_IDLE_MS);
 }
 
 // One-shot status popup (e.g. SOLO/UNSOLO on the solo toggle) - shows
@@ -1564,33 +1574,35 @@ function init() {
       allowSteppedDuringAutomationWrite = value;
    });
 
-   // Pan Snap to Center - see panSnapToCenterEnabled/PAN_SNAP_THRESHOLD
-   // above (the encoder CC handler in onMidi). Its own "Mixer" category
-   // rather than piling onto "Timing", since it's a snap distance, not a
-   // wheel-tick debounce threshold.
-   var panSnapToCenterSetting = host.getPreferences().getBooleanSetting(
-      "Pan Snap to Center", "Mixer", true);
-   panSnapToCenterSetting.markInterested();
-   panSnapToCenterSetting.addValueObserver(function(value) {
-      panSnapToCenterEnabled = value;
+   // Encoder Snap to Origin - see encoderSnapToOriginEnabled/
+   // ENCODER_SNAP_THRESHOLD above (the encoder CC handler in onMidi). Own
+   // "Encoders" category (moved from "Mixer" now that it's no longer
+   // pan-only - see the big comment above encoderSnapToOriginEnabled for
+   // why) rather than piling onto "Timing", since it's a snap distance,
+   // not a wheel-tick debounce threshold.
+   var encoderSnapToOriginSetting = host.getPreferences().getBooleanSetting(
+      "Encoder Snap to Origin", "Encoders", true);
+   encoderSnapToOriginSetting.markInterested();
+   encoderSnapToOriginSetting.addValueObserver(function(value) {
+      encoderSnapToOriginEnabled = value;
    });
 
-   var panSnapThresholdSetting = host.getPreferences().getNumberSetting(
-      "Pan Snap Range (+/- %)", "Mixer", 0, 10, 0.1, "%", 2);
-   panSnapThresholdSetting.markInterested();
-   panSnapThresholdSetting.addRawValueObserver(function(value) {
-      PAN_SNAP_THRESHOLD = value / 100;
+   var encoderSnapThresholdSetting = host.getPreferences().getNumberSetting(
+      "Encoder Snap Range (+/- %)", "Encoders", 0, 10, 0.1, "%", 2);
+   encoderSnapThresholdSetting.markInterested();
+   encoderSnapThresholdSetting.addRawValueObserver(function(value) {
+      ENCODER_SNAP_THRESHOLD = value / 100;
    });
 
    // How long the encoder has to sit idle (no further ticks) before the
-   // idle-based check in schedulePanSnapCheck() actually evaluates where
-   // it landed - see the comment on panSnapGeneration above for why this
-   // is idle-based rather than checked on every tick.
-   var panSnapIdleDelaySetting = host.getPreferences().getNumberSetting(
-      "Pan Snap Idle Delay (ms)", "Mixer", 50, 2000, 10, "ms", 300);
-   panSnapIdleDelaySetting.markInterested();
-   panSnapIdleDelaySetting.addRawValueObserver(function(value) {
-      PAN_SNAP_IDLE_MS = value;
+   // idle-based check in scheduleEncoderSnapCheck() actually evaluates
+   // where it landed - see the comment on encoderSnapGeneration above for
+   // why this is idle-based rather than checked on every tick.
+   var encoderSnapIdleDelaySetting = host.getPreferences().getNumberSetting(
+      "Encoder Snap Idle Delay (ms)", "Encoders", 50, 2000, 10, "ms", 300);
+   encoderSnapIdleDelaySetting.markInterested();
+   encoderSnapIdleDelaySetting.addRawValueObserver(function(value) {
+      ENCODER_SNAP_IDLE_MS = value;
    });
 
    // Select Channel on Fader Touch - see the Fader Touch handling in
@@ -1616,15 +1628,17 @@ function init() {
 
    // Remote Controls (8 Macros for selected device)
    remoteControls = cursorDevice.createCursorRemoteControlsPage(8);
-   // discreteValueCount()/discreteValueNames() need markInterested() (or
-   // an observer) before .get() works, same as any other Value - see
-   // applyEncoderStep() for why this matters for macros specifically:
-   // it's how a macro that's actually an on/off switch (or any other
-   // discrete-valued parameter) is told apart from a continuous one.
+   // discreteValueCount()/discreteValueNames()/getOrigin() need
+   // markInterested() (or an observer) before .get() works, same as any
+   // other Value - see applyEncoderStep() for why discreteValueCount/Names
+   // matters for macros specifically (telling a macro that's an on/off
+   // switch apart from a continuous one) and scheduleEncoderSnapCheck()
+   // for getOrigin() (each macro's own real "home" value to snap to).
    for (var rcIdx = 0; rcIdx < 8; rcIdx++) {
       var rcParam = remoteControls.getParameter(rcIdx);
       rcParam.discreteValueCount().markInterested();
       rcParam.discreteValueNames().markInterested();
+      rcParam.getOrigin().markInterested();
    }
 
    // Last-clicked-in-GUI parameter (see ALT + Jog Wheel in the wheel
@@ -1716,6 +1730,7 @@ function init() {
          sendItem.value().markInterested();
          sendItem.discreteValueCount().markInterested();
          sendItem.discreteValueNames().markInterested();
+         sendItem.getOrigin().markInterested();
 
          sendItem.displayedValue().addValueObserver(function (dispVal) {
             if (currentMode === MODE_SENDS) {
@@ -1838,8 +1853,10 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          track.volume().value().markInterested();
          track.volume().discreteValueCount().markInterested();
          track.volume().discreteValueNames().markInterested();
+         track.volume().getOrigin().markInterested();
          track.pan().discreteValueCount().markInterested();
          track.pan().discreteValueNames().markInterested();
+         track.pan().getOrigin().markInterested();
 
          track.volume().displayedValue().addValueObserver(function (dispVal) {
             if (currentMode === MODE_MIXER && !isFlipped && isViewingReturns === isReturnsBank &&
@@ -1959,6 +1976,7 @@ function scanTrackForToolDevice(track, onSlotFound, onSlotLost) {
             param.value().markInterested();
             param.discreteValueCount().markInterested();
             param.discreteValueNames().markInterested();
+            param.getOrigin().markInterested();
          }
 
          device.name().addValueObserver(function (name) {
@@ -2069,14 +2087,15 @@ function onMidi(status, data1, data2) {
       var encTarget = getEncoderTarget(encoderIndex);
       if (encTarget) {
          applyEncoderStep(encTarget, rawDelta, encoderIndex);
-         // Pan Snap to Center - see schedulePanSnapCheck() above. Only
-         // meaningful in Mixer mode (unflipped = pan, real track or
-         // TOOL_DEVICE_NAME's Pan macro) - MODE_DEVICE macros/MODE_SENDS
-         // levels have no guaranteed center to snap to. Idle-based: this
-         // just (re)arms a check for PAN_SNAP_IDLE_MS after the LAST tick
-         // of this turn, not this specific tick's value.
-         if (panSnapToCenterEnabled && currentMode === MODE_MIXER && !isFlipped) {
-            schedulePanSnapCheck(encoderIndex, encTarget);
+         // Encoder Snap to Origin - see scheduleEncoderSnapCheck() above.
+         // Applies to whatever the encoder currently targets, in any mode
+         // (pan/volume, a device macro, a send) - skipped only for a
+         // genuine discrete/switch target, which has no continuous "close
+         // to origin" to land on. Idle-based: this just (re)arms a check
+         // for ENCODER_SNAP_IDLE_MS after the LAST tick of this turn, not
+         // this specific tick's value.
+         if (encoderSnapToOriginEnabled && encTarget.discreteValueCount().get() <= 0) {
+            scheduleEncoderSnapCheck(encoderIndex, encTarget);
          }
       }
       // The bottom LCD row otherwise always shows volume in Mixer mode

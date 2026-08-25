@@ -361,30 +361,32 @@ someone might genuinely want hard, quantized automation steps recorded
 on purpose. Turning this on lets Stepped mode keep working even while
 Automation Write is enabled.
 
-None of this is yet tested on hardware.
-
-### Mixer settings (Controller Preferences panel)
-
-Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
--> **Mixer** category. **Pan Snap to Center** (on/off, default ON) - the
-pan encoders have no physical detent, so landing exactly on dead center by
-turning alone is fiddly; once the encoder comes to **rest** (no further
-tick for **Pan Snap Idle Delay (ms)**, default 300) within **Pan Snap
-Range (+/- %)** (default 2%, range 0-10%) of exact center, it snaps the
-rest of the way there (`target.set(0.5)`) instead of leaving it at
-whatever the last increment produced. Mixer mode only (real track pan and
-`TRLVL`'s Pan macro when `isToolVolumeMode` is active - both centered at
-the normalized value 0.5) - deliberately **not** applied to `MODE_DEVICE`
-remote-control macros, which have no guaranteed center value to snap to,
-or to `MODE_SENDS` levels. Doesn't replace the existing encoder-push pan
-reset (note 87/case in `handleButtonPress` - "Pan only - centers the pan,
-nothing else") - that's still there as an exact, always-available reset;
-this just makes turning the encoder itself land on center more often,
-without needing the separate push. Turn the range down to 0% to disable
-snapping without touching the on/off toggle, or use the toggle directly.
+**Encoder Snap to Origin** (on/off, default ON) - encoders have no
+physical detent, so landing exactly on a parameter's own "home" value by
+turning alone is fiddly. Originally just "Pan Snap to Center" (Mixer-mode
+pan only, hardcoded to 0.5) - generalized after confirming Bitwig's
+Controller API exposes the REAL origin of any `RangedValue` via
+`getOrigin()`, not just pan's: 0.5 for a bipolar/centered parameter (pan,
+or e.g. an oscillator fine-tune macro - turn right to pitch up, left to
+pitch down, centered means no detune), 0 for a plain level. Once the
+encoder comes to **rest** (no further tick for **Encoder Snap Idle Delay
+(ms)**, default 300) within **Encoder Snap Range (+/- %)** (default 2%,
+range 0-10%) of that real origin, it snaps the rest of the way there
+(`target.set(target.getOrigin().get())`) instead of leaving it at
+whatever the last increment produced. Now applies to whatever the
+encoder currently targets in **any** mode - Mixer pan/volume, Device/
+Plugin macros, Sends - not just Mixer-mode pan; skipped only for a
+genuine discrete/switch target (see `applyEncoderStep()`), which has no
+continuous "close to origin" to land on. Doesn't replace the existing
+encoder-push pan reset (note 87/case in `handleButtonPress` - "Pan only -
+centers the pan, nothing else") - that's still there as an exact,
+always-available reset; this just makes turning the encoder itself land
+on the origin more often, without needing the separate push. Turn the
+range down to 0% to disable snapping without touching the on/off toggle,
+or use the toggle directly.
 
 Went through two earlier designs that both failed on hardware before
-landing on the idle-based one above:
+landing on the idle-based one above (back when this was still pan-only):
 
 1. **Per-tick, checked after every turn.** Snapped as soon as *any*
    tick's resulting value fell inside the range, with no regard for
@@ -405,16 +407,28 @@ landing on the idle-based one above:
 
 Both problems share the same root cause: reacting to *every individual
 tick* mid-turn, whether by value or by transition, is the wrong signal -
-what actually matters is where the pan ends up once you stop turning.
-`schedulePanSnapCheck()` re-arms a `host.scheduleTask()` check on every
-tick (bumping a per-encoder generation token, same debounce pattern
-`revealPanTemporarily()` already uses for the bottom-row LCD reveal, so
+what actually matters is where the value ends up once you stop turning.
+`scheduleEncoderSnapCheck()` re-arms a `host.scheduleTask()` check on
+every tick (bumping a per-encoder generation token, same debounce
+pattern `revealPanTemporarily()` uses for the bottom-row LCD reveal, so
 only the LAST scheduled check for a turn ever actually runs) and only
 evaluates the resting value once nothing has moved that encoder for
-**Pan Snap Idle Delay (ms)** - sidestepping both the trapping and the
+**Encoder Snap Idle Delay (ms)** - sidestepping both the trapping and the
 overshoot-past-the-zone problem, since it no longer matters how big or
-small each individual MIDI message's step was. Not yet tested on
-hardware since this redesign.
+small each individual MIDI message's step was. Pan specifically was
+confirmed working on hardware under the idle-based design before this
+round's generalization to `getOrigin()`; the generalized (any mode, any
+target) version is not yet re-tested.
+
+None of this is yet tested on hardware, except where individually noted
+above.
+
+### Mixer settings (Controller Preferences panel)
+
+Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
+-> **Mixer** category. (Pan's own snap-to-center behavior lives under
+**Encoder Snap to Origin** in the Encoders settings above now, alongside
+the other encoder-turn behaviors it was generalized to work with.)
 
 **Select Channel on Fader Touch** (on/off, default ON) - touching one of
 the motorized faders (notes 104-111 for channels 1-8, note 112 for the
