@@ -421,25 +421,71 @@ function revealPanTemporarily(index) {
 // handful of buckets. 0% (default) matches the raw hardware behavior
 // exactly - no extra curve on top of whatever the encoder itself reports
 // per MIDI message. Maps to an exponent from 1.0 (0%, no curve) to 2.0
-// (100%, strongest) applied to the raw per-message tick count (rawDelta -
-// the MCU protocol's own sign-magnitude step size, which already reflects
-// how many physical clicks happened since the last message). A rawDelta
-// of 1 (a slow, deliberate single-detent turn) is unaffected at every
-// setting (1^n === 1 for any n) - only a fast turn (a larger rawDelta
-// already reported for one message) gets boosted further, so a careful
-// turn feels identical regardless of this setting; only how much a fast
-// flick "runs ahead" changes. Feeds into every continuous/stepped
-// adjustment in applyEncoderStep() below. Default; overridden live from
-// the Controller Preferences panel setting created in init() below.
+// (100%, strongest), applied not to the raw per-message tick count alone
+// but to a TIME-based velocity ratio (see computeEncoderVelocityRatio()
+// below) - how many ticks per second this turn actually represents,
+// relative to ENCODER_VELOCITY_BASELINE_TICKS_PER_SEC, rather than just
+// how many ticks happened to land in one MIDI message. Raw tick count
+// alone is a rough proxy for turning speed at best - the same rawDelta
+// can arrive after 5ms (a fast flick) or 200ms (a slow, deliberate turn
+// whose ticks just happened to batch into one message), and those should
+// NOT accelerate the same amount. This needed nothing beyond a per-
+// encoder Date.now() timestamp captured at the moment each CC message
+// already arrives (lastEncoderTickTime below) - purely event-driven, no
+// added polling/timer/background cost of any kind, since it only runs
+// inside the exact same onMidi() handler this already went through.
+// Turning at or below the baseline rate is unaffected at every curve
+// setting (a ratio of 1 stays 1 regardless of exponent) - only a turn
+// faster than that baseline gets boosted further, so a careful turn
+// feels identical regardless of this setting; only how much a fast flick
+// "runs ahead" changes. Feeds into the continuous/fine adjustment in
+// applyEncoderStep() below (not Stepped mode - see there for why).
+// Default; overridden live from the Controller Preferences panel setting
+// created in init() below.
 var ENCODER_ACCELERATION_PERCENT = 0;
 
-function applyEncoderAcceleration(rawDelta) {
+// Per-encoder timestamp (Date.now(), ms) of the last CC 16-23 message
+// seen for that encoder - the only state computeEncoderVelocityRatio()
+// needs, updated every message regardless of whether acceleration is
+// even on, so the timing history is always current if it's switched on
+// mid-session. 0 = no message seen yet for that encoder this session.
+var lastEncoderTickTime = [0, 0, 0, 0, 0, 0, 0, 0];
+
+// A rough estimate, not (yet) hardware-calibrated, of how many ticks per
+// second a normal, unhurried turn produces on this controller - the
+// point below which the velocity ratio stays at 1 (no acceleration
+// boost). May need adjusting once tested on real hardware timing.
+var ENCODER_VELOCITY_BASELINE_TICKS_PER_SEC = 20;
+
+// Floor on the measured inter-message gap, so two messages arriving only
+// a millisecond or two apart (e.g. a burst from the same physical
+// detent) can't produce an absurdly inflated ticks-per-second figure from
+// dividing by a near-zero time span.
+var ENCODER_VELOCITY_MIN_DT_MS = 4;
+
+// Returns how many times faster than ENCODER_VELOCITY_BASELINE_TICKS_PER_SEC
+// this specific tick's implied turning speed is (1 = at or below
+// baseline, higher = faster) - see the acceleration comment above for
+// why this uses elapsed time rather than just the raw tick count.
+function computeEncoderVelocityRatio(encoderIndex, rawDelta) {
+   var now = Date.now();
+   var last = lastEncoderTickTime[encoderIndex];
+   lastEncoderTickTime[encoderIndex] = now;
+   if (last === 0) {
+      return 1; // first message seen for this encoder - no history yet to measure speed from
+   }
+   var dtMs = Math.max(now - last, ENCODER_VELOCITY_MIN_DT_MS);
+   var ticksPerSecond = (Math.abs(rawDelta) * 1000) / dtMs;
+   return Math.max(1, ticksPerSecond / ENCODER_VELOCITY_BASELINE_TICKS_PER_SEC);
+}
+
+function applyEncoderAcceleration(rawDelta, velocityRatio) {
    if (ENCODER_ACCELERATION_PERCENT <= 0 || rawDelta === 0) {
       return rawDelta;
    }
    var exponent = 1.0 + (ENCODER_ACCELERATION_PERCENT / 100);
-   var sign = rawDelta < 0 ? -1 : 1;
-   return sign * Math.pow(Math.abs(rawDelta), exponent);
+   var boost = Math.pow(velocityRatio, exponent - 1);
+   return rawDelta * boost;
 }
 
 // "SHIFT+Encoder Mode" (Controller Preferences -> "Encoders" category) -
@@ -510,7 +556,11 @@ var allowSteppedDuringAutomationWrite = false;
 // never case 2's stepped jumps, which are already their own, much
 // coarser form of "acceleration" over a fine nudge; compounding the curve
 // on top of that would accelerate an already-accelerated gesture.
-function applyEncoderStep(target, rawDelta) {
+function applyEncoderStep(target, rawDelta, encoderIndex) {
+   // Always updates the timing history (see computeEncoderVelocityRatio()
+   // above), even on branches below that don't end up using the result,
+   // so the history is current the moment acceleration is turned on.
+   var velocityRatio = computeEncoderVelocityRatio(encoderIndex, rawDelta);
    var discreteCount = target.discreteValueCount().get();
    if (discreteCount > 0) {
       var curIndex = Math.round(target.get() * (discreteCount - 1));
@@ -547,11 +597,11 @@ function applyEncoderStep(target, rawDelta) {
          target.set(newVal);
          return;
       }
-      target.inc(applyEncoderAcceleration(rawDelta) * 0.2, 512);
+      target.inc(applyEncoderAcceleration(rawDelta, velocityRatio) * 0.2, 512);
       return;
    }
 
-   target.inc(applyEncoderAcceleration(rawDelta), 128);
+   target.inc(applyEncoderAcceleration(rawDelta, velocityRatio), 128);
 }
 
 // Pan encoders are hard to land exactly on dead center by hand (no detent
@@ -2018,7 +2068,7 @@ function onMidi(status, data1, data2) {
       // unflipped / volume flipped, the opposite of the fader).
       var encTarget = getEncoderTarget(encoderIndex);
       if (encTarget) {
-         applyEncoderStep(encTarget, rawDelta);
+         applyEncoderStep(encTarget, rawDelta, encoderIndex);
          // Pan Snap to Center - see schedulePanSnapCheck() above. Only
          // meaningful in Mixer mode (unflipped = pan, real track or
          // TOOL_DEVICE_NAME's Pan macro) - MODE_DEVICE macros/MODE_SENDS

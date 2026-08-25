@@ -317,15 +317,31 @@ behavior, unchanged - only **SHIFT+turn**'s behavior is selectable, via
 **Encoder Acceleration (%)** (default 0 = off, range 0-100) - a
 continuous dial, not fixed presets, so it can be tuned to the user's own
 dexterity. Maps to an exponent from 1.0 (0%, no curve at all - matches
-the raw hardware behavior exactly) to 2.0 (100%, strongest) applied to
-the raw per-message tick count. A slow, deliberate single-detent turn is
-completely unaffected at every setting (`1^n === 1` for any exponent `n`)
-- only a fast turn (a larger raw tick count already reported for that one
-message) gets boosted further, so careful turns always feel identical and
-only how far a fast flick "runs ahead" changes. **0% is a real, supported
-"no acceleration" option**, not just a low setting - the curve is skipped
-entirely rather than approximated, so it's bit-for-bit identical to the
-pre-acceleration behavior.
+the raw hardware behavior exactly) to 2.0 (100%, strongest).
+
+Applied to a **time-based velocity ratio**, not the raw per-message tick
+count alone - inspired by a paper on encoder velocity/acceleration
+estimation (Merry et al., IFAC 2008, "time stamping" concept): the same
+raw tick count can arrive 5ms after the last message (a fast flick) or
+200ms after it (a slow, deliberate turn whose ticks just happened to
+batch into one message), and those shouldn't accelerate the same amount.
+`computeEncoderVelocityRatio()` captures a `Date.now()` timestamp per
+encoder every time a CC 16-23 message arrives (`lastEncoderTickTime`) and
+computes ticks-per-second from the gap to the previous one, relative to
+an estimated baseline (`ENCODER_VELOCITY_BASELINE_TICKS_PER_SEC`, not yet
+hardware-calibrated) - turning at or below that baseline rate leaves the
+ratio at 1 (no boost) regardless of the curve setting, so a careful turn
+always feels identical; only a turn faster than baseline gets boosted
+further. **Purely event-driven** - this only runs inside the same
+`onMidi()` call a message would be processed by anyway, using a
+timestamp already captured at that moment; no timer, no polling loop, no
+added background cost of any kind.
+
+**0% is a real, supported "no acceleration" option**, not just a low
+setting - the curve is skipped entirely rather than approximated, so it's
+bit-for-bit identical to the pre-acceleration behavior (and the timing
+history is still tracked even while off, so turning it on mid-session has
+a warm history immediately rather than a cold first read).
 
 Only scales the regular **Fine/plain continuous** adjustment (`.inc()`) -
 deliberately **not** Stepped mode's jumps, which always move exactly one
