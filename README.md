@@ -152,11 +152,42 @@ Defaults: F1 =
 `Duplicate`, F2 = `Consolidate`, F3-F8 = `None`.
 
 Every press shows the action name **twice**: as a Bitwig on-screen popup
-(`host.showPopupNotification`, same as the orange state's `Device N`
-popup) *and* as a momentary LCD popup on that F-key's own channel strip
-(`showBottomRowPopup`, truncated to 7 characters like every other LCD
-popup, then reverting to normal track info after the usual timeout) - so
-it's visible both on-screen and on the hardware which function just ran.
+(`host.showPopupNotification`, the full name, same as the orange state's
+`Device N` popup) *and* on that F-key's own channel strip's bottom LCD
+row - but **while the button stays held down**, not a momentary flash:
+`showBottomRowPopupWhileHeld()` displays it with no auto-revert timeout at
+all, and only the button's own Note-Off (`revertBottomRowPopup()`, wired
+up alongside the press in onMidi's "F1-F8 Green State" block) brings the
+LCD back to normal track info - so however long you hold it, the name
+stays legible for exactly that long, rather than disappearing after a
+fixed timeout that a quick tap might not give you time to read. This
+needed intercepting notes 62-69 directly in `onMidi` (both press *and*
+release) instead of leaving them to `handleButtonPress()`'s switch like
+the orange state (54-61) still does, since that switch only ever sees
+presses.
+
+The LCD is still only 7 characters per cell, and the real action names
+are often much longer - plain left-truncation collided for several of
+them (`Select All`/`Select None`/`Select item at cursor` all truncated to
+the identical `Select `; the three `Toggle...` entries all truncated to
+`Toggle `), which would defeat the point of a name you can actually read
+while holding the button. `FKEY_SHORT_NAMES` hand-picks a distinct
+<=7-character abbreviation (e.g. `SelAll`/`SelNone`/`SelCurs`,
+`TglMute`/`TglHold`/`TglOnOf`) for every entry that needs one; the on-screen
+Bitwig popup always shows the real full name regardless, since that one
+isn't width-constrained.
+
+**F-Key LCD Hold Linger (ms)** (Timing category, default 300, range
+0-2000) - the name display doesn't necessarily vanish the instant the
+button is released: a genuinely quick tap could release before there was
+ever enough time to actually read it, so `revertBottomRowPopup()` keeps
+it up this much longer past release before reverting, same debounce-
+generation-token pattern used everywhere else in this file (a fresh press
+before the linger elapses cancels the pending revert, same as re-pressing
+during any other timed popup). Only pads out the *minimum* - a long hold
+already gets however long it was actually held, unaffected by this
+setting. Set to 0 to revert the instant the button is released, no
+linger at all.
 
 Ten entries (`Duplicate` through `Redo`) call a dedicated, typed
 `Application` method (`application.duplicate()`, `.cut()`, `.remove()`

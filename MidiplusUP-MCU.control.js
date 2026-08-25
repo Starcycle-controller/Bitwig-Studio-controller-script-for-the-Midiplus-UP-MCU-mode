@@ -149,13 +149,16 @@ function closeOtherDeviceWindowsIfConfigured() {
    }
 }
 
-// Green-state F1-F8 (notes 62-69, see case 62-69 below) - configurable
-// "editing function" keys, set via the 8 "F1-F8 Function (Green State)"
-// Controller Preferences dropdowns in init(). Every press shows the
-// action name both as a Bitwig on-screen popup (host.showPopupNotification,
-// same as the orange state's "Device N" popup) AND as a momentary LCD
-// popup on that F-key's own channel strip (showBottomRowPopup, truncated
-// to 7 characters like every other LCD popup) - see invokeFKeyFunction().
+// Green-state F1-F8 (notes 62-69, intercepted directly in onMidi - see the
+// "F1-F8 Green State" block there) - configurable "editing function" keys,
+// set via the 8 "F1-F8 Function (Green State)" Controller Preferences
+// dropdowns in init(). Every press shows the action name both as a Bitwig
+// on-screen popup (host.showPopupNotification, full name, same as the
+// orange state's "Device N" popup) AND on that F-key's own channel strip's
+// bottom LCD row (abbreviated to <=7 characters - see FKEY_SHORT_NAMES
+// below), staying there for as long as the button is physically held
+// rather than a fixed timeout (showBottomRowPopupWhileHeld/
+// revertBottomRowPopup) - see invokeFKeyFunction().
 //
 // Entries with a `method` call a dedicated, typed Application method
 // (guaranteed correct, not guessed). Entries with an `actionId` have no
@@ -215,12 +218,56 @@ var FKEY_FUNCTIONS = {
 // lists - "None" first, then FKEY_FUNCTIONS' entries in the order above.
 var FKEY_FUNCTION_NAMES = ["None"].concat(Object.keys(FKEY_FUNCTIONS));
 
+// Hand-picked <=7-character abbreviations for the LCD (which only has 7
+// characters per cell - see formatString()) - plain left-truncation of
+// the full names collides for several of them (e.g. "Select All",
+// "Select None" and "Select item at cursor" all truncate to the
+// identical "Select "; "Toggle Active/Mute State", "Toggle Hold" and
+// "Toggle On / Off" all truncate to "Toggle "), which defeats the whole
+// point of showing a name while the button is held - see
+// showBottomRowPopupWhileHeld() below. Only used for the LCD text; the
+// on-screen Bitwig popup (host.showPopupNotification in
+// invokeFKeyFunction()) always shows the real, full name, since that
+// popup isn't width-constrained. Falls back to the plain 7-char
+// truncation (formatString(name, 7)) for any name without an entry here.
+var FKEY_SHORT_NAMES = {
+   "Duplicate": "Duplic",
+   "Select All": "SelAll",
+   "Select None": "SelNone",
+   "Consolidate": "Consol",
+   "Activate": "Activ",
+   "Deactivate": "Deactv",
+   "Duplicate as Alias": "DupAlia",
+   "Paste as Alias": "PasteAl",
+   "Switch between Object and Time Selection": "ObjTime",
+   "Toggle Active/Mute State": "TglMute",
+   "Toggle Hold": "TglHold",
+   "Toggle On / Off": "TglOnOf",
+   "Turn On": "TurnOn",
+   "Turn Off": "TurnOff",
+   "Wrap as Automation Clip": "WrapAut",
+   "New Project": "NewProj",
+   "Save as...": "SaveAs",
+   "New From Template...": "NewTmpl",
+   "Save as Template...": "SavTmpl",
+   "Save to Library...": "SavLib",
+   "Import Wavetables...": "ImpWave",
+   "Import Impulses...": "ImpImpl",
+   "Select item at cursor": "SelCurs",
+   "Click button": "ClickBt"
+};
+
 function invokeFKeyFunction(name, fkeyIndex) {
    if (name === "None") {
       return;
    }
    host.showPopupNotification(name);
-   showBottomRowPopup(fkeyIndex, name);
+   // LCD uses the short abbreviation (see FKEY_SHORT_NAMES above) and
+   // stays up for as long as the button is held (showBottomRowPopupWhileHeld,
+   // reverted by the F-key Note-Off handling in onMidi) rather than
+   // showBottomRowPopup's fixed timeout - a quick tap wouldn't leave
+   // enough time to actually read the name otherwise.
+   showBottomRowPopupWhileHeld(fkeyIndex, FKEY_SHORT_NAMES[name] || name);
 
    var entry = FKEY_FUNCTIONS[name];
    if (!entry) {
@@ -240,6 +287,11 @@ function invokeFKeyFunction(name, fkeyIndex) {
 // (F1 = Duplicate, F2 = Consolidate); populated live by the 8 Controller
 // Preferences dropdowns in init().
 var fKeyFunctionAssignment = ["Duplicate", "Consolidate", "None", "None", "None", "None", "None", "None"];
+
+// How long an F-key's LCD name display lingers after release - see
+// revertBottomRowPopup() above. Default; overridden live from the
+// Controller Preferences panel setting created in init() below.
+var FKEY_HOLD_LINGER_MS = 300;
 
 // Bitwig's getEnumSetting() dropdowns can't have their option list
 // changed at runtime (confirmed against the Controller API Javadoc - no
@@ -414,6 +466,53 @@ function showBottomRowPopup(index, text) {
       }
       refreshDisplayText();
    }, LCD_OVERRIDE_TIMEOUT_MS);
+}
+
+// Held version of showBottomRowPopup() - shows `text` in channel `index`'s
+// bottom LCD row and stays there indefinitely, with NO auto-revert
+// timeout, until revertBottomRowPopup() (below) is explicitly called -
+// used for F1-F8's green-state function-key names (see
+// invokeFKeyFunction()) so the name stays legible for as long as the
+// button is physically held, how ever long that turns out to be, instead
+// of disappearing after a fixed timeout regardless of hold duration.
+// Still bumps lcdOverrideGeneration so any of showBottomRowPopup()'s own
+// pending timed reverts on this channel become no-ops rather than
+// stomping this while it's still meant to be showing.
+function showBottomRowPopupWhileHeld(index, text) {
+   isShowingPanTemporarily[index] = false;
+   bottomRowText[index] = formatString(text, 7);
+   displayNeedsUpdate = true;
+   lcdOverrideGeneration[index]++;
+}
+
+// Reverts channel `index`'s bottom row back to whatever refreshDisplayText()
+// would normally show there - the explicit counterpart to
+// showBottomRowPopupWhileHeld() above, called on the F-key's Note-Off.
+// Doesn't revert instantly by default: FKEY_HOLD_LINGER_MS (Timing
+// category, default 300ms - see the Controller Preferences setting in
+// init()) keeps it up a little longer after release, since a genuinely
+// quick tap could otherwise release before there was ever enough time to
+// read the name at all - a long hold already gets however much time it
+// was actually held, this only pads out the minimum for a short one.
+// Bumps lcdOverrideGeneration immediately either way, so it also cancels
+// out any showBottomRowPopup()-style timed revert that might still be
+// pending on this same channel; if the same F-key gets pressed again
+// before the linger elapses, showBottomRowPopupWhileHeld()'s own
+// generation bump on that next press makes this pending revert a no-op,
+// same debounce pattern used everywhere else in this file.
+function revertBottomRowPopup(index) {
+   lcdOverrideGeneration[index]++;
+   if (FKEY_HOLD_LINGER_MS <= 0) {
+      refreshDisplayText();
+      return;
+   }
+   var myGeneration = lcdOverrideGeneration[index];
+   host.scheduleTask(function () {
+      if (lcdOverrideGeneration[index] !== myGeneration) {
+         return;
+      }
+      refreshDisplayText();
+   }, FKEY_HOLD_LINGER_MS);
 }
 
 // Whole-strip version of showBottomRowPopup() - shows `text` across all 8
@@ -986,7 +1085,8 @@ function init() {
 
    // Function Keys settings (Controller Preferences panel -> "Function
    // Keys" category) - what each of the 8 green-state F1-F8 buttons (see
-   // FKEY_FUNCTION_NAMES/invokeFKeyFunction above, and case 62-69 below)
+   // FKEY_FUNCTION_NAMES/invokeFKeyFunction above, and the "F1-F8 Green
+   // State" block in onMidi)
    // does. All 8 dropdowns offer the same full option list - Bitwig has
    // no API to prune already-picked options from the others - so a
    // duplicate pick is only caught after the fact, via
@@ -1097,6 +1197,18 @@ function init() {
    globalWheelTicksSetting.addRawValueObserver(function(value) {
       globalWheelTicks = value;
       applyWheelTickSettings();
+   });
+
+   // How long an F1-F8 green-state key's LCD name display lingers after
+   // release - see revertBottomRowPopup() above. 0 reverts the instant the
+   // button is released; the button-held duration itself is unaffected -
+   // this only pads out the minimum for a quick tap that released before
+   // there was time to read anything.
+   var fkeyHoldLingerSetting = host.getPreferences().getNumberSetting(
+      "F-Key LCD Hold Linger (ms)", "Timing", 0, 2000, 10, "ms", 300);
+   fkeyHoldLingerSetting.markInterested();
+   fkeyHoldLingerSetting.addRawValueObserver(function(value) {
+      FKEY_HOLD_LINGER_MS = value;
    });
 
    // Pan Snap to Center - see panSnapToCenterEnabled/PAN_SNAP_THRESHOLD
@@ -2029,6 +2141,25 @@ function onMidi(status, data1, data2) {
          return;
       }
 
+      // F1-F8 Green State (Notes 62-69) - configurable editing-function
+      // keys (see FKEY_FUNCTION_NAMES/invokeFKeyFunction/FKEY_SHORT_NAMES
+      // above). Intercepted here (rather than left to fall through to
+      // handleButtonPress()/its switch, like case 54-61's orange state
+      // still does) so both press AND release are available: press still
+      // invokes the assigned function immediately, same as before: release
+      // reverts the LCD name display (see showBottomRowPopupWhileHeld() in
+      // invokeFKeyFunction()) - so the name stays legible for exactly as
+      // long as the button is physically held, not a fixed timeout.
+      if (data1 >= 62 && data1 <= 69) {
+         var fkeyIdx = data1 - 62;
+         if (isPressed) {
+            invokeFKeyFunction(fKeyFunctionAssignment[fkeyIdx], fkeyIdx);
+         } else {
+            revertBottomRowPopup(fkeyIdx);
+         }
+         return;
+      }
+
       // Standard Button Press Handling
       if (isPressed) {
          handleButtonPress(data1);
@@ -2265,15 +2396,10 @@ function handleButtonPressInner(note) {
          applyModeChange(wasAlreadyInDeviceMode ? null : "PLUGIN");
          break;
 
-      case 62: case 63: case 64: case 65: case 66: case 67: case 68: case 69:
-         // F1-F8, green-lit state (SMPTE/BEATS toggles this, see note 53
-         // above). Configurable editing-function keys - see
-         // FKEY_FUNCTION_NAMES/invokeFKeyFunction above and the
-         // "Function Keys" Controller Preferences category in init() -
-         // rather than a fixed built-in action like the orange/default
-         // state (case 54-61).
-         invokeFKeyFunction(fKeyFunctionAssignment[note - 62], note - 62);
-         break;
+      // F1-F8 green-lit state (notes 62-69) is intercepted earlier in
+      // onMidi, before it ever reaches this switch - see the "F1-F8 Green
+      // State" block there for why (both press AND release matter for the
+      // held-name LCD display, and this switch only ever sees presses).
 
       case 45: // RETURNS -> swap the 8 channel strips to/from the Return
                // Tracks bank. Moved here from note 51 after the user
