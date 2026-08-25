@@ -152,13 +152,14 @@ function closeOtherDeviceWindowsIfConfigured() {
 // Green-state F1-F8 (notes 62-69, intercepted directly in onMidi - see the
 // "F1-F8 Green State" block there) - configurable "editing function" keys,
 // set via the 8 "F1-F8 Function (Green State)" Controller Preferences
-// dropdowns in init(). Every press shows the action name both as a Bitwig
-// on-screen popup (host.showPopupNotification, full name, same as the
-// orange state's "Device N" popup) AND on that F-key's own channel strip's
-// bottom LCD row (abbreviated to <=7 characters - see FKEY_SHORT_NAMES
-// below), staying there for as long as the button is physically held
-// rather than a fixed timeout (showBottomRowPopupWhileHeld/
-// revertBottomRowPopup) - see invokeFKeyFunction().
+// dropdowns in init(). Every press shows the pressed key's action name as
+// a Bitwig on-screen popup (host.showPopupNotification, full name, same
+// as the orange state's "Device N" popup - see invokeFKeyFunction()) AND
+// reveals EVERY F-key's assigned name (abbreviated to <=7 characters -
+// see FKEY_SHORT_NAMES below) across all 8 channel strips' bottom LCD
+// rows at once (showAllFKeyAssignments()), staying there for as long as
+// the button is physically held rather than a fixed timeout
+// (showBottomRowPopupWhileHeld/revertBottomRowPopup).
 //
 // Entries with a `method` call a dedicated, typed Application method
 // (guaranteed correct, not guessed). Entries with an `actionId` have no
@@ -257,17 +258,15 @@ var FKEY_SHORT_NAMES = {
    "Click button": "ClickBt"
 };
 
-function invokeFKeyFunction(name, fkeyIndex) {
+function invokeFKeyFunction(name) {
    if (name === "None") {
       return;
    }
    host.showPopupNotification(name);
-   // LCD uses the short abbreviation (see FKEY_SHORT_NAMES above) and
-   // stays up for as long as the button is held (showBottomRowPopupWhileHeld,
-   // reverted by the F-key Note-Off handling in onMidi) rather than
-   // showBottomRowPopup's fixed timeout - a quick tap wouldn't leave
-   // enough time to actually read the name otherwise.
-   showBottomRowPopupWhileHeld(fkeyIndex, FKEY_SHORT_NAMES[name] || name);
+   // The LCD side (per-key abbreviated name, held for as long as the
+   // button stays down) is handled by showAllFKeyAssignments() in the
+   // F1-F8 Note-On handler below, alongside the other 7 keys' names - see
+   // there.
 
    var entry = FKEY_FUNCTIONS[name];
    if (!entry) {
@@ -472,9 +471,10 @@ function showBottomRowPopup(index, text) {
 // bottom LCD row and stays there indefinitely, with NO auto-revert
 // timeout, until revertBottomRowPopup() (below) is explicitly called -
 // used for F1-F8's green-state function-key names (see
-// invokeFKeyFunction()) so the name stays legible for as long as the
-// button is physically held, how ever long that turns out to be, instead
-// of disappearing after a fixed timeout regardless of hold duration.
+// showAllFKeyAssignments() further below) so the names stay legible for
+// as long as the button is physically held, however long that turns out
+// to be, instead of disappearing after a fixed timeout regardless of hold
+// duration.
 // Still bumps lcdOverrideGeneration so any of showBottomRowPopup()'s own
 // pending timed reverts on this channel become no-ops rather than
 // stomping this while it's still meant to be showing.
@@ -513,6 +513,35 @@ function revertBottomRowPopup(index) {
       }
       refreshDisplayText();
    }, FKEY_HOLD_LINGER_MS);
+}
+
+// Reveals ALL 8 green-state F-key assignments across all 8 channel
+// strips' bottom LCD rows at once - not just the one that was pressed -
+// requested so holding any single F-key shows what every other F-key is
+// currently mapped to as well, a "what could I press" reference rather
+// than only confirming the one just used. Unassigned keys ("None") show
+// "-" so it's clear they're deliberately empty rather than not yet
+// revealed. Shares showBottomRowPopupWhileHeld()/revertBottomRowPopup()
+// (and their hold-until-release / FKEY_HOLD_LINGER_MS behavior) with the
+// single-key version above, just looped across all 8 channels - so if two
+// F-keys were ever held at once, releasing one would revert all 8
+// (including the still-held one's channel, which would immediately
+// re-populate correctly next tick anyway) rather than tracking each
+// channel's "how many F-keys are currently keeping it revealed"
+// separately; not worth the extra bookkeeping for hardware with one hand
+// and eight fingers' worth of function buttons in a single row.
+function showAllFKeyAssignments() {
+   for (var i = 0; i < 8; i++) {
+      var assigned = fKeyFunctionAssignment[i];
+      var text = assigned === "None" ? "-" : (FKEY_SHORT_NAMES[assigned] || assigned);
+      showBottomRowPopupWhileHeld(i, text);
+   }
+}
+
+function revertAllFKeyAssignments() {
+   for (var i = 0; i < 8; i++) {
+      revertBottomRowPopup(i);
+   }
 }
 
 // Whole-strip version of showBottomRowPopup() - shows `text` across all 8
@@ -2146,16 +2175,20 @@ function onMidi(status, data1, data2) {
       // above). Intercepted here (rather than left to fall through to
       // handleButtonPress()/its switch, like case 54-61's orange state
       // still does) so both press AND release are available: press still
-      // invokes the assigned function immediately, same as before: release
-      // reverts the LCD name display (see showBottomRowPopupWhileHeld() in
-      // invokeFKeyFunction()) - so the name stays legible for exactly as
-      // long as the button is physically held, not a fixed timeout.
+      // invokes the assigned function immediately, same as before, AND
+      // reveals every F-key's assigned name across all 8 channels' LCD
+      // rows (showAllFKeyAssignments() - not just the one pressed, so
+      // holding any single key shows what every other one is mapped to
+      // too); release reverts all 8 (revertAllFKeyAssignments()) - so the
+      // whole reveal stays legible for exactly as long as the button is
+      // physically held, not a fixed timeout.
       if (data1 >= 62 && data1 <= 69) {
          var fkeyIdx = data1 - 62;
          if (isPressed) {
-            invokeFKeyFunction(fKeyFunctionAssignment[fkeyIdx], fkeyIdx);
+            invokeFKeyFunction(fKeyFunctionAssignment[fkeyIdx]);
+            showAllFKeyAssignments();
          } else {
-            revertBottomRowPopup(fkeyIdx);
+            revertAllFKeyAssignments();
          }
          return;
       }

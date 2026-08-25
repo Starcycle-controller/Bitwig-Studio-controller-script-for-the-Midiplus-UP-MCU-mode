@@ -151,20 +151,34 @@ click) - see `bitwig-actions-reference.txt` for the full names).
 Defaults: F1 =
 `Duplicate`, F2 = `Consolidate`, F3-F8 = `None`.
 
-Every press shows the action name **twice**: as a Bitwig on-screen popup
-(`host.showPopupNotification`, the full name, same as the orange state's
-`Device N` popup) *and* on that F-key's own channel strip's bottom LCD
-row - but **while the button stays held down**, not a momentary flash:
-`showBottomRowPopupWhileHeld()` displays it with no auto-revert timeout at
-all, and only the button's own Note-Off (`revertBottomRowPopup()`, wired
-up alongside the press in onMidi's "F1-F8 Green State" block) brings the
-LCD back to normal track info - so however long you hold it, the name
-stays legible for exactly that long, rather than disappearing after a
-fixed timeout that a quick tap might not give you time to read. This
-needed intercepting notes 62-69 directly in `onMidi` (both press *and*
-release) instead of leaving them to `handleButtonPress()`'s switch like
-the orange state (54-61) still does, since that switch only ever sees
-presses.
+Every press shows the pressed key's action name as a Bitwig on-screen
+popup (`host.showPopupNotification`, the full name, same as the orange
+state's `Device N` popup) - and, on the hardware LCD, reveals **all 8
+F-keys' assignments at once**, not just the one pressed: each channel
+strip's bottom row shows what *that* channel's F-key is currently mapped
+to (`showAllFKeyAssignments()`), so holding down any single F-key doubles
+as a "what could I press" reference for the whole row, not just a
+confirmation of the one you happened to use. Requested specifically so
+holding a button reveals to the user what they could possibly do with the
+others, not only the one already known. Unassigned keys (`None`) show
+`-`, so it's clear they're deliberately empty rather than not yet
+revealed.
+
+This is **while the button stays held down**, not a momentary flash:
+`showBottomRowPopupWhileHeld()` displays each channel's text with no
+auto-revert timeout at all, and only the button's own Note-Off
+(`revertAllFKeyAssignments()`, wired up alongside the press in onMidi's
+"F1-F8 Green State" block) brings all 8 rows back to normal track info -
+so however long you hold it, the whole reveal stays legible for exactly
+that long, rather than disappearing after a fixed timeout that a quick
+tap might not give you time to read. This needed intercepting notes 62-69
+directly in `onMidi` (both press *and* release) instead of leaving them
+to `handleButtonPress()`'s switch like the orange state (54-61) still
+does, since that switch only ever sees presses. If two F-keys were ever
+held at once (unlikely with one hand on this hardware), releasing one
+reverts all 8 rows, including the still-held key's own channel - which
+would immediately re-populate correctly on the next tick anyway, so not
+worth extra bookkeeping to prevent.
 
 The LCD is still only 7 characters per cell, and the real action names
 are often much longer - plain left-truncation collided for several of
