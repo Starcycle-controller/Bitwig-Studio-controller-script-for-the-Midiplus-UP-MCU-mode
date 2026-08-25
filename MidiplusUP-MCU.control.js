@@ -496,18 +496,20 @@ var allowSteppedDuringAutomationWrite = false;
 //     a raw percentage.
 //  2. SHIFT held, SHIFT+Encoder Mode is "Stepped", and stepping isn't
 //     currently suppressed by Arranger Automation Write being enabled
-//     (see allowSteppedDuringAutomationWrite above) - jumps in fixed
-//     ENCODER_STEP_SIZE_PERCENT increments, landing exactly on round
-//     multiples.
+//     (see allowSteppedDuringAutomationWrite above) - jumps exactly ONE
+//     ENCODER_STEP_SIZE_PERCENT increment per message, landing exactly on
+//     round multiples. Deliberately NOT run through
+//     applyEncoderAcceleration() - see the comment inline below for why.
 //  3. SHIFT held, otherwise (Mode is "Fine", or Stepped suppressed by
 //     Automation Write) - the older fine, continuous adjustment
 //     (0.2x-scaled .inc()).
 //  4. Plain turn, no SHIFT - today's existing plain continuous .inc()
 //     behavior, unchanged.
-// In cases 2-4, rawDelta first passes through applyEncoderAcceleration()
-// above; case 2 additionally rounds that into a whole number of steps (at
-// least 1) so a fast turn jumps multiple steps at once instead of only
-// ever one.
+// Acceleration (applyEncoderAcceleration() above) only scales cases 3-4 -
+// the regular continuous/fine moves it was actually meant to smooth out -
+// never case 2's stepped jumps, which are already their own, much
+// coarser form of "acceleration" over a fine nudge; compounding the curve
+// on top of that would accelerate an already-accelerated gesture.
 function applyEncoderStep(target, rawDelta) {
    var discreteCount = target.discreteValueCount().get();
    if (discreteCount > 0) {
@@ -529,11 +531,18 @@ function applyEncoderStep(target, rawDelta) {
       var steppingSuppressedByAutomationWrite = !allowSteppedDuringAutomationWrite &&
          transport.isArrangerAutomationWriteEnabled().get();
       if (shiftEncoderMode === "Stepped" && !steppingSuppressedByAutomationWrite) {
-         var accelerated = applyEncoderAcceleration(rawDelta);
-         var stepCount = Math.max(1, Math.round(Math.abs(accelerated)));
+         // Always exactly one step per message, deliberately NOT run
+         // through applyEncoderAcceleration() - stepping in fixed
+         // percentage jumps is already its own, much coarser form of
+         // "acceleration" over a fine continuous nudge; piling the
+         // acceleration curve on top as well (letting a fast turn jump
+         // several steps at once) would accelerate an already-accelerated
+         // gesture. Acceleration is reserved for scaling the regular,
+         // continuous encoder move (the two .inc() calls below) - the one
+         // case it was actually meant to smooth out.
          var stepSize = ENCODER_STEP_SIZE_PERCENT / 100;
          var curStepIndex = Math.round(target.get() / stepSize);
-         var newStepIndex = rawDelta < 0 ? curStepIndex - stepCount : curStepIndex + stepCount;
+         var newStepIndex = rawDelta < 0 ? curStepIndex - 1 : curStepIndex + 1;
          var newVal = Math.min(1, Math.max(0, newStepIndex * stepSize));
          target.set(newVal);
          return;

@@ -322,13 +322,18 @@ the raw per-message tick count. A slow, deliberate single-detent turn is
 completely unaffected at every setting (`1^n === 1` for any exponent `n`)
 - only a fast turn (a larger raw tick count already reported for that one
 message) gets boosted further, so careful turns always feel identical and
-only how far a fast flick "runs ahead" changes. Applies to both Stepped
-mode (rounds the accelerated amount into a whole number of extra steps
-per message, so a fast flick jumps several steps at once instead of only
-ever one) and Fine/plain continuous adjustment alike. **0% is a real,
-supported "no acceleration" option**, not just a low setting - the curve
-is skipped entirely rather than approximated, so it's bit-for-bit
-identical to the pre-acceleration behavior.
+only how far a fast flick "runs ahead" changes. **0% is a real, supported
+"no acceleration" option**, not just a low setting - the curve is skipped
+entirely rather than approximated, so it's bit-for-bit identical to the
+pre-acceleration behavior.
+
+Only scales the regular **Fine/plain continuous** adjustment (`.inc()`) -
+deliberately **not** Stepped mode's jumps, which always move exactly one
+**Encoder Step Size (%)** increment per message regardless of this
+setting. Stepping in fixed percentage jumps is already its own, much
+coarser form of "acceleration" over a fine continuous nudge; compounding
+the acceleration curve on top of that (letting a fast turn jump several
+steps at once) would accelerate an already-accelerated gesture.
 
 **Allow Stepped Encoders While Recording Automation** (default OFF) -
 Stepped mode (SHIFT+Encoder Mode) falls back to Fine while Arranger
