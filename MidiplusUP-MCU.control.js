@@ -1435,6 +1435,20 @@ function effectiveWheelScrubBars() {
    return Math.max(1, Math.round(barsPerPixel * ADAPTIVE_WHEEL_SCRUB_PIXELS_PER_TICK));
 }
 
+// The Default jog wheel branch below used to fire one bar-jump per MIDI
+// message using only the turn direction, ignoring how large that
+// message's raw tick value (rawStep) actually was. The MCU jog wheel
+// protocol batches multiple physical detents into a single message with
+// a larger rawStep when spun quickly (same behavior already handled
+// correctly elsewhere, e.g. loopScaleAccumulator/LOOP_SCALE_THRESHOLD
+// below) - discarding that magnitude made a fast flick move exactly as
+// far as a gentle nudge, which read as both "jumpy" and "too many ticks
+// needed per bar". Fixed the same way: accumulate signed rawStep across
+// messages and only fire once enough ticks have built up, carrying any
+// remainder over to the next message instead of resetting it.
+var wheelScrubAccumulator = 0;
+var WHEEL_SCRUB_TICKS_PER_BAR = 16;
+
 // OPTION + Jog Wheel halves/doubles the loop length (see onMidi). Raw wheel
 // CC messages arrive far more often than one per physical detent, and
 // halving/doubling is exponential, so ticks are accumulated here and only
@@ -2019,6 +2033,22 @@ function init() {
    defaultWheelScrubBarsSetting.markInterested();
    defaultWheelScrubBarsSetting.addRawValueObserver(function(value) {
       DEFAULT_WHEEL_SCRUB_BARS = value;
+   });
+
+   // See wheelScrubAccumulator/WHEEL_SCRUB_TICKS_PER_BAR above - how many
+   // raw wheel ticks (not messages) need to accumulate before the Default
+   // branch actually fires a bar-jump. Turning the wheel fast batches more
+   // ticks into fewer, larger messages, so a fast flick now fires several
+   // jumps at once and a slow turn carries partial ticks over to the next
+   // message, instead of every message moving the same fixed distance
+   // regardless of how hard it was spun. Lower = more responsive/twitchy,
+   // higher = slower/steadier; 16 matches the other wheel-combo thresholds
+   // in this file (loop halve/double, clip/track select, etc).
+   var wheelScrubTicksPerBarSetting = host.getPreferences().getNumberSetting(
+      "Wheel (No Modifier): Ticks per Bar", "Wheel Options", 1, 64, 1, "ticks", 16);
+   wheelScrubTicksPerBarSetting.markInterested();
+   wheelScrubTicksPerBarSetting.addRawValueObserver(function(value) {
+      WHEEL_SCRUB_TICKS_PER_BAR = value;
    });
 
    // See adaptiveWheelScrubEnabled/effectiveWheelScrubBars() above -
@@ -3380,21 +3410,33 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // Default: jump exactly effectiveWheelScrubBars() whole bars per
-      // wheel message, always landing precisely on a bar start - same
-      // "compute the exact target position" approach as the bar-jump
-      // (Pan Mode)/loop-shift branches above, generalized to a
-      // configurable/adaptive bar count instead of a fixed single bar.
+      // Default: jump effectiveWheelScrubBars() whole bars per accumulated
+      // WHEEL_SCRUB_TICKS_PER_BAR raw ticks, always landing precisely on a
+      // bar start - same "compute the exact target position" approach as
+      // the bar-jump (Pan Mode)/loop-shift branches above, generalized to
+      // a configurable/adaptive bar count instead of a fixed single bar.
       // Bar-based (not beat-based) and always anchored on the bar grid
       // specifically so it always scrolls bar-to-bar, never landing
       // mid-bar on an individual beat. No longer ALT-modified - ALT
       // alone is now claimed above (mouseover-parameter adjust),
       // unreachable here since it always returns first.
+      //
+      // Unlike Pan Mode above, this branch cares about how hard the wheel
+      // was spun: rawStep's magnitude (ticks batched into this one
+      // message) accumulates across messages and only fires a jump once
+      // WHEEL_SCRUB_TICKS_PER_BAR is reached, so a fast flick can fire
+      // several bar-jumps in one message while a slow turn carries its
+      // partial ticks over to the next one instead of losing them.
+      wheelScrubAccumulator += rawStep;
       var wheelScrubBeatsPerBar = getBeatsPerBar();
       var wheelScrubBars = effectiveWheelScrubBars();
-      var currentBarUnit = Math.round(transport.getPosition().get() / wheelScrubBeatsPerBar);
-      var targetBarUnit = backwards ? currentBarUnit - wheelScrubBars : currentBarUnit + wheelScrubBars;
-      transport.getPosition().set(Math.max(0, targetBarUnit * wheelScrubBeatsPerBar));
+      while (Math.abs(wheelScrubAccumulator) >= WHEEL_SCRUB_TICKS_PER_BAR) {
+         var scrubBackwards = wheelScrubAccumulator < 0;
+         wheelScrubAccumulator += scrubBackwards ? WHEEL_SCRUB_TICKS_PER_BAR : -WHEEL_SCRUB_TICKS_PER_BAR;
+         var currentBarUnit = Math.round(transport.getPosition().get() / wheelScrubBeatsPerBar);
+         var targetBarUnit = scrubBackwards ? currentBarUnit - wheelScrubBars : currentBarUnit + wheelScrubBars;
+         transport.getPosition().set(Math.max(0, targetBarUnit * wheelScrubBeatsPerBar));
+      }
       return;
    }
 

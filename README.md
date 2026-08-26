@@ -1261,8 +1261,9 @@ BANK held (page remote-control pages) > OPTION alone (halve/double loop
 length) > SHIFT alone (shift loop by a bar) > SCRUB toggle or wheel press
 (jump by a bar, or select-at-cursor with ALT or SHIFT+CTRL held, see
 below) > default (scrub, **Wheel (No Modifier): Playhead Jump per Tick
-(beats)** per message - default 1 beat, configurable, see below - no
-longer ALT-modified).
+(bars)** per **Wheel (No Modifier): Ticks per Bar** accumulated raw
+ticks - default 1 bar per 16 ticks, configurable, see below - no longer
+ALT-modified).
 
 **SHIFT+CTRL + Jog Wheel** and **ALT+CTRL + Jog Wheel** (turn, as opposed
 to SHIFT+CTRL + Jog Wheel *Press* further below - same two modifiers as
@@ -1409,14 +1410,39 @@ through a bar, regardless of which mode below is active.
 
 **Wheel (No Modifier): Playhead Jump per Tick (bars)** (Wheel Options
 category, default `1`, range 1-8) controls how many whole bars the
-playhead jumps per wheel message when **Adaptive Wheel Scrub** (below)
-is off - `Math.round(position / beatsPerBar)` snaps to the nearest bar
-boundary first, then moves by this many bars, so it's always exactly on
-a bar line (same compute-the-exact-target-position approach the bar-jump
-(Pan Mode)/loop-shift combos already use), not a smooth but
-grid-imprecise scrub. `getBeatsPerBar()` makes this time-signature-aware
-automatically, unlike the earlier beat-based version's range (which
-could only assume 4/4).
+playhead jumps per accumulated-tick threshold reached (see below) when
+**Adaptive Wheel Scrub** (below) is off - `Math.round(position /
+beatsPerBar)` snaps to the nearest bar boundary first, then moves by
+this many bars, so it's always exactly on a bar line (same
+compute-the-exact-target-position approach the bar-jump (Pan Mode)/
+loop-shift combos already use), not a smooth but grid-imprecise scrub.
+`getBeatsPerBar()` makes this time-signature-aware automatically, unlike
+the earlier beat-based version's range (which could only assume 4/4).
+
+Originally this branch fired once per raw wheel *message* using only
+turn direction, ignoring how large that message's own tick value was -
+reported back as feeling both "jumpy" and needing "too many ticks to
+scroll 1 bar", since a fast flick (which the hardware batches into one
+larger-magnitude message, same MCU behavior already handled correctly by
+every other wheel combo above) moved exactly as far as the gentlest
+possible nudge. Fixed the same way as those other combos:
+`wheelScrubAccumulator` accumulates each message's signed raw tick value,
+and only once it reaches **Wheel (No Modifier): Ticks per Bar** (Wheel
+Options category, default `16`, range 1-64 - same range/default as
+**OPTION+Wheel: Ticks to Halve/Double Loop Length** and the other
+combo thresholds) does a bar-jump actually fire, via a `while` loop so a
+single fast flick spanning several thresholds' worth of ticks can fire
+multiple bar-jumps at once rather than being capped at one per message.
+Any leftover ticks below the threshold carry over to the next message
+instead of being discarded, so slow, gentle turning still accumulates
+correctly instead of never quite reaching the threshold. Turning speed
+now actually matters again - a slow turn needs more physical ticks per
+bar-jump, a fast flick needs fewer (or fires several at once) - and
+**Ticks per Bar** is the lever to tune exactly how many physical wheel
+ticks map to one bar-jump, independent of **Adaptive Wheel Scrub:
+Pixels per Tick** below (which only controls how many *bars* one
+threshold-crossing moves at a given zoom level, a separate concern from
+how many *ticks* it takes to cross that threshold in the first place).
 
 **Adaptive Wheel Scrub (Scale with Zoom)** (on/off, default OFF) +
 **Adaptive Wheel Scrub: Pixels per Tick** (default `50`, range 10-200) -
