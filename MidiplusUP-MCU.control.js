@@ -1394,7 +1394,7 @@ var loopScaleAccumulator = 0;
 var LOOP_SCALE_THRESHOLD = 16;
 
 // SHIFT+CTRL and ALT+CTRL + Jog Wheel each independently run one of the
-// same 3 configurable actions (Controller Preferences -> "Function Keys"
+// same 5 configurable actions (Controller Preferences -> "Function Keys"
 // category - two separate dropdowns, one per combo, both offering this
 // same list) - so which combo does which is fully invertible by just
 // picking differently in each dropdown, no separate "swap" mechanism
@@ -1403,20 +1403,35 @@ var LOOP_SCALE_THRESHOLD = 16;
 //     (real "Scale 200%" action, id scale_time_double), left halves it
 //     ("Scale 50%"/scale_time_half) - exponential per repeat.
 //   - "Duplicate/Delete Clip" - right = application.duplicate(), left =
-//     application.remove().
+//     application.remove() - unless wheelComboDeleteEnabled is off (see
+//     below), in which case left is a no-op.
+//   - "Duplicate Clip" - right = application.duplicate(), same as above;
+//     left is ALWAYS a no-op, unconditionally, regardless of
+//     wheelComboDeleteEnabled - a self-contained safe choice for anyone
+//     who wants duplicate-only without also having to remember to turn
+//     the separate delete kill switch off.
 //   - "Duplicate/Delete Track" - right = cursorTrack.duplicateObject(),
 //     left = cursorTrack.deleteObject() (Track implements
 //     DuplicableObject/DeleteableObject directly - more reliable/
 //     targeted than application.duplicate()/remove(), which operate on
 //     whatever's ambiently selected in Bitwig rather than specifically
-//     the current track).
-// Both "Duplicate/Delete" actions pair duplicate/delete as opposites,
+//     the current track) - unless wheelComboDeleteEnabled is off.
+//   - "Duplicate Track" - right = cursorTrack.duplicateObject(), same as
+//     above; left is always a no-op, same reasoning as "Duplicate Clip".
+// The two "Duplicate/Delete" actions pair duplicate/delete as opposites,
 // same pattern as grow/shrink scaling. Turning left actually deleting
 // something outright (rather than a harmless no-op) was flagged as risky
 // enough to want a kill switch - see wheelComboDeleteEnabled below,
-// shared by both combos' delete behavior.
-var WHEEL_COMBO_ACTIONS = ["Scale Clip Size", "Duplicate/Delete Clip", "Duplicate/Delete Track"];
-var shiftCtrlWheelAction = "Scale Clip Size";
+// shared by both "Duplicate/Delete" combos' delete behavior (the plain
+// "Duplicate Clip"/"Duplicate Track" options are unaffected by it either
+// way, since they never delete regardless).
+var WHEEL_COMBO_ACTIONS = ["Scale Clip Size",
+   "Duplicate/Delete Clip", "Duplicate Clip",
+   "Duplicate/Delete Track", "Duplicate Track"];
+// Default changed to the safe duplicate-only option per direct request,
+// rather than relying on also remembering to turn wheelComboDeleteEnabled
+// off.
+var shiftCtrlWheelAction = "Duplicate Clip";
 var altCtrlWheelAction = "Duplicate/Delete Track";
 var wheelComboDeleteEnabled = true;
 
@@ -1447,12 +1462,26 @@ function performWheelComboAction(actionName, backwards) {
             application.duplicate();
          }
          break;
+      case "Duplicate Clip":
+         // Turning left is always a no-op here, unconditionally - never
+         // gated by wheelComboDeleteEnabled, since the whole point of
+         // this option is duplicate-only without depending on that
+         // separate setting also being off.
+         if (!backwards) {
+            application.duplicate();
+         }
+         break;
       case "Duplicate/Delete Track":
          if (backwards) {
             if (wheelComboDeleteEnabled) {
                cursorTrack.deleteObject();
             }
          } else {
+            cursorTrack.duplicateObject();
+         }
+         break;
+      case "Duplicate Track":
+         if (!backwards) {
             cursorTrack.duplicateObject();
          }
          break;
@@ -1900,10 +1929,14 @@ function init() {
    });
 
    // Only relevant when either dropdown above is a "Duplicate/Delete"
-   // option - whether turning the wheel left actually deletes something,
-   // or is a no-op (only turning right/duplicate does anything). Default
-   // on (matches the original behavior); off is the safer choice if a
-   // slightly-wrong turn deleting something outright is too risky.
+   // option (NOT the plain "Duplicate Clip"/"Duplicate Track" options,
+   // which never delete regardless of this) - whether turning the wheel
+   // left actually deletes something, or is a no-op (only turning
+   // right/duplicate does anything). Default on (matches the original
+   // behavior); off is the safer choice if a slightly-wrong turn
+   // deleting something outright is too risky - though picking one of
+   // the plain "Duplicate" options directly is the more self-contained
+   // way to get that safety without relying on this separate toggle too.
    // Shared by both combos rather than two separate toggles.
    var wheelComboDeleteEnabledSetting = host.getPreferences().getBooleanSetting(
       "Wheel Combos: Allow Delete (Turn Left)", "Function Keys", true);

@@ -340,19 +340,32 @@ leaving it to be discovered by a key silently doing nothing.
 Function Keys category, since they're configurable-action settings even
 though they drive the jog wheel rather than an F-key) pick what each of
 those two combos does - see the full writeup under Jog wheel modifier
-combos below. Both dropdowns offer the same 3 options: `Scale Clip Size`
-(SHIFT+CTRL's default), `Duplicate/Delete Clip`, or `Duplicate/Delete
-Track` (ALT+CTRL's default). Freely invertible - set either dropdown to
-either action, e.g. swap so SHIFT+CTRL duplicates the track and ALT+CTRL
-scales the clip instead.
+combos below. Both dropdowns offer the same 5 options: `Scale Clip Size`,
+`Duplicate/Delete Clip`, `Duplicate Clip` (**SHIFT+CTRL's default**),
+`Duplicate/Delete Track` (**ALT+CTRL's default**), or `Duplicate Track`.
+Freely invertible - set either dropdown to either action, e.g. swap so
+SHIFT+CTRL duplicates the track and ALT+CTRL scales the clip instead.
+
+The two plain `Duplicate Clip`/`Duplicate Track` options (as opposed to
+their `Duplicate/Delete` counterparts) turn left into an **unconditional,
+always-on no-op** - never gated by the delete kill switch below, since
+the whole point is a self-contained safe choice that doesn't depend on
+also remembering to turn that separate setting off. Default changed to
+`Duplicate Clip` for **SHIFT+CTRL Wheel Action** specifically (was `Scale
+Clip Size`), per direct request for a safer out-of-the-box default that
+doesn't rely on the user separately configuring delete-denial too.
 
 **Wheel Combos: Allow Delete (Turn Left)** (on/off, default ON) - shared
 by both combos above, only relevant when either is set to a
-`Duplicate/Delete` option. On, turning left deletes the selection (clip
-or track, the original behavior). Off, turning left in that mode is a
-no-op and only turning right (duplicate) does anything - the safer
-choice if a slightly-wrong turn deleting something outright is too
-risky; flagged as a "could be shaky" concern when requested.
+`Duplicate/Delete` option (**not** the plain `Duplicate Clip`/`Duplicate
+Track` options, which never delete regardless of this setting). On,
+turning left deletes the selection (clip or track, the original
+behavior). Off, turning left in that mode is a no-op and only turning
+right (duplicate) does anything - the safer choice if a slightly-wrong
+turn deleting something outright is too risky; flagged as a "could be
+shaky" concern when requested. Picking one of the plain `Duplicate`
+options directly is the more self-contained way to get that same safety
+without depending on this toggle too.
 
 ### SHIFT+HOME: auto-named cue markers
 
@@ -1207,15 +1220,20 @@ one of these, different gesture, different action) each independently
 run whichever action their own Controller Preferences dropdown is set to
 (**SHIFT+CTRL Wheel Action** / **ALT+CTRL Wheel Action**, Function Keys
 category, see above) - freely invertible, since both dropdowns offer the
-identical 3-option list:
+identical 5-option list:
 
-- `Scale Clip Size` (SHIFT+CTRL's default) - turn right doubles the
-  selected clip's content (Bitwig's real `"Scale 200%"` action, id
-  `scale_time_double`), turn left halves it (`"Scale 50%"`, id
-  `scale_time_half`), confirmed from `bitwig-actions-reference.txt`.
+- `Scale Clip Size` - turn right doubles the selected clip's content
+  (Bitwig's real `"Scale 200%"` action, id `scale_time_double`), turn
+  left halves it (`"Scale 50%"`, id `scale_time_half`), confirmed from
+  `bitwig-actions-reference.txt`.
 - `Duplicate/Delete Clip` - turn right duplicates the selection
   (`application.duplicate()`), turn left deletes it
   (`application.remove()`).
+- `Duplicate Clip` (**SHIFT+CTRL's default**) - turn right duplicates the
+  selection, same as above; turn left is **always** a no-op, regardless
+  of the delete kill switch below - a self-contained safe choice for
+  anyone who wants duplicate-only without also having to remember to turn
+  that separate setting off. Requested directly as the safer default.
 - `Duplicate/Delete Track` (ALT+CTRL's default) - turn right duplicates
   the current track (`cursorTrack.duplicateObject()`), turn left deletes
   it (`cursorTrack.deleteObject()`) - `Track` implements
@@ -1223,16 +1241,20 @@ identical 3-option list:
   Controller API Javadoc, so this targets the current track specifically
   rather than depending on Bitwig's ambient selection the way
   `application.duplicate()`/`.remove()` do for the clip option.
+- `Duplicate Track` - turn right duplicates the current track, same as
+  above; turn left is always a no-op, same reasoning as `Duplicate Clip`.
 
-Both `Duplicate/Delete` options pair duplicate/delete as deliberate
+The two `Duplicate/Delete` options pair duplicate/delete as deliberate
 opposites, same pattern as grow/shrink scaling. Turning left deleting
 something outright (rather than a harmless no-op) was flagged as
 potentially too risky, so it's gated by the shared **Wheel Combos: Allow
 Delete (Turn Left)** setting (default on, see above) - off, turning left
 does nothing in either `Duplicate/Delete` option and only duplicate
-(right) is live.
+(right) is live. The plain `Duplicate Clip`/`Duplicate Track` options
+sidestep needing that toggle at all - turning left there is always a
+no-op by design, not by configuration.
 
-All three actions are repeat-accumulating (scaling is exponential per
+All five actions are repeat-accumulating (scaling is exponential per
 repeat, duplicate/delete is additive - one extra duplicate or one more
 delete per repeat), so each combo throttles via its own accumulate-then-
 fire accumulator (`shiftCtrlWheelAccumulator`/`altCtrlWheelAccumulator` -
