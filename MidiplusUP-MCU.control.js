@@ -3506,12 +3506,15 @@ function handleButtonPressInner(note) {
                // straight to the LAST device in the chain whose name
                // matches EQ_DEVICE_NAME_KEYWORDS (see
                // findLastEqDeviceIndex() above) instead of the first
-               // device overall. Same already-selected-toggles-the-window
-               // behavior as F1-F8 (case 54-61) rather than PLUG-INS' own
-               // mode-toggle - pressing it again while that exact EQ is
-               // already selected closes/reopens its window instead of
-               // exiting Device mode, since the point is fast access to
-               // one specific device, not a mode toggle.
+               // device overall, for a quick peek-modify-leave workflow.
+               // Unlike F1-F8 (case 54-61), pressing it again while that
+               // exact EQ is already selected exits back to Mixer mode
+               // (same as PLUG-INS' own toggle) rather than just toggling
+               // the window - closing the window is then a side effect of
+               // applyModeChange() leaving MODE_DEVICE (see
+               // previousMode above), not something this branch does
+               // itself. A third press jumps straight back to the same
+               // EQ, same as the first.
          if (isShiftPressed) {
             shiftUsedForCombo = true;
             var eqDeviceIdx = findLastEqDeviceIndex();
@@ -3520,7 +3523,9 @@ function handleButtonPressInner(note) {
                break;
             }
             if (currentMode === MODE_DEVICE && cursorDevice.position().get() === eqDeviceIdx) {
-               cursorDevice.isWindowOpen().toggle();
+               currentMode = MODE_MIXER;
+               host.showPopupNotification("Mode: Mixer (Track Volume / Pan)");
+               applyModeChange("MIXER");
                break;
             }
             var wasAlreadyInDeviceModeForEq = currentMode === MODE_DEVICE;

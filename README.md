@@ -170,16 +170,26 @@ press and release one without using it to modify anything else:
 to whichever EQ is **last** in the selected track's chain (several
 different EQs might be stacked - a corrective one early, a tonal one
 late - "last in chain" is deliberately the one picked, not "first
-match"), and toggle its window open/closed the same way F1-F8 (notes
-54-61) already does for direct device selection. Bitwig has no usable
-device-category metadata for this - `Device.deviceType()` only
-distinguishes `AUDIO_FX`/`INSTRUMENT`/`NOTE_FX`, not "EQ" vs. any other
-audio effect - and third-party plugin names vary by vendor, so this uses
-the same name-keyword-matching approach as **Auto-Detect Centered Macros
-by Name** above: `findLastEqDeviceIndex()` scans a dedicated, deeper
-`eqDeviceBank` (32 devices into the chain, `EQ_DEVICE_SCAN_DEPTH`) and
-matches each device's name against the comma-separated **EQ Device Name
-Keywords** list (default `eq,pro-q`).
+match"), for a quick peek-modify-leave workflow. **Unlike F1-F8** (notes
+54-61), which toggles the already-selected device's window,
+SHIFT+PLUG-INS pressed again while that same EQ is already selected
+exits straight back to Mixer mode instead (same as PLUG-INS' own
+toggle) - closing the window is then just a side effect of leaving
+`MODE_DEVICE` (the existing plugin-window-auto-close behavior), not
+something this handles itself. A third press jumps straight back to the
+same EQ, same as the first - so the whole gesture is a clean two-state
+toggle: SHIFT+PLUG-INS to peek at the EQ and adjust it, SHIFT+PLUG-INS
+again to leave.
+
+Bitwig has no usable device-category metadata for this -
+`Device.deviceType()` only distinguishes `AUDIO_FX`/`INSTRUMENT`/
+`NOTE_FX`, not "EQ" vs. any other audio effect - and third-party plugin
+names vary by vendor, so this uses the same name-keyword-matching
+approach as **Auto-Detect Centered Macros by Name** above:
+`findLastEqDeviceIndex()` scans a dedicated, deeper `eqDeviceBank` (32
+devices into the chain, `EQ_DEVICE_SCAN_DEPTH`) and matches each
+device's name against the comma-separated **EQ Device Name Keywords**
+list (default `eq,pro-q`).
 
 Matching is **leading-boundary only** (`\bkeyword`, not the full
 `\bkeyword\b` the Bipolar Macro Name Keywords case uses) - deliberately,
@@ -1062,7 +1072,7 @@ was still in Live mode, is confirmed still correct.
 | 41 | SEND | Sends mode toggle, 2 or 3 states depending on Send/Return Bank Size (SHIFT = jump straight to Sends 9-16) |
 | 42 | PAN | Toggle `TRLVL` tool-device Gain/Pan control |
 | 43 | FLIP | Swap faders/encoders - moved here from note 50 after console-log confirmation that the overlay's printed FLIP button actually sends this note, not 50 |
-| 44 | PLUG-INS (SHIFT = EQ Mode) | Toggle Device mode (first device, opens panel; second press also closes the panel) - confirmed via console testing that the Live overlay's "PLUG-INS" sticker is over this note, not 43. SHIFT+PLUG-INS jumps to the last EQ in the chain instead, toggling its window if already selected - see EQ Mode below |
+| 44 | PLUG-INS (SHIFT = EQ Mode) | Toggle Device mode (first device, opens panel; second press also closes the panel) - confirmed via console testing that the Live overlay's "PLUG-INS" sticker is over this note, not 43. SHIFT+PLUG-INS jumps to the last EQ in the chain instead; pressed again while already there, exits to Mixer mode - see EQ Mode below |
 | 45 | RETURNS | Swap channel strips to/from the Return Tracks bank - moved here from note 51 after console-log confirmation (the bare-label "INST" binding that used to live here was never actually reachable under this overlay) |
 | 46 | BANK PREV | Page track bank back (SHIFT = jump to first) |
 | 47 | BANK NEXT | Page track bank forward (SHIFT = jump to last) |
