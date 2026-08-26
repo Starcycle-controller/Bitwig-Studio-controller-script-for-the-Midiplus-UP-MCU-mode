@@ -409,6 +409,28 @@ someone might genuinely want hard, quantized automation steps recorded
 on purpose. Turning this on lets Stepped mode keep working even while
 Automation Write is enabled.
 
+**Assume Center (0.5) When Reported Origin Is 0** (on/off, default ON) -
+`getOrigin()` turns out to only be reliably `0.5` for parameters Bitwig
+itself classifies internally as pan-like; a genuinely bipolar plugin
+parameter that Bitwig merely wraps generically - confirmed on hardware
+with Serum 2's oscillator Fine Tune macros - reports `0` instead, even
+though its real "no detune" center sits at `0.5`. Diagnostic logging added
+during the Fine Zone Near Origin investigation below caught it directly:
+the macro's value hovered around `0.50` on every logged tick while
+`getOrigin()` reported a flat `0.0000` the entire time, so both Fine Zone
+Near Origin and Encoder Snap to Origin were silently checking distance to
+the wrong point and never activating anywhere near the actual center being
+aimed for ("range 5%, then 10%, then resolution multiplier 4x, then 16x -
+no visible behavior change" was the symptom that led to adding the
+logging). `resolveOrigin()` (shared by both features) treats a reported
+origin of exactly `0` as `0.5` instead when this is on - correct for the
+driving case, and can't make Pan or a correctly-reported bipolar parameter
+any worse, since both already alias to `0.5` either way. The tradeoff:
+turning this on also means a plain Level/Gain parameter whose *true*,
+correctly-reported origin legitimately is `0` (e.g. unity/silence) gets
+treated as centered at `0.5` too - if that case matters more to you than
+fixing misreported bipolar macros, turn this off.
+
 **Encoder Snap to Origin** (on/off, default ON) - encoders have no
 physical detent, so landing exactly on a parameter's own "home" value by
 turning alone is fiddly. Originally just "Pan Snap to Center" (Mixer-mode
@@ -501,6 +523,17 @@ well together with **Encoder Snap to Origin** above - the fine zone makes
 it possible to carefully creep toward center by hand, and the idle-based
 snap still cleans up the last fraction of a percent once the encoder comes
 to rest nearby.
+
+First hardware round after shipping this: reported as still just as jumpy,
+with zero observable change from raising **Fine Zone Range** 5% -> 10% or
+**Fine Zone Resolution Multiplier** 4x -> 16x - a strong signal the
+near-origin branch wasn't running at all, not that it was under-tuned.
+Diagnostic logging confirmed it: for these exact fine-tune macros,
+`target.get()` sat around `0.50` while `target.getOrigin()` reported a
+flat `0.0000` throughout, so `isNearOrigin()` was comparing distance to
+the wrong point and staying `false` the whole time no matter how wide the
+range or how high the multiplier went - see **Assume Center (0.5) When
+Reported Origin Is 0** above (now on by default) for the fix.
 
 ### Mixer settings (Controller Preferences panel)
 

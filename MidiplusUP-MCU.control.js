@@ -620,12 +620,6 @@ function applyEncoderStep(target, rawDelta, encoderIndex) {
       var curIndex = Math.round(target.get() * (discreteCount - 1));
       var newIndex = rawDelta < 0 ?
          Math.max(0, curIndex - 1) : Math.min(discreteCount - 1, curIndex + 1);
-      // DEBUG: confirms whether a "jumpy" macro is actually taking THIS
-      // branch (native switch stepping, Fine Zone/Stepped/Acceleration
-      // settings all irrelevant here) rather than the continuous one below
-      // - remove once the Fine Zone Near Origin investigation is resolved.
-      println("Encoder switch-branch: discreteCount=" + discreteCount +
-         " curIndex=" + curIndex + " newIndex=" + newIndex);
       if (newIndex === curIndex) {
          return;
       }
@@ -644,15 +638,6 @@ function applyEncoderStep(target, rawDelta, encoderIndex) {
       println("Encoder target has discreteValueCount() " + discreteCount +
          " (> " + MAX_NATIVE_SWITCH_STEPS + ") - treated as continuous, native grid ignored");
    }
-
-   // DEBUG: confirms the continuous path's own inputs for the Fine Zone
-   // Near Origin investigation - target's current normalized value, its
-   // reported origin, whether that's currently judged "near" it, and the
-   // resolution this tick will actually use. Remove once resolved.
-   println("Encoder continuous: value=" + target.get().toFixed(4) +
-      " origin=" + target.getOrigin().get().toFixed(4) +
-      " nearOrigin=" + isNearOrigin(target) +
-      " rawDelta=" + rawDelta + " shift=" + isShiftPressed);
 
    if (isShiftPressed) {
       var steppingSuppressedByAutomationWrite = !allowSteppedDuringAutomationWrite &&
@@ -717,6 +702,35 @@ var encoderSnapToOriginEnabled = true;
 var ENCODER_SNAP_THRESHOLD = 0.02;
 var ENCODER_SNAP_IDLE_MS = 300;
 
+// getOrigin() is only reliably 0.5 for parameters Bitwig itself classifies
+// as pan-like; a generically-wrapped, genuinely bipolar plugin parameter
+// (e.g. Serum 2's oscillator Fine Tune macro) reports 0 instead, even
+// though its real "no detune" center sits at 0.5 - confirmed via
+// diagnostic logging on hardware: the value hovered around 0.50 while
+// getOrigin() reported a flat 0.0000 throughout, so both Fine Zone Near
+// Origin and Encoder Snap to Origin (below) silently never activated at
+// the actual center being aimed for. When on (default), a reported origin
+// of exactly 0 is treated as 0.5 instead by both features via
+// resolveOrigin() - correct for the driving case (a bipolar macro
+// misreported as "Level" type) and can't make Pan or a correctly-reported
+// bipolar macro any worse (both already alias to 0.5 either way). The
+// tradeoff: a plain Level/Gain parameter whose TRUE, correctly-reported
+// origin legitimately IS 0 (e.g. unity/silence) also gets treated as
+// centered at 0.5 - turn this off if that case matters more to you than
+// fixing misreported bipolar macros.
+var assumeCenterWhenOriginIsZero = true;
+
+// Shared by isNearOrigin() and scheduleEncoderSnapCheck() below - see
+// assumeCenterWhenOriginIsZero above for why this isn't just
+// target.getOrigin().get() directly.
+function resolveOrigin(target) {
+   var origin = target.getOrigin().get();
+   if (origin === 0 && assumeCenterWhenOriginIsZero) {
+      return 0.5;
+   }
+   return origin;
+}
+
 // "Fine Zone Near Origin" (Encoders category, default on) - a narrow-range,
 // origin-centered macro (e.g. an oscillator fine-tune knob, or pan) is hard
 // to land back on its exact center by hand: even the coarsest single tick's
@@ -744,7 +758,7 @@ function isNearOrigin(target) {
    if (!fineZoneNearOriginEnabled) {
       return false;
    }
-   var origin = target.getOrigin().get();
+   var origin = resolveOrigin(target);
    return Math.abs(target.get() - origin) <= FINE_ZONE_RANGE;
 }
 
@@ -833,7 +847,7 @@ function scheduleEncoderSnapCheck(index, target) {
       if (!encoderSnapToOriginEnabled) {
          return;
       }
-      var origin = target.getOrigin().get();
+      var origin = resolveOrigin(target);
       if (Math.abs(target.get() - origin) <= ENCODER_SNAP_THRESHOLD) {
          target.set(origin);
       }
@@ -1711,6 +1725,16 @@ function init() {
    allowSteppedDuringAutomationWriteSetting.markInterested();
    allowSteppedDuringAutomationWriteSetting.addValueObserver(function(value) {
       allowSteppedDuringAutomationWrite = value;
+   });
+
+   // Assume Center When Origin Is 0 - see assumeCenterWhenOriginIsZero/
+   // resolveOrigin() above. Shared by both Fine Zone Near Origin and
+   // Encoder Snap to Origin below, so it lives above both.
+   var assumeCenterWhenOriginIsZeroSetting = host.getPreferences().getBooleanSetting(
+      "Assume Center (0.5) When Reported Origin Is 0", "Encoders", true);
+   assumeCenterWhenOriginIsZeroSetting.markInterested();
+   assumeCenterWhenOriginIsZeroSetting.addValueObserver(function(value) {
+      assumeCenterWhenOriginIsZero = value;
    });
 
    // Encoder Snap to Origin - see encoderSnapToOriginEnabled/
