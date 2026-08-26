@@ -494,41 +494,53 @@ when they actually need them.
 **Blink Armed Track's SELECT LED** (on/off, default ON) - the SELECT LEDs
 (notes 24-31) normally just show which track is currently selected
 (solid on/off). With this on, any channel whose track is armed for
-recording blinks its SELECT LED instead - **regardless of whether it's
+recording breathes its SELECT LED instead - **regardless of whether it's
 also the selected track** - so the SELECT row doubles as an
 always-visible "which tracks are armed" overview, not just current
-selection. A track that's both selected and armed shows the blink (arm
-state takes priority over the plain selection indicator there); the
-`nameForTrackColor()` popup on selection - see the button map above -
-still fires normally either way, so selection itself is never
-ambiguous. Requested after noticing the hardware's own RECORD-button
-overlay (a separate, apparently local-firmware-only behavior recoloring
-the SELECT row on the physical unit, unrelated to this and not something
-the script can see or control) doesn't show anything until you actually
-press RECORD - this gives a persistent version driven entirely by the
-script.
+selection. A track that's both selected and armed shows the breathing
+cycle (arm state takes priority over the plain selection indicator
+there); the `nameForTrackColor()` popup on selection - see the button map
+above - still fires normally either way, so selection itself is never
+ambiguous. **Confirmed working on hardware.** Originally requested after
+noticing the hardware's own RECORD-button overlay (a separate, apparently
+local-firmware-only behavior recoloring the SELECT row on the physical
+unit, unrelated to this and not something the script can see or control)
+doesn't show anything until you actually press RECORD - this gives a
+persistent version driven entirely by the script.
 
-`selectLedValueFor()` computes the correct value for both the resync path
-(`refreshChannelStripLEDs()`, used after mode/RETURNS changes) and each
-per-track observer's own direct-send path (`track.arm()`,
-`addIsSelectedInMixerObserver`), so all three stay in agreement.
-`armedLedBlinkTick()` is a self-rescheduling `host.scheduleTask()` loop
-(started once in `init()`, same pattern as `displayFlushTask()`) that
-flips one shared `armedLedBlinkPhase` flag and re-sends the SELECT LED
-for every currently-armed channel on the active bank - every armed
-channel blinks in sync rather than drifting independently. Turning the
-setting off immediately restores every SELECT LED to its plain
-`isSelected` state via `refreshChannelStripLEDs()`, rather than leaving a
-channel stuck showing whatever the blink phase happened to be at that
-exact instant.
+Cycles through a 4-step bright -> dim -> off -> dim -> (repeat) sequence
+rather than a flat on/off flash, using this hardware's own dim LED state
+- confirmed real and documented in the UP/UP+ manual's Pro Tools
+AUTO/INSERT section ("these buttons will illuminate dimmed Blue"/"dimmed
+Orange", a different button function than SELECT, but the same
+underlying per-button LED hardware, so the same velocity convention was
+a reasonable bet for SELECT too). `ARMED_LED_BLINK_DIM_VELOCITY` (1) is
+an untested guess at the actual velocity that produces a genuine static
+dim, not a hardware auto-flash or full brightness - common on Mackie
+Control-family surfaces, but not yet confirmed on this unit; if the "dim"
+step looks identical to bright, off, or an auto-flash on hardware, this
+is the number to adjust.
 
-**Armed SELECT LED Blink Rate (ms)** (default 400, range 100-2000) - the
-blink's **half-period**: how long each on/off phase lasts, not the full
-cycle - so the default is a slow ~1.25 Hz blink (800ms full cycle: 400ms
-on, 400ms off), not a 400ms one. Lower for a faster blink, higher for
-slower.
+`selectLedVelocityFor()` computes the correct velocity for both the
+resync path (`refreshChannelStripLEDs()`, used after mode/RETURNS
+changes) and each per-track observer's own direct-send path
+(`track.arm()`, `addIsSelectedInMixerObserver`), so all three stay in
+agreement. `armedLedBlinkTick()` is a self-rescheduling
+`host.scheduleTask()` loop (started once in `init()`, same pattern as
+`displayFlushTask()`) that advances one shared `armedLedBlinkPhase` step
+index and re-sends the SELECT LED for every currently-armed channel on
+the active bank - every armed channel breathes in sync rather than
+drifting independently. Turning the setting off immediately restores
+every SELECT LED to its plain `isSelected` state via
+`refreshChannelStripLEDs()`, rather than leaving a channel stuck showing
+whatever step it was on.
 
-Neither of these two settings is yet tested on hardware.
+**Armed SELECT LED Blink Rate (ms)** (default 1000, range 100-2000) - the
+duration of **each of the 4 steps**, not the full cycle - so the default
+is a slow breathe, a full bright-dim-off-dim cycle taking 4 seconds (4x
+1000ms). Lower for a faster breathe, higher for slower. Confirmed on
+hardware that the original 2-state flash's 400ms half-period (800ms full
+cycle) felt too fast; 1000ms per step is the adjusted default.
 
 **Select Channel on Fader Touch** (on/off, default ON) - touching one of
 the motorized faders (notes 104-111 for channels 1-8, note 112 for the
