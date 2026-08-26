@@ -783,6 +783,42 @@ jumps straight to Sends 9-16 from anywhere regardless of this setting, so
 choosing `8` for less everyday paging doesn't lock anyone out of the rest
 when they actually need them.
 
+**Mixer Mode PAGE: Loop Behavior** (`Loop Between Markers` / `Keep Loop
+Length`, default `Loop Between Markers`) - requested directly: PAGE
+left/right (notes 82/83) already page the device macro bank in Device
+mode; in **Mixer mode** the same two buttons now jump the playhead to
+the previous/next cue marker **and** move the arranger loop to follow
+it, for quickly hopping between song sections and looping just the one
+currently being worked on.
+
+- **`Loop Between Markers`** - the loop is set to span from the target
+  marker to the very next one chronologically (regardless of which
+  direction PAGE was pressed - looping "this section" always means
+  target-to-next, not target-to-wherever-you-came-from). If the target
+  is the **last** marker in the timeline, there's nothing to loop up to
+  by definition - Bitwig's Controller API has no direct query for "end
+  of arrangement content" (no way to scan every track's longest clip),
+  only the `jump_to_end_of_arrangement` **action**, which moves the
+  playhead as a side effect. `jumpToMarkerAndSetLoop()` invokes that
+  action, reads the resulting position back after a short
+  `host.scheduleTask()` delay (150ms, `CUE_MARKER_RENAME_DELAY_MS` -
+  shared with SHIFT+HOME's cue marker naming above, same "not
+  guaranteed to be reflected in the same tick" reasoning), and only
+  *then* moves the playhead to the actual target marker - landing at the
+  end of the arrangement was never the point, only measuring it was.
+  **Not yet confirmed on hardware.**
+- **`Keep Loop Length`** - instead of following markers at all, the loop
+  just relocates to start at the target marker, keeping whatever length
+  it already had (e.g. a 4-bar loop stays 4 bars, just moves).
+
+Implemented via `findAdjacentMarkerPosition()`, which scans
+`cueMarkerBank` directly for the closest marker before/after the
+playhead (same bank SHIFT+HOME's naming feature uses) rather than
+`transport.jumpToNext/PreviousCueMarker()` - scanning first means the
+target position is already known synchronously, with no read-after-jump
+timing concern in the common case (only the end-of-arrangement fallback
+above needs one).
+
 **Blink Armed Track's SELECT LED** (on/off, default ON) - the SELECT LEDs
 (notes 24-31) normally just show which track is currently selected
 (solid on/off). With this on, any channel whose track is armed for
@@ -1129,8 +1165,8 @@ was still in Live mode, is confirmed still correct.
 | 79 | (Live label: REDO) | `application.redo()` |
 | 80 | (Live label: B.T.A.) | Toggle `MODE_SCENE` |
 | 81 | (Live label: DRAW) | Cycle the 6 arranger edit tools; SHIFT+DRAW toggles Arranger Automation Write (popup shows `Automation Write: ENABLED`/`DISABLED`) |
-| 82 | Printed "PAGE (left arrow)" under the Ableton overlay (confirmed via console - previously wrongly assumed "MARKER") | Page device macro bank back, `MODE_DEVICE` only; no-op otherwise |
-| 83 | Printed "PAGE (right arrow)" under the Ableton overlay (previously wrongly assumed "FOLLOW") | Page device macro bank forward, `MODE_DEVICE` only; no-op otherwise |
+| 82 | Printed "PAGE (left arrow)" under the Ableton overlay (confirmed via console - previously wrongly assumed "MARKER") | `MODE_DEVICE`: page macro bank back. `MODE_MIXER`: jump to previous cue marker and move the loop to follow it - see Mixer Mode PAGE below |
+| 83 | Printed "PAGE (right arrow)" under the Ableton overlay (previously wrongly assumed "FOLLOW") | `MODE_DEVICE`: page macro bank forward. `MODE_MIXER`: jump to next cue marker and move the loop to follow it - see Mixer Mode PAGE below |
 | 84 | - | Jump to previous cue marker |
 | 85 | - | Jump to next cue marker |
 | 86 | (Live label: LOOP) | Toggle arranger loop |

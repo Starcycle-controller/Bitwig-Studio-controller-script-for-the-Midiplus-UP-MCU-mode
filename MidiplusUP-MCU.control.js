@@ -1064,6 +1064,18 @@ function scheduleFaderSnapZeroCheck(index, target) {
    }, FADER_SNAP_ZERO_DELAY_MS);
 }
 
+// "Mixer Mode PAGE: Loop Behavior" - see findAdjacentMarkerPosition()/
+// jumpToMarkerAndSetLoop() above (the notes 82/83 handling in Device
+// mode is untouched by this - only Mixer mode's PAGE gains this
+// behavior). "Loop Between Markers" (default) loops the section from
+// the target marker to the next one chronologically (falling back to
+// the arrangement's end if the target is the last marker); "Keep Loop
+// Length" instead just relocates the loop to start at the target
+// marker, keeping whatever length it already had. Defaults; overridden
+// live from the Controller Preferences panel setting created in init()
+// below.
+var mixerPageLoopBehavior = "Loop Between Markers";
+
 // Same debounce-generation-token pattern as revealPanTemporarily() below
 // (and lcdOverrideGeneration) - only the LAST scheduled check for a given
 // encoder actually fires; every further tick before it bumps the token
@@ -2185,6 +2197,15 @@ function init() {
       sendBankConfiguredPages = value === "8" ? 1 : 2;
    });
 
+   // See mixerPageLoopBehavior/jumpToMarkerAndSetLoop() above.
+   var mixerPageLoopBehaviorSetting = host.getPreferences().getEnumSetting(
+      "Mixer Mode PAGE: Loop Behavior", "Mixer",
+      ["Loop Between Markers", "Keep Loop Length"], "Loop Between Markers");
+   mixerPageLoopBehaviorSetting.markInterested();
+   mixerPageLoopBehaviorSetting.addValueObserver(function(value) {
+      mixerPageLoopBehavior = value;
+   });
+
    // See selectLedVelocityFor()/armedLedBlinkTick() above. Turning this
    // off immediately restores every SELECT LED to its plain isSelected
    // state via refreshChannelStripLEDs() (selectLedVelocityFor() checks
@@ -2236,16 +2257,21 @@ function init() {
    // SHIFT+HOME's "Bar N" auto-named cue marker (see case 89 below) needs
    // to find the marker it JUST created (Transport has no "add marker
    // and return it"/"add marker with this name" call - only a bare
-   // addCueMarkerAtPlaybackPosition()) by matching its position, so every
-   // slot's position() needs markInterested() up front for .get() to work
-   // later. CUE_MARKER_SCAN_DEPTH deep - a generous cap, same "big enough
-   // window" approach as EQ_DEVICE_SCAN_DEPTH/TOOL_DEVICE_SCAN_DEPTH
-   // elsewhere in this file. name() doesn't need markInterested() - only
-   // ever .set() here, never .get() (same as isWindowOpen().set() calls
-   // elsewhere in this file working fine without it).
+   // addCueMarkerAtPlaybackPosition()) by matching its position, and
+   // Mixer Mode PAGE (see findAdjacentMarkerPosition()/case 82-83 below)
+   // needs to scan every marker's position to find the closest one before/
+   // after the playhead - so every slot's position() AND exists() (to
+   // tell an actual marker apart from an empty slot within the scan
+   // depth) need markInterested() up front for .get() to work later.
+   // CUE_MARKER_SCAN_DEPTH deep - a generous cap, same "big enough window"
+   // approach as EQ_DEVICE_SCAN_DEPTH/TOOL_DEVICE_SCAN_DEPTH elsewhere in
+   // this file. name() doesn't need markInterested() - only ever .set()
+   // here, never .get() (same as isWindowOpen().set() calls elsewhere in
+   // this file working fine without it).
    cueMarkerBank = arranger.createCueMarkerBank(CUE_MARKER_SCAN_DEPTH);
    for (var cueMarkerIdx = 0; cueMarkerIdx < CUE_MARKER_SCAN_DEPTH; cueMarkerIdx++) {
       cueMarkerBank.getItemAt(cueMarkerIdx).position().markInterested();
+      cueMarkerBank.getItemAt(cueMarkerIdx).exists().markInterested();
    }
 
    // Read on-demand (not observed) by END, CTRL+PUNCH IN/OUT, and the jog
@@ -2653,6 +2679,103 @@ function findAndRenamePendingCueMarker(expectedPositionBeats, newName) {
    println("SHIFT+HOME cue marker: couldn't find the marker just created at beat " +
       expectedPositionBeats + " to rename it (scanned " + CUE_MARKER_SCAN_DEPTH +
       " markers) - it still exists with Bitwig's default name.");
+}
+
+// "Mixer Mode PAGE" (notes 82/83, MODE_MIXER only - Device mode's own
+// paging behavior at the same notes is untouched, see case 82/83 below)
+// - requested directly: jump the playhead to the next/previous cue
+// marker AND move the arranger loop to follow it, for quickly hopping
+// between song sections and looping just the one currently being worked
+// on. Scans cueMarkerBank directly (rather than transport.
+// jumpToNext/PreviousCueMarker(), which would then need a readback to
+// know WHERE it landed) so the target position is already known
+// synchronously, with no read-after-jump timing to worry about - unlike
+// SHIFT+HOME's marker creation above, there's no "wait for the bank to
+// catch up" step needed here at all in the common case.
+//
+// Finds the marker with the smallest position strictly after
+// currentPos (forward) or the largest position strictly before it
+// (backward) - i.e. the same "closest adjacent marker" semantics as
+// Bitwig's own jump-to-next/previous-marker actions. Returns null if
+// none exists in that direction within CUE_MARKER_SCAN_DEPTH.
+function findAdjacentMarkerPosition(currentPos, forward) {
+   var bestPosition = null;
+   for (var i = 0; i < CUE_MARKER_SCAN_DEPTH; i++) {
+      var marker = cueMarkerBank.getItemAt(i);
+      if (!marker.exists().get()) {
+         continue;
+      }
+      var pos = marker.position().get();
+      if (forward) {
+         if (pos > currentPos + CUE_MARKER_POSITION_EPSILON &&
+            (bestPosition === null || pos < bestPosition)) {
+            bestPosition = pos;
+         }
+      } else {
+         if (pos < currentPos - CUE_MARKER_POSITION_EPSILON &&
+            (bestPosition === null || pos > bestPosition)) {
+            bestPosition = pos;
+         }
+      }
+   }
+   return bestPosition;
+}
+
+// Finishes the Mixer Mode PAGE gesture once both the target marker's
+// position AND the loop's end position are known - moves the playhead
+// and sets the loop in one go. Shared by the fast path (loop end is
+// either the next marker after the target, or the target position plus
+// the existing loop length - both already known synchronously) and the
+// jump_to_end_of_arrangement fallback path (which needs a
+// host.scheduleTask() first - see jumpToMarkerAndSetLoop() below).
+function finishMixerPageJump(targetPosition, loopEndPosition, popupText) {
+   transport.getPosition().set(targetPosition);
+   transport.arrangerLoopStart().set(targetPosition);
+   transport.arrangerLoopDuration().set(Math.max(0.0625, loopEndPosition - targetPosition));
+   host.showPopupNotification(popupText);
+}
+
+function jumpToMarkerAndSetLoop(forward) {
+   var currentPos = transport.getPosition().get();
+   var targetPosition = findAdjacentMarkerPosition(currentPos, forward);
+   if (targetPosition === null) {
+      host.showPopupNotification(forward ? "No Next Cue Marker" : "No Previous Cue Marker");
+      return;
+   }
+
+   if (mixerPageLoopBehavior === "Keep Loop Length") {
+      var currentLoopLength = transport.arrangerLoopDuration().get();
+      finishMixerPageJump(targetPosition, targetPosition + currentLoopLength,
+         "Jump to Marker (Loop Kept)");
+      return;
+   }
+
+   // "Loop Between Markers" - loop end is the NEXT marker after the
+   // target, chronologically, regardless of which direction we just
+   // navigated (looping "this section" always means target-to-next, not
+   // target-to-wherever-we-came-from).
+   var nextMarkerAfterTarget = findAdjacentMarkerPosition(targetPosition, true);
+   if (nextMarkerAfterTarget !== null) {
+      finishMixerPageJump(targetPosition, nextMarkerAfterTarget, "Jump to Marker (Loop to Next Marker)");
+      return;
+   }
+
+   // Target is the LAST marker - no next marker to loop up to. Bitwig
+   // has no direct Controller API query for "end of arrangement content"
+   // (no equivalent of scanning every track's longest clip), only the
+   // jump_to_end_of_arrangement ACTION - which moves the playhead as a
+   // side effect, so this reads the result back via a short
+   // host.scheduleTask() (same reasoning as findAndRenamePendingCueMarker()
+   // above: not guaranteed to be reflected in the same tick) and then
+   // moves the playhead to the actual target marker afterward, since
+   // landing at the end of the arrangement was never the point - not yet
+   // confirmed on hardware.
+   safeInvokeAction("jump_to_end_of_arrangement", null);
+   host.scheduleTask(function () {
+      var arrangementEnd = transport.getPosition().get();
+      finishMixerPageJump(targetPosition, Math.max(arrangementEnd, targetPosition + getBeatsPerBar()),
+         "Jump to Marker (Loop to End of Arrangement)");
+   }, CUE_MARKER_RENAME_DELAY_MS);
 }
 
 // For every track in `bank`, scans the first TOOL_DEVICE_SCAN_DEPTH devices
@@ -3893,12 +4016,17 @@ function handleButtonPressInner(note) {
                // a cue marker at the playhead (this note's previous
                // binding) moved to the F1-F8 configurable function list
                // instead - see "Add Cue Marker at Playhead" in
-               // FKEY_FUNCTIONS.
+               // FKEY_FUNCTIONS. In Mixer mode, requested directly: jumps
+               // the playhead to the previous cue marker and moves the
+               // arranger loop to follow it (see "Mixer Mode PAGE: Loop
+               // Behavior" and jumpToMarkerAndSetLoop() above).
          if (currentMode === MODE_DEVICE) {
             remoteControls.selectPreviousPage(true);
             host.showPopupNotification("Device Page Previous");
             refreshDisplayText();
             rebindFaders();
+         } else if (currentMode === MODE_MIXER) {
+            jumpToMarkerAndSetLoop(false);
          }
          break;
 
@@ -3908,12 +4036,16 @@ function handleButtonPressInner(note) {
                // moved to the F1-F8 configurable function list instead -
                // see "Toggle Follow Playhead" in FKEY_FUNCTIONS. The
                // metronome toggle doesn't have a new home yet; ask if it's
-               // wanted back somewhere.
+               // wanted back somewhere. In Mixer mode, requested directly:
+               // jumps the playhead to the next cue marker and moves the
+               // arranger loop to follow it - see case 82 above.
          if (currentMode === MODE_DEVICE) {
             remoteControls.selectNextPage(true);
             host.showPopupNotification("Device Page Next");
             refreshDisplayText();
             rebindFaders();
+         } else if (currentMode === MODE_MIXER) {
+            jumpToMarkerAndSetLoop(true);
          }
          break;
 
