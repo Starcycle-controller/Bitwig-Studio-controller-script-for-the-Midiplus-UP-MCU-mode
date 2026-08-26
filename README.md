@@ -1043,16 +1043,29 @@ the two views now stay in sync on every bank move.
 
 **Which slot gets selected depends on scroll direction**, per direct
 feedback: scrolling left/backward (`ToStart`/`PageBackward`/
-`StepBackward`) selects slot 0, the new window's first/leftmost track
+`StepBackward`) selects a configurable slot near the window's left side
 (`selectFirstTrackOfBank()`); scrolling right/forward (`ToEnd`/
-`PageForward`/`StepForward`) selects slot 7, its last/rightmost track
-(`selectLastTrackOfBank()`) - selecting the edge in the direction just
+`PageForward`/`StepForward`) selects one near its right side
+(`selectLastTrackOfBank()`) - selecting a track in the direction just
 scrolled *toward* keeps Bitwig's view following the newly-revealed
 tracks, rather than always snapping back to the window's left edge
-regardless of which way it just moved. `selectLastTrackOfBank()` scans
-backward from slot 7 rather than assuming it's always populated, since
-Hide mode can leave fewer than 8 activated tracks in the window (Show
-All mode and Returns never hit that case). Guarded by
+regardless of which way it just moved.
+
+**Bank Scroll Left: Select Track #** / **Bank Scroll Right: Select Track
+#** (Mixer category, range 1-8, default `1`/`8` - the original
+hardcoded first-slot/last-slot behavior) - requested directly: always
+jumping to the window's extreme edge (track 1 or track 8) can feel
+jarring in Bitwig's own view; a slot nearer the center (e.g. `3` on the
+left, `6` on the right) might land Bitwig's scrolled-into-view result
+somewhere less abrupt. Exposed as a setting rather than a fixed redesign
+specifically to experiment with different values on hardware. Both
+`selectFirstTrackOfBank()`/`selectLastTrackOfBank()` funnel through
+`selectBankSlotNear(index)`, which scans backward from the configured
+slot toward slot 0 if that exact one turns out empty (Hide mode can
+leave fewer than 8 activated tracks in the window - empty slots only
+ever trail towards slot 7 there, never lead, so backward/toward-0 is the
+correct search direction for either the left or the right setting; Show
+All mode and Returns never hit the empty-slot case at all). Guarded by
 `isMainSlotEmpty()` for the one case where there's genuinely nothing to
 select at all (Hide mode, zero activated tracks left in the whole
 project). Applies to both Main and Returns; the RETURNS toggle itself

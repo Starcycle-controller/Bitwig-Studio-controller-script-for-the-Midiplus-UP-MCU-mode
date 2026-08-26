@@ -1659,6 +1659,14 @@ var mainBankScrollOffset = 0; // logical scroll position into activeTrackRawIndi
 var mainCursorHasTrack = [true, true, true, true, true, true, true, true]; // Hide mode: does slot i have a track?
 var hideDeactivatedTracksEnabled = false; // live from the "Deactivated Tracks in Bank" Controller Preferences setting
 var mainMappingDirty = true; // set by any scan-bank exists()/isActivated()/name() change; consumed by mainMappingTick()
+
+// 0-based slot indices selectFirstTrackOfBank()/selectLastTrackOfBank()
+// (see below) select after a bank scroll - live from the "Bank Scroll
+// Left/Right: Select Track #" Controller Preferences settings (1-8 in
+// the UI, converted to 0-7 here). Defaults 0/7 match the original
+// hardcoded first-slot/last-slot behavior.
+var bankScrollLeftSelectIndex = 0;
+var bankScrollRightSelectIndex = 7;
 var masterTrack = null;
 var cursorTrack = null;
 var cursorDevice = null;
@@ -1834,13 +1842,15 @@ function activeBankItemCount() {
 // view to keep a newly selected track visible, the same as clicking it
 // would.
 //
-// Which slot to select depends on scroll direction, per direct feedback:
-// scrolling left/backward selects slot 0 (the new window's first/
-// leftmost track), scrolling right/forward selects slot 7 (its
-// last/rightmost track) - selecting the edge in the direction just
-// scrolled *toward* keeps Bitwig's view following the newly-revealed
-// tracks, rather than always snapping back to the window's left edge
-// regardless of which way it just moved.
+// Which slot to select depends on scroll direction and is configurable -
+// bankScrollLeftSelectIndex/bankScrollRightSelectIndex below, live from
+// the "Bank Scroll Left/Right: Select Track #" Controller Preferences
+// settings (default 1/8, i.e. slots 0/7 - the original hardcoded
+// first/last-slot behavior). Requested directly: selecting a slot nearer
+// the window's center (e.g. track 3 on a left scroll, track 6 on a right
+// one) rather than always the extreme edge might make Bitwig's own view
+// feel less jarring/more centered - worth experimenting with on
+// hardware, hence configurable rather than a fixed redesign.
 function selectBankSlot(index) {
    if (isMainSlotEmpty(index)) {
       return;
@@ -1850,24 +1860,30 @@ function selectBankSlot(index) {
    cursorTrack.selectChannel(track);
 }
 
-function selectFirstTrackOfBank() {
-   selectBankSlot(0);
-}
-
 // Hide mode can leave fewer than 8 activated tracks in the window
-// (trailing slots empty) - scans backward from 7 so scrolling right
-// still selects the actual last populated track instead of silently
-// selecting nothing if slot 7 itself happens to be empty. Show All mode
-// and Returns never hit the empty-slot case at all (isMainSlotEmpty()
-// is always false there), so this is effectively just "select slot 7"
-// for those.
-function selectLastTrackOfBank() {
-   for (var i = 7; i >= 0; i--) {
+// (trailing slots empty) - scans backward from the configured index
+// toward 0 so a scroll still selects the nearest actual populated track
+// instead of silently selecting nothing if that exact slot happens to be
+// empty (empty slots only ever trail towards slot 7 in Hide mode, never
+// lead, so scanning backward/toward 0 is always the correct direction to
+// search in either case). Show All mode and Returns never hit the
+// empty-slot case at all (isMainSlotEmpty() is always false there), so
+// this is effectively just "select the configured slot" for those.
+function selectBankSlotNear(index) {
+   for (var i = index; i >= 0; i--) {
       if (!isMainSlotEmpty(i)) {
          selectBankSlot(i);
          return;
       }
    }
+}
+
+function selectFirstTrackOfBank() {
+   selectBankSlotNear(bankScrollLeftSelectIndex);
+}
+
+function selectLastTrackOfBank() {
+   selectBankSlotNear(bankScrollRightSelectIndex);
 }
 
 // The 6 scroll operations activeTrackBank() used to expose directly
@@ -2762,6 +2778,29 @@ function init() {
          refreshDisplayText();
          rebindFaders();
       }
+   });
+
+   // See bankScrollLeftSelectIndex/bankScrollRightSelectIndex and
+   // selectFirstTrackOfBank()/selectLastTrackOfBank() above - which track
+   // (1-8) a left/right bank scroll selects, so Bitwig's own view follows
+   // along. Requested directly: the original first-slot/last-slot
+   // (1/8) behavior can feel like it always jumps to the window's
+   // extreme edge - a slot nearer the center (e.g. 3 on the left, 6 on
+   // the right) might make Bitwig's own scrolled-into-view result feel
+   // less jarring. Worth experimenting with on hardware, hence
+   // configurable rather than a fixed redesign either way.
+   var bankScrollLeftSelectSetting = host.getPreferences().getNumberSetting(
+      "Bank Scroll Left: Select Track #", "Mixer", 1, 8, 1, "", 1);
+   bankScrollLeftSelectSetting.markInterested();
+   bankScrollLeftSelectSetting.addRawValueObserver(function (value) {
+      bankScrollLeftSelectIndex = value - 1;
+   });
+
+   var bankScrollRightSelectSetting = host.getPreferences().getNumberSetting(
+      "Bank Scroll Right: Select Track #", "Mixer", 1, 8, 1, "", 8);
+   bankScrollRightSelectSetting.markInterested();
+   bankScrollRightSelectSetting.addRawValueObserver(function (value) {
+      bankScrollRightSelectIndex = value - 1;
    });
 
    // See selectLedVelocityFor()/armedLedBlinkTick() above. Turning this
