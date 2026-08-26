@@ -367,6 +367,30 @@ shaky" concern when requested. Picking one of the plain `Duplicate`
 options directly is the more self-contained way to get that same safety
 without depending on this toggle too.
 
+### Seeking while playing
+
+Every playhead jump in this script (default jog wheel scrub, HOME/END,
+Mixer Mode PAGE) goes through a shared `setTransportPosition(beats)`
+helper rather than calling `transport.getPosition().set()` directly.
+Reported: jog-wheel scrub did nothing while the transport was playing,
+even though it worked fine while stopped - meanwhile the dedicated
+REWIND/FAST FORWARD buttons (which call `transport.rewind()`/
+`.fastForward()`, a different API path) kept working during playback.
+Root cause: `transport.getPosition()` is the *live* playback position,
+continuously re-driven by the audio engine every processing cycle while
+playing, so a script-side `.set()` on it races against that engine
+update and gets stomped almost immediately - the jump technically
+happens but is overwritten before it's ever visible or audible.
+`setTransportPosition()` instead sets `transport.playStartPosition()`
+(Bitwig's own "play-start" marker, not continuously re-driven, and kept
+in sync with the current position while stopped) and, only while
+`transport.isPlaying()`, additionally calls
+`transport.jumpToPlayStartPosition()` to force the actual jump - the
+same workaround used by the well-tested DrivenByMoss controller
+framework for this identical issue. Applies to every position-jump
+feature in the script, not just the jog wheel - not yet confirmed on
+hardware.
+
 ### SHIFT+HOME: auto-named cue markers
 
 Note 89 (the button printed HOME under the Ableton overlay) normally

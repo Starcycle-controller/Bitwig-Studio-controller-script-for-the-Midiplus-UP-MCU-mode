@@ -1769,6 +1769,27 @@ function getBeatsPerBar() {
    return transport.timeSignature().numerator().get() * (4.0 / transport.timeSignature().denominator().get());
 }
 
+// transport.getPosition() is the live playback position - while playing,
+// it's continuously re-driven by the audio engine every processing
+// cycle, so calling .set() on it races against that and gets stomped
+// almost immediately, meaning a seek silently fails to visibly move
+// anything (reported: jog-wheel scrub did nothing while playing, even
+// though it worked fine stopped). transport.playStartPosition() is a
+// separate, not-continuously-driven value (Bitwig's own "play-start"
+// marker) that Bitwig itself keeps in sync with the current position
+// while stopped, and transport.jumpToPlayStartPosition() forces the
+// actual jump while playing - same workaround used by the well-tested
+// DrivenByMoss controller framework for this exact issue. Used by every
+// position-jump below (jog wheel scrub, HOME/END, Mixer Mode PAGE)
+// instead of transport.getPosition().set() directly, so seeking works
+// identically whether the transport is running or stopped.
+function setTransportPosition(beats) {
+   transport.playStartPosition().set(beats);
+   if (transport.isPlaying().get()) {
+      transport.jumpToPlayStartPosition();
+   }
+}
+
 function activeLedState() {
    return isViewingReturns ? returnsLedState : mainLedState;
 }
@@ -2470,6 +2491,10 @@ function init() {
    // wheel's bar-jump/loop-shift handling, so they need markInterested() or
    // .get() throws.
    transport.getPosition().markInterested();
+   // Used by setTransportPosition() below instead of transport.getPosition()
+   // directly for seeking, so jumps also work while playing - see that
+   // function's comment.
+   transport.playStartPosition().markInterested();
    transport.arrangerLoopStart().markInterested();
    transport.arrangerLoopDuration().markInterested();
    transport.timeSignature().numerator().markInterested();
@@ -2921,7 +2946,7 @@ function findAdjacentMarkerPosition(currentPos, forward) {
 // jump_to_end_of_arrangement fallback path (which needs a
 // host.scheduleTask() first - see jumpToMarkerAndSetLoop() below).
 function finishMixerPageJump(targetPosition, loopEndPosition, popupText) {
-   transport.getPosition().set(targetPosition);
+   setTransportPosition(targetPosition);
    transport.arrangerLoopStart().set(targetPosition);
    transport.arrangerLoopDuration().set(Math.max(0.0625, loopEndPosition - targetPosition));
    host.showPopupNotification(popupText);
@@ -3407,7 +3432,7 @@ function onMidi(status, data1, data2) {
          var beatsPerBar = getBeatsPerBar();
          var currentBar = Math.round(transport.getPosition().get() / beatsPerBar);
          var targetBar = backwards ? currentBar - 1 : currentBar + 1;
-         transport.getPosition().set(Math.max(0, targetBar) * beatsPerBar);
+         setTransportPosition(Math.max(0, targetBar) * beatsPerBar);
          return;
       }
 
@@ -3436,7 +3461,7 @@ function onMidi(status, data1, data2) {
          wheelScrubAccumulator += scrubBackwards ? WHEEL_SCRUB_TICKS_PER_BAR : -WHEEL_SCRUB_TICKS_PER_BAR;
          var currentBarUnit = Math.round(transport.getPosition().get() / wheelScrubBeatsPerBar);
          var targetBarUnit = scrubBackwards ? currentBarUnit - wheelScrubBars : currentBarUnit + wheelScrubBars;
-         transport.getPosition().set(Math.max(0, targetBarUnit * wheelScrubBeatsPerBar));
+         setTransportPosition(Math.max(0, targetBarUnit * wheelScrubBeatsPerBar));
       }
       return;
    }
@@ -4315,12 +4340,12 @@ function handleButtonPressInner(note) {
             host.showPopupNotification("Cue Marker: Bar " + barNumber);
             break;
          }
-         transport.getPosition().set(0);
+         setTransportPosition(0);
          host.showPopupNotification("Jump to Start (Home)");
          break;
 
       case 90: // END -> Jump Playhead to the current loop start
-         transport.getPosition().set(transport.arrangerLoopStart().get());
+         setTransportPosition(transport.arrangerLoopStart().get());
          host.showPopupNotification("Jump to Loop Start");
          break;
 
