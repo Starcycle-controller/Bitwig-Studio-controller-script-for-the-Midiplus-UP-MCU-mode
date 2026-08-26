@@ -1283,31 +1283,32 @@ var returnsLedState = { arm: [false, false, false, false, false, false, false, f
 
 // "Blink Armed Track's SELECT LED" (Controller Preferences -> "Mixer"
 // category, default ON) - see selectLedVelocityFor()/armedLedBlinkTick()
-// below. A 4-step "breathing" cycle - bright -> dim -> off -> dim ->
-// bright -> ... - rather than a flat on/off flash, using this hardware's
-// own dim LED state (confirmed real and documented in the UP/UP+
-// manual's Pro Tools AUTO/INSERT section - "these buttons will
-// illuminate dimmed Blue"/"dimmed Orange" - for a DIFFERENT button
-// function than SELECT, but the same underlying per-button LED hardware,
-// so the same velocity convention is a reasonable bet for SELECT too).
-// ARMED_LED_BLINK_DIM_VELOCITY is an untested guess at the actual
-// velocity value that produces a genuine static dim (not a hardware
-// auto-flash, not full brightness) - real Mackie Control-family surfaces
-// commonly use 1 for this. Not yet confirmed on hardware; if the "dim"
-// step instead looks identical to bright, off, or a flash, this is the
-// number to adjust. armedLedBlinkPhase (0-3, indexing
+// below. Plain bright/off flash. A 4-step bright/dim/off/dim "breathing"
+// version was tried first, using velocity 1 for "dim" - real and
+// documented on this hardware for a DIFFERENT button function (the
+// UP/UP+ manual's Pro Tools AUTO/INSERT section: "these buttons will
+// illuminate dimmed Blue"/"dimmed Orange") - but confirmed on hardware
+// NOT to produce any visible dim step for the SELECT LEDs specifically;
+// no dim state was seen cycling through at all. Likely explanation: this
+// row may have its own local record-arm LED behavior in firmware
+// (matching the light-red/dark-red SELECT-row recoloring already
+// observed when physically pressing RECORD) that overrides or ignores a
+// plain Note-On velocity of 1 rather than treating it as a genuine dim
+// state, unlike the AUTO/AUTO INSERT buttons' LEDs. Reverted to the
+// simpler, already-confirmed-working 2-state flash rather than keep
+// guessing at velocity values with no hardware feedback loop faster than
+// a full round-trip. armedLedBlinkPhase (0-1, indexing
 // ARMED_LED_BLINK_VELOCITIES) is the single shared step every armed
 // channel's blink reads from, advanced once per
-// ARMED_LED_BLINK_INTERVAL_MS by armedLedBlinkTick() so they all breathe
-// in sync rather than drifting independently - this is the duration of
-// EACH of the 4 steps, so the full bright-dim-off-dim cycle takes 4x this
-// value (1600ms at the default 400). Defaults; overridden live from the
-// Controller Preferences panel settings created in init() below.
+// ARMED_LED_BLINK_INTERVAL_MS by armedLedBlinkTick() so they all blink in
+// sync rather than drifting independently - this is the duration of each
+// of the 2 steps, so the full on/off cycle takes 2x this value (2000ms at
+// the default 1000). Defaults; overridden live from the Controller
+// Preferences panel settings created in init() below.
 var armedLedBlinkEnabled = true;
 var armedLedBlinkPhase = 0;
 var ARMED_LED_BLINK_INTERVAL_MS = 1000;
-var ARMED_LED_BLINK_DIM_VELOCITY = 1;
-var ARMED_LED_BLINK_VELOCITIES = [127, ARMED_LED_BLINK_DIM_VELOCITY, 0, ARMED_LED_BLINK_DIM_VELOCITY];
+var ARMED_LED_BLINK_VELOCITIES = [127, 0];
 
 // Per-track TOOL_DEVICE_NAME device tracking (see isToolVolumeMode above).
 // For each bank slot, mainToolSlot[i]/returnsToolSlot[i] holds which
