@@ -1619,6 +1619,46 @@ function safeInvokeAction(actionId, popupText) {
 var trackBank = null;
 var effectTrackBank = null; // "Returns" bank, shown when isViewingReturns is true
 var sceneBank = null; // MODE_SCENE (BTA): fixed 8-scene window, see sceneCursorIndex below
+
+// Deactivated Tracks in Bank ("Hide" mode) - requested directly: Bitwig
+// itself doesn't show deactivated tracks that are also hidden, used for
+// backup/experimental tracks the user keeps around but doesn't want
+// cluttering the 8-channel bank. There's no way to read a track's
+// hidden-in-Arranger/Mixer state via the Controller API at all (confirmed
+// - no isVisible()/isHidden() exists anywhere in it), but a track's
+// activated state IS readable (Channel.isActivated()), so that's the
+// proxy this filters on instead.
+//
+// A plain TrackBank always maps physical slot i to a fixed, contiguous
+// position in the raw track list - there's no way to make slot 3 skip
+// ahead to the next activated track while slots 1-2 stay put. The only
+// way to get that per-slot independence is 8 separate CursorTrack
+// objects (mainTrackCursors below), each manually pointed at an
+// arbitrary real track via selectChannel() - confirmed DrivenByMoss
+// itself never attempts this (isActivated() is only ever used there to
+// dim a channel strip in place, never to filter a bank), so there's no
+// existing precedent to lean on; this is a from-scratch design.
+//
+// mainTrackScanBank is a large, permanently-unscrolled (always at
+// position 0) bank purely for scanning isActivated()/exists() across far
+// more tracks than the 8 physical slots, so activated tracks beyond the
+// current 8-window are known about before they're scrolled into view.
+// mainTrackCursors are the 8 real per-slot cursors every other part of
+// the script actually reads from (via activeTrackAt() below) - kept
+// pointed at either the plain trackBank window (Show All/dim mode) or
+// the filtered activeTrackRawIndices list (Hide mode) by
+// refreshMainCursors(). Main tracks only - Returns/effect tracks keep
+// using effectTrackBank directly, unchanged; deactivated-track filtering
+// wasn't requested for Returns and effectTrackBank's fixed-window
+// behavior is far lower-risk to leave alone.
+var MAIN_TRACK_SCAN_DEPTH = 128; // matches CUE_MARKER_SCAN_DEPTH/EQ_DEVICE_SCAN_DEPTH convention
+var mainTrackScanBank = null;
+var mainTrackCursors = [];
+var activeTrackRawIndices = []; // mainTrackScanBank slot indices of existing+activated tracks, in list order
+var mainBankScrollOffset = 0; // logical scroll position into activeTrackRawIndices - Hide mode only
+var mainCursorHasTrack = [true, true, true, true, true, true, true, true]; // Hide mode: does slot i have a track?
+var hideDeactivatedTracksEnabled = false; // live from the "Deactivated Tracks in Bank" Controller Preferences setting
+var mainMappingDirty = true; // set by any scan-bank exists()/isActivated()/name() change; consumed by mainMappingTick()
 var masterTrack = null;
 var cursorTrack = null;
 var cursorDevice = null;
@@ -1757,8 +1797,186 @@ var bottomRowText = ["       ", "       ", "       ", "       ", "       ", "   
 // Display Refresh Throttle Flag
 var displayNeedsUpdate = true;
 
-function activeTrackBank() {
-   return isViewingReturns ? effectTrackBank : trackBank;
+// Replaces every trackBank.getItemAt(i)/activeTrackBank().getItemAt(i)
+// call site - see the Deactivated Tracks in Bank comment above
+// mainTrackScanBank for why. Returns unchanged (effectTrackBank
+// directly); Main always goes through mainTrackCursors, whichever real
+// track each one currently points to (kept in sync by
+// refreshMainCursors() below) regardless of Show All/Hide mode.
+function activeTrackAt(index) {
+   return isViewingReturns ? effectTrackBank.getItemAt(index) : mainTrackCursors[index];
+}
+
+// True only for a Main-bank, Hide-mode slot with no activated track left
+// to show (mainCursorHasTrack[index] false) - its cursor is stale,
+// pointing at whatever real (deactivated, off-screen) track it last
+// pointed to, so button presses need to no-op there rather than silently
+// acting on a track the user can't see and didn't intend to touch.
+// Always false for Returns and for Main in Show All mode.
+function isMainSlotEmpty(index) {
+   return !isViewingReturns && hideDeactivatedTracksEnabled && !mainCursorHasTrack[index];
+}
+
+function activeBankItemCount() {
+   if (isViewingReturns) {
+      return effectTrackBank.itemCount().get();
+   }
+   return hideDeactivatedTracksEnabled ? activeTrackRawIndices.length : trackBank.itemCount().get();
+}
+
+// The 6 scroll operations activeTrackBank() used to expose directly
+// (scrollPosition/scrollPageForwards/scrollPageBackwards/scrollForwards/
+// scrollBackwards/itemCount) don't make sense as a single passthrough
+// anymore - Hide mode's "bank" is activeTrackRawIndices, a plain array
+// with its own logical mainBankScrollOffset, not a real TrackBank object
+// with its own scroll methods. Each helper below picks the right
+// behavior for Returns / Main+Show All / Main+Hide, then re-syncs the
+// cursors so activeTrackAt() immediately reflects the new window.
+function scrollActiveBankToStart() {
+   if (isViewingReturns) {
+      effectTrackBank.scrollPosition().set(0);
+   } else if (hideDeactivatedTracksEnabled) {
+      mainBankScrollOffset = 0;
+      refreshMainCursors();
+   } else {
+      trackBank.scrollPosition().set(0);
+      refreshMainCursors();
+   }
+}
+
+function scrollActiveBankToEnd() {
+   var maxOffset = Math.max(0, activeBankItemCount() - 8);
+   if (isViewingReturns) {
+      effectTrackBank.scrollPosition().set(maxOffset);
+   } else if (hideDeactivatedTracksEnabled) {
+      mainBankScrollOffset = maxOffset;
+      refreshMainCursors();
+   } else {
+      trackBank.scrollPosition().set(maxOffset);
+      refreshMainCursors();
+   }
+}
+
+function scrollActiveBankPageBackward() {
+   if (isViewingReturns) {
+      effectTrackBank.scrollPageBackwards();
+   } else if (hideDeactivatedTracksEnabled) {
+      mainBankScrollOffset = Math.max(0, mainBankScrollOffset - 8);
+      refreshMainCursors();
+   } else {
+      trackBank.scrollPageBackwards();
+      refreshMainCursors();
+   }
+}
+
+function scrollActiveBankPageForward() {
+   if (isViewingReturns) {
+      effectTrackBank.scrollPageForwards();
+   } else if (hideDeactivatedTracksEnabled) {
+      var maxOffsetPage = Math.max(0, activeTrackRawIndices.length - 8);
+      mainBankScrollOffset = Math.min(maxOffsetPage, mainBankScrollOffset + 8);
+      refreshMainCursors();
+   } else {
+      trackBank.scrollPageForwards();
+      refreshMainCursors();
+   }
+}
+
+function scrollActiveBankStepBackward() {
+   if (isViewingReturns) {
+      effectTrackBank.scrollBackwards();
+   } else if (hideDeactivatedTracksEnabled) {
+      mainBankScrollOffset = Math.max(0, mainBankScrollOffset - 1);
+      refreshMainCursors();
+   } else {
+      trackBank.scrollBackwards();
+      refreshMainCursors();
+   }
+}
+
+function scrollActiveBankStepForward() {
+   if (isViewingReturns) {
+      effectTrackBank.scrollForwards();
+   } else if (hideDeactivatedTracksEnabled) {
+      var maxOffsetStep = Math.max(0, activeTrackRawIndices.length - 8);
+      mainBankScrollOffset = Math.min(maxOffsetStep, mainBankScrollOffset + 1);
+      refreshMainCursors();
+   } else {
+      trackBank.scrollForwards();
+      refreshMainCursors();
+   }
+}
+
+// Keeps mainTrackCursors[0-7] pointed at the correct real tracks for
+// whichever Main-bank mode is active - the native trackBank window (Show
+// All) or the filtered activeTrackRawIndices list (Hide, see
+// recomputeActiveTrackIndices() below) - and, Hide mode only, blanks any
+// trailing slot that has no activated track left to show (Show All mode
+// never needs this: a slot beyond the real track count already reads
+// back as Bitwig's own empty-track defaults, same as before this
+// feature existed). Called on every Main-bank scroll operation above,
+// every mapping recompute, and on every Show All/Hide toggle.
+function refreshMainCursors() {
+   for (var i = 0; i < 8; i++) {
+      if (hideDeactivatedTracksEnabled) {
+         var rawIdx = activeTrackRawIndices[mainBankScrollOffset + i];
+         if (rawIdx !== undefined) {
+            mainTrackCursors[i].selectChannel(mainTrackScanBank.getItemAt(rawIdx));
+            mainCursorHasTrack[i] = true;
+         } else {
+            mainCursorHasTrack[i] = false;
+            topRowText[i] = "       ";
+            bottomRowText[i] = "       ";
+            mainLedState.arm[i] = false;
+            mainLedState.solo[i] = false;
+            mainLedState.mute[i] = false;
+            mainLedState.select[i] = false;
+         }
+      } else {
+         mainTrackCursors[i].selectChannel(trackBank.getItemAt(i));
+         mainCursorHasTrack[i] = true;
+      }
+   }
+   if (!isViewingReturns) {
+      displayNeedsUpdate = true;
+      refreshChannelStripLEDs();
+   }
+}
+
+// Rebuilds activeTrackRawIndices from scratch - called by mainMappingTick()
+// below whenever mainMappingDirty was set by an exists()/isActivated()/
+// name() change anywhere in the scanned MAIN_TRACK_SCAN_DEPTH window.
+// Runs regardless of hideDeactivatedTracksEnabled, so the list is already
+// correct and ready the moment the user switches into Hide mode, rather
+// than needing a first recompute right after the toggle.
+function recomputeActiveTrackIndices() {
+   activeTrackRawIndices = [];
+   for (var i = 0; i < MAIN_TRACK_SCAN_DEPTH; i++) {
+      var scanTrack = mainTrackScanBank.getItemAt(i);
+      if (scanTrack.exists().get() && scanTrack.isActivated().get()) {
+         activeTrackRawIndices.push(i);
+      }
+   }
+   var maxOffset = Math.max(0, activeTrackRawIndices.length - 8);
+   if (mainBankScrollOffset > maxOffset) {
+      mainBankScrollOffset = maxOffset;
+   }
+   if (hideDeactivatedTracksEnabled) {
+      refreshMainCursors();
+   }
+}
+
+// Self-rescheduling loop (same pattern as displayFlushTask()/
+// armedLedBlinkTick() below) - throttles recomputeActiveTrackIndices() to
+// once per 100ms even if several scan-bank slots change in the same
+// instant (e.g. a project loading), rather than recomputing on every
+// single one of those changes.
+function mainMappingTick() {
+   if (mainMappingDirty) {
+      mainMappingDirty = false;
+      recomputeActiveTrackIndices();
+   }
+   host.scheduleTask(mainMappingTick, 100);
 }
 
 // Length of one bar in beats (quarter notes) under the project's current
@@ -1799,6 +2017,12 @@ function activeLedState() {
 // null if that track has no such device within the first
 // TOOL_DEVICE_SCAN_DEPTH positions of its chain.
 function getToolParam(trackIndex, paramIndex) {
+   // Hide mode empty slot - see isMainSlotEmpty() above. mainToolSlot[i]
+   // would otherwise still reflect the stale cursor's real (off-screen,
+   // deactivated) track.
+   if (isMainSlotEmpty(trackIndex)) {
+      return null;
+   }
    var slot = isViewingReturns ? returnsToolSlot[trackIndex] : mainToolSlot[trackIndex];
    if (slot < 0) {
       return null;
@@ -1830,6 +2054,40 @@ function init() {
    // handlers below, so they need markInterested() or .get() throws.
    trackBank.itemCount().markInterested();
    effectTrackBank.itemCount().markInterested();
+
+   // Deactivated Tracks in Bank ("Hide" mode) - see mainTrackScanBank/
+   // mainTrackCursors above. Scan bank: 0 sends/0 scenes, only ever used
+   // for exists()/isActivated()/name(), never displayed or bound to
+   // hardware directly. Never scrolled - stays pinned at position 0 so
+   // raw slot i always means "track at position i in the document" for
+   // as long as the script runs.
+   mainTrackScanBank = host.createMainTrackBank(MAIN_TRACK_SCAN_DEPTH, 0, 0);
+   for (var scanIdx = 0; scanIdx < MAIN_TRACK_SCAN_DEPTH; scanIdx++) {
+      (function (si) {
+         var scanTrack = mainTrackScanBank.getItemAt(si);
+         scanTrack.exists().markInterested();
+         scanTrack.isActivated().markInterested();
+         scanTrack.exists().addValueObserver(function () { mainMappingDirty = true; });
+         scanTrack.isActivated().addValueObserver(function () { mainMappingDirty = true; });
+         // Catches a track at this raw slot being replaced by a different
+         // one (insert/delete/reorder elsewhere in the list) without its
+         // activated flag actually changing value - exists()/isActivated()
+         // alone wouldn't fire a recompute in that case.
+         scanTrack.name().markInterested();
+         scanTrack.name().addValueObserver(function () { mainMappingDirty = true; });
+      })(scanIdx);
+   }
+
+   // The 8 real per-slot cursors - every other part of the script reads
+   // Main-track data through these (via activeTrackAt() below), never
+   // through trackBank.getItemAt() directly. 0 scenes: trackBank's own
+   // scenes parameter is unused elsewhere in this script (the clip
+   // launcher features all go through the separate sceneBank/actions
+   // instead), so there's nothing to replicate here.
+   for (var cursorIdx = 0; cursorIdx < 8; cursorIdx++) {
+      mainTrackCursors.push(host.createCursorTrack(
+         "MIDIPLUS_MAIN_TRACK_" + cursorIdx, "Main Track " + (cursorIdx + 1), MAX_SENDS, 0, false));
+   }
 
    // Scene Bank (8 scenes) - MODE_SCENE, entered via BTA. Fixed window, no
    // paging built for now (see sceneCursorIndex above).
@@ -2405,6 +2663,29 @@ function init() {
       mixerPageLoopBehavior = value;
    });
 
+   // See hideDeactivatedTracksEnabled/refreshMainCursors() above -
+   // requested directly, for keeping backup/experimental tracks
+   // deactivated-and-hidden in Bitwig itself from also cluttering the
+   // 8-channel bank here. "Show All" just blanks the deactivated track's
+   // name/value text in place (matches DrivenByMoss's own approach - it
+   // never filters a bank, only dims); "Hide" fully excludes it, shifting
+   // the next activated track into its slot - Main tracks only, Returns
+   // is unaffected either way. Switching live re-syncs the 8 cursors,
+   // display, LEDs and fader/encoder bindings immediately.
+   var hideDeactivatedTracksSetting = host.getPreferences().getEnumSetting(
+      "Deactivated Tracks in Bank", "Mixer",
+      ["Show All (Dim Name)", "Hide (Skip and Shift)"], "Show All (Dim Name)");
+   hideDeactivatedTracksSetting.markInterested();
+   hideDeactivatedTracksSetting.addValueObserver(function (value) {
+      hideDeactivatedTracksEnabled = (value === "Hide (Skip and Shift)");
+      mainMappingDirty = true;
+      if (currentMode === MODE_MIXER) {
+         refreshMainCursors();
+         refreshDisplayText();
+         rebindFaders();
+      }
+   });
+
    // See selectLedVelocityFor()/armedLedBlinkTick() above. Turning this
    // off immediately restores every SELECT LED to its plain isSelected
    // state via refreshChannelStripLEDs() (selectLedVelocityFor() checks
@@ -2513,11 +2794,17 @@ function init() {
    // updateSegmentDisplay(), called from flush().
    positionFormatter = host.createBeatTimeFormatter(":", 3, 2, 2, 3);
 
-   // Setup Observers for both the main track bank and the returns bank -
-   // only the currently-active one (per isViewingReturns) writes to the
-   // shared display caches / LEDs.
-   setupChannelStripObservers(trackBank, mainLedState, false);
-   setupChannelStripObservers(effectTrackBank, returnsLedState, true);
+   // Setup Observers for both Main (via mainTrackCursors - see
+   // activeTrackAt() above) and Returns - only the currently-active
+   // representation (per isActiveFn) writes to the shared display
+   // caches / LEDs.
+   var effectTrackBankItems = bankToTrackArray(effectTrackBank);
+   setupChannelStripObservers(mainTrackCursors, mainLedState, function (index) {
+      return !isViewingReturns && (!hideDeactivatedTracksEnabled || mainCursorHasTrack[index]);
+   });
+   setupChannelStripObservers(effectTrackBankItems, returnsLedState, function () {
+      return isViewingReturns;
+   });
 
    // Enable metering (mode=3: LED + LCD) for each of the 8 channel strips -
    // real MCU protocol per Ableton's own driver (ChannelStrip.py). The
@@ -2551,9 +2838,13 @@ function init() {
       midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, 7, meterTestModeValues[value], 0xF7]);
    });
 
-   // Track each bank's per-track TOOL_DEVICE_NAME device, if any (see isToolVolumeMode).
-   setupToolDeviceTracking(trackBank, mainToolSlot, mainToolRemote);
-   setupToolDeviceTracking(effectTrackBank, returnsToolSlot, returnsToolRemote);
+   // Track each bank's per-track TOOL_DEVICE_NAME device, if any (see
+   // isToolVolumeMode). mainTrackCursors' own createDeviceBank() calls
+   // (inside scanTrackForToolDevice()) automatically follow each cursor
+   // as it's re-pointed via selectChannel() - same cursor-relative-bank
+   // behavior cursorTrack's own device tracking below already relies on.
+   setupToolDeviceTracking(mainTrackCursors, mainToolSlot, mainToolRemote);
+   setupToolDeviceTracking(effectTrackBankItems, returnsToolSlot, returnsToolRemote);
    cursorToolRemote = scanTrackForToolDevice(
       cursorTrack,
       function (deviceIndex) { cursorToolSlot = deviceIndex; },
@@ -2660,36 +2951,74 @@ function init() {
       }
    });
 
+   // Point mainTrackCursors at the plain trackBank window before anything
+   // reads through activeTrackAt() below (hideDeactivatedTracksEnabled
+   // starts false, so this is just the native 8-track window - Hide
+   // mode's filtered mapping only takes over once mainMappingTick() has
+   // had a chance to populate activeTrackRawIndices, and once the user
+   // actually switches the Controller Preferences setting on).
+   refreshMainCursors();
+
    // Flush display initially
    updateModeLEDs();
    rebindFaders();
    host.scheduleTask(displayFlushTask, 100);
    host.scheduleTask(armedLedBlinkTick, ARMED_LED_BLINK_INTERVAL_MS);
    host.scheduleTask(flushWorkaroundTick, 100);
+   host.scheduleTask(mainMappingTick, 100);
 
    println("Midiplus UP Controller Script Ready.");
 }
 
+// Returns still uses a plain fixed-window TrackBank directly (unlike Main
+// - see mainTrackCursors above), so setupChannelStripObservers()/
+// setupToolDeviceTracking() below (which both take a plain 8-item array,
+// not a bank) need this to convert it once at init().
+function bankToTrackArray(bank) {
+   var tracks = [];
+   for (var i = 0; i < 8; i++) {
+      tracks.push(bank.getItemAt(i));
+   }
+   return tracks;
+}
+
 // Wires up the Name/Volume/Pan/Arm/Solo/Mute/Select observers for one of the
 // two 8-track banks (main tracks or return tracks). `ledState` is the cache
-// this bank's Arm/Solo/Mute/Select observers update; only the currently
-// active bank (isViewingReturns === isReturnsBank) actually pushes MIDI LED
-// updates or display text, so the two banks don't fight over the shared
-// hardware state while the other one is in the background.
-function setupChannelStripObservers(bank, ledState, isReturnsBank) {
+// this bank's Arm/Solo/Mute/Select observers update; only when isActiveFn(index)
+// is true does this representation actually push MIDI LED updates or
+// display text, so Main/Returns (and, for Main, Show All vs. Hide) don't
+// fight over the shared hardware state while another one is in the
+// background.
+// tracks is a plain array of 8 Track-like objects (either 8
+// effectTrackBank.getItemAt(i) proxies for Returns, or the 8
+// mainTrackCursors for Main tracks - see activeTrackAt() above), not a
+// bank object directly, since Main tracks no longer have a single bank
+// to pull a fixed getItemAt(index) from. isActiveFn(index) replaces the
+// old isViewingReturns === isReturnsBank check - for Main it also folds
+// in mainCursorHasTrack (Hide mode's empty trailing slots).
+//
+// isActivated() blanks a deactivated track's name/value text in place
+// (Show All/dim mode's "dim" - this hardware's LCD is monochrome
+// text-only, so blanking is the closest equivalent to visually dimming
+// it) - harmless to check unconditionally for Returns too, and for Main
+// in Hide mode this essentially never trips since deactivated tracks are
+// already filtered out of activeTrackRawIndices before a cursor can ever
+// point at one.
+function setupChannelStripObservers(tracks, ledState, isActiveFn) {
    for (var i = 0; i < 8; i++) {
       (function (index) {
-         var track = bank.getItemAt(index);
+         var track = tracks[index];
 
          // Read on-demand (not observed) by the SELECT double-press
          // group-fold handler in handleButtonPress, so need markInterested().
          track.isGroup().markInterested();
          track.isGroupExpanded().markInterested();
+         track.isActivated().markInterested();
 
          // Track Name Observer
          track.name().addValueObserver(function (name) {
-            if (currentMode === MODE_MIXER && isViewingReturns === isReturnsBank) {
-               topRowText[index] = formatTrackName(name, 7);
+            if (currentMode === MODE_MIXER && isActiveFn(index)) {
+               topRowText[index] = track.isActivated().get() ? formatTrackName(name, 7) : "       ";
                displayNeedsUpdate = true;
             }
          });
@@ -2712,9 +3041,9 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          track.pan().name().markInterested();
 
          track.volume().displayedValue().addValueObserver(function (dispVal) {
-            if (currentMode === MODE_MIXER && !isFlipped && isViewingReturns === isReturnsBank &&
+            if (currentMode === MODE_MIXER && !isFlipped && isActiveFn(index) &&
                 !isShowingPanTemporarily[index]) {
-               bottomRowText[index] = formatString(dispVal, 7);
+               bottomRowText[index] = track.isActivated().get() ? formatString(dispVal, 7) : "       ";
                displayNeedsUpdate = true;
             }
          });
@@ -2725,7 +3054,7 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          // style) rather than Bitwig's own displayedValue() string, which
          // is a plain percentage with no L/R indicator.
          track.pan().value().addValueObserver(function (rawVal) {
-            if (currentMode === MODE_MIXER && !isFlipped && isViewingReturns === isReturnsBank &&
+            if (currentMode === MODE_MIXER && !isFlipped && isActiveFn(index) &&
                 isShowingPanTemporarily[index]) {
                bottomRowText[index] = formatString(formatPanLR(rawVal), 7);
                displayNeedsUpdate = true;
@@ -2748,7 +3077,7 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          // audio was actually routed to it (the earlier "not updating"
          // report was a routing issue, not a script bug).
          track.addVuMeterObserver(13, -1, true, function (level) {
-            if (currentMode === MODE_MIXER && isViewingReturns === isReturnsBank) {
+            if (currentMode === MODE_MIXER && isActiveFn(index)) {
                midiOut.sendMidi(0xD0, (index << 4) | level, 0);
             }
          });
@@ -2757,7 +3086,7 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          // only sent to hardware while this bank is the active one.
          track.arm().addValueObserver(function (isArmed) {
             ledState.arm[index] = isArmed;
-            if (isViewingReturns === isReturnsBank) {
+            if (isActiveFn(index)) {
                midiOut.sendMidi(0x90, 0 + index, isArmed ? 127 : 0); // Rec Arm LED
                // Select LED reacts too - see selectLedVelocityFor() above,
                // an armed track breathes there regardless of selection.
@@ -2767,21 +3096,21 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
 
          track.solo().addValueObserver(function (isSoloed) {
             ledState.solo[index] = isSoloed;
-            if (isViewingReturns === isReturnsBank) {
+            if (isActiveFn(index)) {
                midiOut.sendMidi(0x90, 8 + index, isSoloed ? 127 : 0); // Solo LED
             }
          });
 
          track.mute().addValueObserver(function (isMuted) {
             ledState.mute[index] = isMuted;
-            if (isViewingReturns === isReturnsBank) {
+            if (isActiveFn(index)) {
                midiOut.sendMidi(0x90, 16 + index, isMuted ? 127 : 0); // Mute LED
             }
          });
 
          track.addIsSelectedInMixerObserver(function (isSelected) {
             ledState.select[index] = isSelected;
-            if (isViewingReturns === isReturnsBank) {
+            if (isActiveFn(index)) {
                // Select LED - breathes instead if this track is armed,
                // see selectLedVelocityFor() above.
                midiOut.sendMidi(0x90, 24 + index, selectLedVelocityFor(index, ledState));
@@ -3046,12 +3375,15 @@ function scanTrackForToolDevice(track, onSlotFound, onSlotLost) {
    return remotesForTrack;
 }
 
-function setupToolDeviceTracking(bank, toolSlotState, toolRemoteState) {
+// tracks is a plain array of 8 Track-like objects - see
+// setupChannelStripObservers() above for why (mainTrackCursors for Main,
+// bankToTrackArray(effectTrackBank) for Returns).
+function setupToolDeviceTracking(tracks, toolSlotState, toolRemoteState) {
    for (var i = 0; i < 8; i++) {
       (function (trackIndex) {
          toolSlotState[trackIndex] = -1;
          toolRemoteState[trackIndex] = scanTrackForToolDevice(
-            bank.getItemAt(trackIndex),
+            tracks[trackIndex],
             function (deviceIndex) {
                toolSlotState[trackIndex] = deviceIndex;
                refreshToolModeIfActive();
@@ -3665,7 +3997,8 @@ function onMidi(status, data1, data2) {
                      faderTouchIndex + " touched while another fader is still held");
                } else {
                   var touchedTrack = data1 === 112 ? masterTrack :
-                     (currentMode === MODE_MIXER ? activeTrackBank().getItemAt(faderTouchIndex) : null);
+                     (currentMode === MODE_MIXER && !isMainSlotEmpty(faderTouchIndex) ?
+                        activeTrackAt(faderTouchIndex) : null);
                   if (touchedTrack) {
                      scheduleSelectChannelOnTouch(touchedTrack);
                   }
@@ -3754,7 +4087,8 @@ function handleButtonPressInner(note) {
    // (main tracks or returns) is currently active.
    if (note >= 0 && note <= 7) {
       // Rec Arm 1-8
-      activeTrackBank().getItemAt(note).arm().toggle();
+      if (isMainSlotEmpty(note)) { return; }
+      activeTrackAt(note).arm().toggle();
       return;
    }
    if (note >= 8 && note <= 15) {
@@ -3762,7 +4096,8 @@ function handleButtonPressInner(note) {
       // known synchronously, for the momentary SOLO/UNSOLO LCD popup (see
       // showBottomRowPopup()).
       var soloIdx = note - 8;
-      var soloTrack = activeTrackBank().getItemAt(soloIdx);
+      if (isMainSlotEmpty(soloIdx)) { return; }
+      var soloTrack = activeTrackAt(soloIdx);
       var newSoloState = !soloTrack.solo().get();
       soloTrack.solo().set(newSoloState);
       showBottomRowPopup(soloIdx, newSoloState ? "SOLO" : "UNSOLO");
@@ -3772,7 +4107,8 @@ function handleButtonPressInner(note) {
       // Mute 1-8 - same synchronous-state pattern as Solo above, for the
       // momentary MUTE/UNMUTE LCD popup.
       var muteIdx = note - 16;
-      var muteTrack = activeTrackBank().getItemAt(muteIdx);
+      if (isMainSlotEmpty(muteIdx)) { return; }
+      var muteTrack = activeTrackAt(muteIdx);
       var newMuteState = !muteTrack.mute().get();
       muteTrack.mute().set(newMuteState);
       showBottomRowPopup(muteIdx, newMuteState ? "MUTE" : "UNMUTE");
@@ -3782,7 +4118,8 @@ function handleButtonPressInner(note) {
       // Select 1-8 - double-pressing a group track's own SELECT button
       // (within DOUBLE_PRESS_MS) folds/unfolds it instead of re-selecting it.
       var selIdx = note - 24;
-      var selectedTrack = activeTrackBank().getItemAt(selIdx);
+      if (isMainSlotEmpty(selIdx)) { return; }
+      var selectedTrack = activeTrackAt(selIdx);
       var nowMs = Date.now();
       var isDoublePress = (nowMs - lastSelectPressTime[selIdx]) < DOUBLE_PRESS_MS;
       lastSelectPressTime[selIdx] = nowMs;
@@ -3809,7 +4146,7 @@ function handleButtonPressInner(note) {
          // target) caused real problems on hardware across several
          // implementations and was reverted; see git history if revisiting
          // a volume-reset feature here.
-         activeTrackBank().getItemAt(encIdx).pan().reset();
+         if (!isMainSlotEmpty(encIdx)) { activeTrackAt(encIdx).pan().reset(); }
       } else if (currentMode === MODE_SENDS) {
          var resetSendIdx = (sendBankPage * 8) + encIdx;
          cursorTrack.sendBank().getItemAt(resetSendIdx).reset();
@@ -4054,13 +4391,13 @@ function handleButtonPressInner(note) {
       case 46: // BANK PREV (<) -> jump to bank 0 with SHIFT, else page back
          if (isShiftPressed) {
             shiftUsedForCombo = true;
-            activeTrackBank().scrollPosition().set(0);
+            scrollActiveBankToStart();
             host.showPopupNotification("Jump to First Bank");
          } else if (currentMode === MODE_DEVICE) {
             remoteControls.selectPreviousPage(true);
             host.showPopupNotification("Device Page Previous");
          } else {
-            activeTrackBank().scrollPageBackwards();
+            scrollActiveBankPageBackward();
             host.showPopupNotification("Track Bank Left");
          }
          refreshDisplayText();
@@ -4070,14 +4407,13 @@ function handleButtonPressInner(note) {
       case 47: // BANK NEXT (>) -> jump to last bank with SHIFT, else page forward
          if (isShiftPressed) {
             shiftUsedForCombo = true;
-            var maxOffsetBank = Math.max(0, activeTrackBank().itemCount().get() - 8);
-            activeTrackBank().scrollPosition().set(maxOffsetBank);
+            scrollActiveBankToEnd();
             host.showPopupNotification("Jump to Last Bank");
          } else if (currentMode === MODE_DEVICE) {
             remoteControls.selectNextPage(true);
             host.showPopupNotification("Device Page Next");
          } else {
-            activeTrackBank().scrollPageForwards();
+            scrollActiveBankPageForward();
             host.showPopupNotification("Track Bank Right");
          }
          refreshDisplayText();
@@ -4109,10 +4445,10 @@ function handleButtonPressInner(note) {
             }
          } else if (isShiftPressed) {
             shiftUsedForCombo = true;
-            activeTrackBank().scrollPosition().set(0);
+            scrollActiveBankToStart();
             host.showPopupNotification("Jump to First Channel");
          } else {
-            activeTrackBank().scrollBackwards();
+            scrollActiveBankStepBackward();
             host.showPopupNotification("Nudge Channel Left");
          }
          refreshDisplayText();
@@ -4133,11 +4469,10 @@ function handleButtonPressInner(note) {
             }
          } else if (isShiftPressed) {
             shiftUsedForCombo = true;
-            var maxOffsetCh = Math.max(0, activeTrackBank().itemCount().get() - 8);
-            activeTrackBank().scrollPosition().set(maxOffsetCh);
+            scrollActiveBankToEnd();
             host.showPopupNotification("Jump to Last Channel");
          } else {
-            activeTrackBank().scrollForwards();
+            scrollActiveBankStepForward();
             host.showPopupNotification("Nudge Channel Right");
          }
          refreshDisplayText();
@@ -4561,11 +4896,18 @@ function getFaderTarget(i) {
       var sendIdx = (sendBankPage * 8) + i;
       return cursorTrack.sendBank().getItemAt(sendIdx);
    }
+   // Hide mode: no activated track left to fill this slot - nothing to
+   // bind (see isMainSlotEmpty() above; rebindFaders() already treats a
+   // null target as "clear this binding", same as the existing
+   // isToolVolumeMode "no TOOL_DEVICE_NAME found" case below).
+   if (currentMode === MODE_MIXER && isMainSlotEmpty(i)) {
+      return null;
+   }
    if (!isFlipped) {
       if (currentMode === MODE_MIXER && isToolVolumeMode) {
          return getToolParam(i, 0);
       }
-      return activeTrackBank().getItemAt(i).volume();
+      return activeTrackAt(i).volume();
    }
    if (currentMode === MODE_DEVICE) {
       return remoteControls.getParameter(i);
@@ -4573,7 +4915,7 @@ function getFaderTarget(i) {
    if (isToolVolumeMode) {
       return getToolParam(i, 1);
    }
-   return activeTrackBank().getItemAt(i).pan();
+   return activeTrackAt(i).pan();
 }
 
 // Same as getFaderTarget(), except also covers the master fader (index 8,
@@ -4602,16 +4944,20 @@ function getEncoderTarget(i) {
    if (currentMode === MODE_DEVICE) {
       return remoteControls.getParameter(i);
    }
+   // See getFaderTarget() above - same Hide mode empty-slot guard.
+   if (currentMode === MODE_MIXER && isMainSlotEmpty(i)) {
+      return null;
+   }
    if (!isFlipped) {
       if (currentMode === MODE_MIXER && isToolVolumeMode) {
          return getToolParam(i, 1);
       }
-      return activeTrackBank().getItemAt(i).pan();
+      return activeTrackAt(i).pan();
    }
    if (currentMode === MODE_MIXER && isToolVolumeMode) {
       return getToolParam(i, 0);
    }
-   return activeTrackBank().getItemAt(i).volume();
+   return activeTrackAt(i).volume();
 }
 
 // Re-binds each of the 8 hwFaders to whichever Parameter they should
@@ -4700,7 +5046,14 @@ function updateVPotRingOutputs() {
 function updateChannelColorOutput() {
    var bytes = [];
    for (var i = 0; i < 8; i++) {
-      var color = activeTrackBank().getItemAt(i).color();
+      // Hide mode empty slot: activeTrackAt(i) is a stale cursor (still
+      // pointing at whatever real, off-screen track it last did) - show
+      // black/off rather than that track's real color.
+      if (isMainSlotEmpty(i)) {
+         bytes.push(0, 0, 0);
+         continue;
+      }
+      var color = activeTrackAt(i).color();
       bytes.push(Math.round(Math.max(0, Math.min(1, color.red())) * 127));
       bytes.push(Math.round(Math.max(0, Math.min(1, color.green())) * 127));
       bytes.push(Math.round(Math.max(0, Math.min(1, color.blue())) * 127));
@@ -4789,10 +5142,15 @@ function refreshDisplayText() {
                topRowText[i] = formatString("No " + TOOL_DEVICE_NAME, 7);
                bottomRowText[i] = formatString("", 7);
             }
+         } else if (!isViewingReturns && hideDeactivatedTracksEnabled && !mainCursorHasTrack[i]) {
+            // Hide mode: no activated track left to fill this slot - see
+            // refreshMainCursors() above, which already blanked
+            // topRowText[i]/bottomRowText[i] directly; nothing to read
+            // here (the cursor itself is stale/unpointed for this slot).
          } else {
-            var track = activeTrackBank().getItemAt(i);
-            topRowText[i] = formatTrackName(track.name().get(), 7);
-            bottomRowText[i] = formatString(track.volume().displayedValue().get(), 7);
+            var track = activeTrackAt(i);
+            topRowText[i] = track.isActivated().get() ? formatTrackName(track.name().get(), 7) : "       ";
+            bottomRowText[i] = track.isActivated().get() ? formatString(track.volume().displayedValue().get(), 7) : "       ";
          }
       } else if (currentMode === MODE_DEVICE) {
          var param = remoteControls.getParameter(i);

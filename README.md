@@ -939,6 +939,77 @@ target position is already known synchronously, with no read-after-jump
 timing concern in the common case (only the end-of-arrangement fallback
 above needs one).
 
+### Deactivated Tracks in Bank
+
+Reported: a track deactivated and hidden in Bitwig itself (used for
+backup/experimental tracks kept around but not wanted in the way) still
+showed up in the 8-channel bank here. Investigated whether a hidden
+track's state could be read directly - confirmed there's no
+`isVisible()`/`isHidden()` anywhere in the Controller API at all (checked
+every type in it), so there's no way to detect Bitwig's own Arranger/
+Mixer "eye icon" hide state from a controller script. `Channel.isActivated()`
+*is* readable, so that's the property this filters on instead - matches
+the reported case (deactivated-and-hidden backup tracks) even though it
+isn't literally the same flag.
+
+**Deactivated Tracks in Bank** (`Show All (Dim Name)` / `Hide (Skip and
+Shift)`, Mixer category, default `Show All (Dim Name)`) - Main tracks
+only; Returns/effect tracks are unaffected either way (not requested, and
+much lower-risk to leave on Bitwig's plain fixed-window bank).
+
+- **`Show All (Dim Name)`** - matches how
+  [DrivenByMoss](https://github.com/git-moss/DrivenByMoss) (the most
+  mature open-source Bitwig controller framework, supporting dozens of
+  controllers) handles this itself - checked its code specifically
+  before building anything here, and confirmed `isActivated()` is only
+  ever used there to dim a channel strip in place (e.g. its Push driver
+  passes it straight into the display call as a dim flag), never to
+  filter a bank; there's no existing precedent anywhere in it for
+  actually removing a deactivated track from view. This hardware's LCD is
+  monochrome text-only, so "dim" here means the deactivated track's name
+  and volume text go blank in its slot - the fader, pan, arm/solo/mute
+  and its real LEDs all keep working normally if you do touch it, since
+  Bitwig itself still allows editing a deactivated track's settings.
+- **`Hide (Skip and Shift)`** - fully excludes deactivated tracks from
+  the bank; the next activated track shifts up to fill the gap, same as
+  Bitwig's own hide behavior looks in the Arranger/Mixer. No precedent
+  for this anywhere (see above) - it needed a from-scratch design, since
+  a plain `TrackBank` always maps physical slot *i* to a fixed,
+  contiguous position in the underlying track list; there's no way to
+  make slot 3 skip ahead to the next activated track while slots 1-2
+  stay exactly where they are using a bank object alone. The only way to
+  get that per-slot independence is 8 separate `CursorTrack` objects
+  (`mainTrackCursors`), each manually pointed at an arbitrary real track
+  via `selectChannel(track)` - confirmed this API call exists and does
+  exactly that ("Points the cursor to the given channel") - instead of
+  the plain bank's own `getItemAt(i)`. A large (128-track), permanently
+  unscrolled background bank (`mainTrackScanBank`) continuously scans
+  `exists()`/`isActivated()`/`name()` across every track in the project -
+  not just the 8 currently visible - building `activeTrackRawIndices`,
+  the ordered list of activated tracks; `mainBankScrollOffset` is this
+  mode's own logical scroll position into that list (replacing the plain
+  bank's native scroll methods, which don't apply once the "bank" is a
+  filtered array rather than a contiguous window), and the 8 cursors are
+  re-pointed to match on every scroll and every recompute
+  (`refreshMainCursors()`). Every part of the script that used to read a
+  Main track via `trackBank.getItemAt(i)` now reads through
+  `mainTrackCursors[i]` instead (via `activeTrackAt(i)`), transparently
+  covering either mode - channel strip display/LEDs, fader/encoder
+  bindings, VU meters, track colors, and the Tool Volume Mode gain/pan
+  helper-device tracking all "just work" without needing separate logic
+  per mode, since a cursor keeps firing its already-registered observers
+  correctly no matter what real track it's re-pointed at. Fewer than 8
+  activated tracks in the whole project leaves trailing slots genuinely
+  empty (blank LCD text, LEDs off, fader/encoder unbound, black channel
+  color) rather than falling back to Bitwig's usual "off the end of the
+  list" defaults - and every button (Rec Arm/Solo/Mute/Select/Pan Reset/
+  fader-touch-select) is a no-op on one of those empty slots, so an empty
+  -looking channel strip can't accidentally act on some other,
+  off-screen deactivated track behind the scenes. **Not yet tested on
+  hardware** - this is a substantially bigger, from-scratch piece of
+  script architecture than most other features here, so expect to need a
+  round of real-world testing/iteration.
+
 **Blink Armed Track's SELECT LED** (on/off, default ON) - the SELECT LEDs
 (notes 24-31) normally just show which track is currently selected
 (solid on/off). With this on, any channel whose track is armed for
