@@ -85,9 +85,9 @@ Two independent halves, both required:
   pressed last". Pressing a *different* F-key still selects that device
   and opens its window as before.
 - `MODE_SCENE` - entered via the button printed B.T.A. on the old Live
-  overlay (note 80): shows the clip launcher, switches Bitwig to the Mix
-  panel layout, and the jog wheel selects/launches scenes instead of its
-  usual transport scrub.
+  overlay (note 79, not 80 - see the button-map correction below): shows
+  the clip launcher, switches Bitwig to the Mix panel layout, and the jog
+  wheel selects/launches scenes instead of its usual transport scrub.
 
 FLIP (note 43, not 50 - see the button-map correction below) swaps faders
 and encoders between volume and pan in `MODE_MIXER`, and faders (only -
@@ -1350,12 +1350,12 @@ was still in Live mode, is confirmed still correct.
 | 70-73 | SHIFT / OPTION / CTRL / ALT | Modifier hold state; standalone tap action is configurable, see Plugin Mode settings above |
 | 74 | (Live label: SESS/ARR) | Toggle clip launcher / arranger view |
 | 75 | (Live label: CLIP/FX) | Toggle device / clip view |
-| 76 | Unconfirmed - previously (wrongly) assumed to be UNDO | Unbound - needs testing |
+| 76 | DRAW | Cycle the 6 arranger edit tools; SHIFT+DRAW toggles Arranger Automation Write (popup shows `Automation Write: ENABLED`/`DISABLED`) - moved here from note 81 after console-log confirmation that the overlay's printed DRAW button actually sends this note, not 81 |
 | 77 | (Live label: BROWSER) | Toggle browser panel |
 | 78 | (Live label: DETAIL) | Toggle note/automation editor panel |
-| 79 | Unconfirmed - previously (wrongly) assumed to be REDO | Unbound - needs testing |
-| 80 | (Live label: B.T.A.) | Toggle `MODE_SCENE` |
-| 81 | (Live label: DRAW) | Cycle the 6 arranger edit tools; SHIFT+DRAW toggles Arranger Automation Write (popup shows `Automation Write: ENABLED`/`DISABLED`) |
+| 79 | B.T.A. | Toggle `MODE_SCENE` - moved here from note 80 after console-log confirmation that the overlay's printed B.T.A. button actually sends this note, not 80 |
+| 80 | Unconfirmed - previously (wrongly) assumed to be B.T.A. | Unbound - needs testing |
+| 81 | Unconfirmed - previously (wrongly) assumed to be DRAW | Unbound - needs testing |
 | 82 | Printed "PAGE (left arrow)" under the Ableton overlay (confirmed via console - previously wrongly assumed "MARKER") | `MODE_DEVICE`: page macro bank back. `MODE_MIXER`: jump to previous cue marker and move the loop to follow it - see Mixer Mode PAGE below |
 | 83 | Printed "PAGE (right arrow)" under the Ableton overlay (previously wrongly assumed "FOLLOW") | `MODE_DEVICE`: page macro bank forward. `MODE_MIXER`: jump to next cue marker and move the loop to follow it - see Mixer Mode PAGE below |
 | 84 | - | Jump to previous cue marker |

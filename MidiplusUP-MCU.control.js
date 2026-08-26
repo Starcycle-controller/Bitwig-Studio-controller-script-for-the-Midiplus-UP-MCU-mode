@@ -4517,11 +4517,34 @@ function handleButtonPressInner(note) {
          safeCall(application, "toggleDevices", "Toggle Device / Clip View");
          break;
 
-      // Note 76 - UNDO was previously (wrongly) assumed to be here; moved
-      // to note 50 above after console-log confirmation. Deliberately left
-      // unbound until it's confirmed what, if anything, this button
-      // actually does under the current overlay - press it and check the
-      // console for "RAW Note-On received".
+      case 76: // DRAW -> Moved here from note 81 after the user reported
+               // pressing the overlay's printed DRAW button produces note
+               // 76, not 81 (confirmed via console log) - same kind of
+               // wrong inherited note-number assumption as the FLIP/
+               // RETURNS/UNDO/REDO fixes above. Cycles through the 6
+               // arranger edit tools, one per press (Pointer -> Time
+               // Selection -> Pencil -> Spray Can -> Eraser -> Knife ->
+               // back to Pointer) - see ARRANGER_TOOL_ACTIONS above.
+               // SHIFT+DRAW toggles Arranger Automation Write instead
+               // (transport.isArrangerAutomationWriteEnabled() - a real
+               // SettableBooleanValue, same call this hardware used for
+               // Automation Write when it was briefly bound to SMPTE/BEATS
+               // earlier this session, before that was repurposed as a
+               // pure hardware-local mode key).
+         if (isShiftPressed) {
+            shiftUsedForCombo = true;
+            // Resulting state, not "toggled" - computed before toggling
+            // (rather than reading it back after) since that's guaranteed
+            // correct regardless of whether the value updates synchronously.
+            var newAutomationWriteState = !transport.isArrangerAutomationWriteEnabled().get();
+            transport.isArrangerAutomationWriteEnabled().toggle();
+            host.showPopupNotification("Automation Write: " + (newAutomationWriteState ? "ENABLED" : "DISABLED"));
+         } else {
+            var nextTool = ARRANGER_TOOL_ACTIONS[arrangerToolCycleIndex];
+            safeInvokeAction(nextTool.id, nextTool.name);
+            arrangerToolCycleIndex = (arrangerToolCycleIndex + 1) % ARRANGER_TOOL_ACTIONS.length;
+         }
+         break;
 
       case 77: // BROWSER -> Hide/Show Browser
          safeCall(application, "toggleBrowserVisibility", "Toggle Browser");
@@ -4536,13 +4559,11 @@ function handleButtonPressInner(note) {
          }
          break;
 
-      // Note 79 - REDO was previously (wrongly) assumed to be here; moved
-      // to note 51 above after console-log confirmation. Deliberately left
-      // unbound until it's confirmed what, if anything, this button
-      // actually does under the current overlay - press it and check the
-      // console for "RAW Note-On received".
-
-      case 80: // B.T.A. -> repurposed as MODE_SCENE toggle ("Scene Mode"):
+      case 79: // B.T.A. -> Moved here from note 80 after the user reported
+               // pressing the overlay's printed B.T.A. button produces note
+               // 79, not 80 (confirmed via console log) - same kind of
+               // wrong inherited note-number assumption as the fixes
+               // above. Repurposed as MODE_SCENE toggle ("Scene Mode"):
                // shows the clip launcher + switches to the Mix panel layout,
                // and the jog wheel selects/launches scenes instead of its
                // usual transport scrub (see the jog wheel handler and note
@@ -4575,30 +4596,17 @@ function handleButtonPressInner(note) {
          applyModeChange(null);
          break;
 
-      case 81: // DRAW -> cycle through the 6 arranger edit tools, one per
-               // press (Pointer -> Time Selection -> Pencil -> Spray Can ->
-               // Eraser -> Knife -> back to Pointer) - see
-               // ARRANGER_TOOL_ACTIONS above. SHIFT+DRAW toggles Arranger
-               // Automation Write instead (transport.
-               // isArrangerAutomationWriteEnabled() - a real
-               // SettableBooleanValue, same call this hardware used for
-               // Automation Write when it was briefly bound to SMPTE/BEATS
-               // earlier this session, before that was repurposed as a
-               // pure hardware-local mode key).
-         if (isShiftPressed) {
-            shiftUsedForCombo = true;
-            // Resulting state, not "toggled" - computed before toggling
-            // (rather than reading it back after) since that's guaranteed
-            // correct regardless of whether the value updates synchronously.
-            var newAutomationWriteState = !transport.isArrangerAutomationWriteEnabled().get();
-            transport.isArrangerAutomationWriteEnabled().toggle();
-            host.showPopupNotification("Automation Write: " + (newAutomationWriteState ? "ENABLED" : "DISABLED"));
-         } else {
-            var nextTool = ARRANGER_TOOL_ACTIONS[arrangerToolCycleIndex];
-            safeInvokeAction(nextTool.id, nextTool.name);
-            arrangerToolCycleIndex = (arrangerToolCycleIndex + 1) % ARRANGER_TOOL_ACTIONS.length;
-         }
-         break;
+      // Note 80 - B.T.A. was previously (wrongly) assumed to be here;
+      // moved to note 79 above after console-log confirmation. Deliberately
+      // left unbound until it's confirmed what, if anything, this button
+      // actually does under the current overlay - press it and check the
+      // console for "RAW Note-On received".
+
+      // Note 81 - DRAW was previously (wrongly) assumed to be here; moved
+      // to note 76 above after console-log confirmation. Deliberately left
+      // unbound until it's confirmed what, if anything, this button
+      // actually does under the current overlay - press it and check the
+      // console for "RAW Note-On received".
 
       case 82: // Printed "PAGE (left arrow)" under the Ableton overlay, not
                // "MARKER" as previously assumed - confirmed via the
