@@ -676,12 +676,16 @@ function applyEncoderStep(target, rawDelta, encoderIndex) {
 // oscillator fine-tune macro (turn right to pitch up, left to pitch down,
 // centered = no detune), 0 for a plain level. "Encoder Snap to Origin"
 // (Controller Preferences -> "Encoders" category) snaps the value to
-// exactly that real origin once the encoder comes to REST within
-// ENCODER_SNAP_THRESHOLD of it (2% by default), rather than requiring the
-// separate encoder-push reset - and now applies to whatever the encoder
-// currently targets in ANY mode (Mixer pan/volume, Device/Plugin macros,
-// Sends), not just Mixer-mode pan, using each target's own real origin
-// instead of a hardcoded 0.5. Skipped entirely for a genuine
+// exactly that real origin once the encoder comes to REST within its
+// context's own snap range (2% by default - see
+// DEVICE_ENCODER_SNAP_THRESHOLD/MIXER_ENCODER_SNAP_THRESHOLD below),
+// rather than requiring the separate encoder-push reset - and now applies
+// to whatever the encoder currently targets in ANY mode (Mixer pan/volume,
+// Device/Plugin macros, Sends), not just Mixer-mode pan, using each
+// target's own real origin instead of a hardcoded 0.5. Enable and range
+// are configured separately per context (Device/Plugin mode vs. Mixer
+// mode) so the two can be tuned independently without interfering with
+// each other. Skipped entirely for a genuine
 // discrete/switch target (see applyEncoderStep() above) - there's no
 // continuous "close to origin" to land on for something that only has a
 // handful of real states. Idle-based (checked ENCODER_SNAP_IDLE_MS after
@@ -698,9 +702,34 @@ function applyEncoderStep(target, rawDelta, encoderIndex) {
 // it. Waiting for the encoder to stop and checking where it landed
 // sidesteps both problems. Defaults; overridden live from the Controller
 // Preferences panel settings created in init() below.
-var encoderSnapToOriginEnabled = true;
-var ENCODER_SNAP_THRESHOLD = 0.02;
+//
+// Enable and range are split into two independent contexts - Device/
+// Plugin mode (macros) vs. everything under Mixer mode (pan, volume,
+// sends) - after direct feedback that a single shared toggle/range made
+// the two interfere: dialing the range in for how a fine-tune macro
+// behaves in Device mode also silently changed how pan snapped in Mixer
+// mode, with no way to tune one without the other. isDeviceModeContext()
+// below decides which pair of settings applies; the idle delay
+// (ENCODER_SNAP_IDLE_MS) stays a single shared value, since it's a
+// hardware turn-debounce timing rather than a "where/whether to snap"
+// decision that differs meaningfully by context.
+var deviceSnapToOriginEnabled = true;
+var DEVICE_ENCODER_SNAP_THRESHOLD = 0.02;
+var mixerSnapToOriginEnabled = true;
+var MIXER_ENCODER_SNAP_THRESHOLD = 0.02;
 var ENCODER_SNAP_IDLE_MS = 300;
+
+function isDeviceModeContext() {
+   return currentMode === MODE_DEVICE;
+}
+
+function snapToOriginEnabledForCurrentContext() {
+   return isDeviceModeContext() ? deviceSnapToOriginEnabled : mixerSnapToOriginEnabled;
+}
+
+function snapToOriginThresholdForCurrentContext() {
+   return isDeviceModeContext() ? DEVICE_ENCODER_SNAP_THRESHOLD : MIXER_ENCODER_SNAP_THRESHOLD;
+}
 
 // getOrigin() is only reliably 0.5 for parameters Bitwig itself classifies
 // as pan-like; a generically-wrapped, genuinely bipolar plugin parameter
@@ -844,11 +873,15 @@ function scheduleEncoderSnapCheck(index, target) {
       if (encoderSnapGeneration[index] !== myGeneration) {
          return;
       }
-      if (!encoderSnapToOriginEnabled) {
+      // Read live at fire time, same as target.get() below - a mode
+      // switch mid-turn is rare, but if it happens the check should use
+      // whichever context is actually current when it fires, not
+      // whichever was current back when the turn started.
+      if (!snapToOriginEnabledForCurrentContext()) {
          return;
       }
       var origin = resolveOrigin(target);
-      if (Math.abs(target.get() - origin) <= ENCODER_SNAP_THRESHOLD) {
+      if (Math.abs(target.get() - origin) <= snapToOriginThresholdForCurrentContext()) {
          target.set(origin);
       }
    }, ENCODER_SNAP_IDLE_MS);
@@ -1737,24 +1770,40 @@ function init() {
       assumeCenterWhenOriginIsZero = value;
    });
 
-   // Encoder Snap to Origin - see encoderSnapToOriginEnabled/
-   // ENCODER_SNAP_THRESHOLD above (the encoder CC handler in onMidi). Own
-   // "Encoders" category (moved from "Mixer" now that it's no longer
-   // pan-only - see the big comment above encoderSnapToOriginEnabled for
-   // why) rather than piling onto "Timing", since it's a snap distance,
-   // not a wheel-tick debounce threshold.
-   var encoderSnapToOriginSetting = host.getPreferences().getBooleanSetting(
-      "Encoder Snap to Origin", "Encoders", true);
-   encoderSnapToOriginSetting.markInterested();
-   encoderSnapToOriginSetting.addValueObserver(function(value) {
-      encoderSnapToOriginEnabled = value;
+   // Encoder Snap to Origin - see deviceSnapToOriginEnabled/
+   // mixerSnapToOriginEnabled/isDeviceModeContext() above (the encoder CC
+   // handler in onMidi). Own "Encoders" category (moved from "Mixer" now
+   // that it's no longer pan-only) rather than piling onto "Timing", since
+   // it's a snap distance, not a wheel-tick debounce threshold. Split into
+   // Device/Plugin mode vs. Mixer mode (pan/volume/sends) so tuning one
+   // context's snap behavior can't silently change the other's - see the
+   // big comment above deviceSnapToOriginEnabled for why.
+   var deviceSnapToOriginSetting = host.getPreferences().getBooleanSetting(
+      "Encoder Snap to Origin (Device/Plugin Mode)", "Encoders", true);
+   deviceSnapToOriginSetting.markInterested();
+   deviceSnapToOriginSetting.addValueObserver(function(value) {
+      deviceSnapToOriginEnabled = value;
    });
 
-   var encoderSnapThresholdSetting = host.getPreferences().getNumberSetting(
-      "Encoder Snap Range (+/- %)", "Encoders", 0, 10, 0.1, "%", 2);
-   encoderSnapThresholdSetting.markInterested();
-   encoderSnapThresholdSetting.addRawValueObserver(function(value) {
-      ENCODER_SNAP_THRESHOLD = value / 100;
+   var deviceSnapThresholdSetting = host.getPreferences().getNumberSetting(
+      "Encoder Snap Range - Device/Plugin Mode (+/- %)", "Encoders", 0, 10, 0.1, "%", 2);
+   deviceSnapThresholdSetting.markInterested();
+   deviceSnapThresholdSetting.addRawValueObserver(function(value) {
+      DEVICE_ENCODER_SNAP_THRESHOLD = value / 100;
+   });
+
+   var mixerSnapToOriginSetting = host.getPreferences().getBooleanSetting(
+      "Encoder Snap to Origin (Mixer Mode)", "Encoders", true);
+   mixerSnapToOriginSetting.markInterested();
+   mixerSnapToOriginSetting.addValueObserver(function(value) {
+      mixerSnapToOriginEnabled = value;
+   });
+
+   var mixerSnapThresholdSetting = host.getPreferences().getNumberSetting(
+      "Encoder Snap Range - Mixer Mode (+/- %)", "Encoders", 0, 10, 0.1, "%", 2);
+   mixerSnapThresholdSetting.markInterested();
+   mixerSnapThresholdSetting.addRawValueObserver(function(value) {
+      MIXER_ENCODER_SNAP_THRESHOLD = value / 100;
    });
 
    // How long the encoder has to sit idle (no further ticks) before the
@@ -2361,7 +2410,7 @@ function onMidi(status, data1, data2) {
          // to origin" to land on. Idle-based: this just (re)arms a check
          // for ENCODER_SNAP_IDLE_MS after the LAST tick of this turn, not
          // this specific tick's value.
-         if (encoderSnapToOriginEnabled && encTarget.discreteValueCount().get() <= 0) {
+         if (snapToOriginEnabledForCurrentContext() && encTarget.discreteValueCount().get() <= 0) {
             scheduleEncoderSnapCheck(encoderIndex, encTarget);
          }
       }

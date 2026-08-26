@@ -431,29 +431,47 @@ correctly-reported origin legitimately is `0` (e.g. unity/silence) gets
 treated as centered at `0.5` too - if that case matters more to you than
 fixing misreported bipolar macros, turn this off.
 
-**Encoder Snap to Origin** (on/off, default ON) - encoders have no
-physical detent, so landing exactly on a parameter's own "home" value by
-turning alone is fiddly. Originally just "Pan Snap to Center" (Mixer-mode
-pan only, hardcoded to 0.5) - generalized after confirming Bitwig's
-Controller API exposes the REAL origin of any `RangedValue` via
-`getOrigin()`, not just pan's: 0.5 for a bipolar/centered parameter (pan,
-or e.g. an oscillator fine-tune macro - turn right to pitch up, left to
-pitch down, centered means no detune), 0 for a plain level. Once the
-encoder comes to **rest** (no further tick for **Encoder Snap Idle Delay
-(ms)**, default 300) within **Encoder Snap Range (+/- %)** (default 2%,
-range 0-10%) of that real origin, it snaps the rest of the way there
-(`target.set(target.getOrigin().get())`) instead of leaving it at
-whatever the last increment produced. Now applies to whatever the
-encoder currently targets in **any** mode - Mixer pan/volume, Device/
-Plugin macros, Sends - not just Mixer-mode pan; skipped only for a
-genuine discrete/switch target (see `applyEncoderStep()`), which has no
+**Encoder Snap to Origin** - encoders have no physical detent, so landing
+exactly on a parameter's own "home" value by turning alone is fiddly.
+Originally just "Pan Snap to Center" (Mixer-mode pan only, hardcoded to
+0.5) - generalized after confirming Bitwig's Controller API exposes the
+REAL origin of any `RangedValue` via `getOrigin()`, not just pan's: 0.5
+for a bipolar/centered parameter (pan, or e.g. an oscillator fine-tune
+macro - turn right to pitch up, left to pitch down, centered means no
+detune), 0 for a plain level. Once the encoder comes to **rest** (no
+further tick for **Encoder Snap Idle Delay (ms)**, default 300, shared
+across contexts - a hardware turn-debounce timing, not a "where to snap"
+choice) within its context's snap range, it snaps the rest of the way
+there (`target.set(resolveOrigin(target))`) instead of leaving it at
+whatever the last increment produced. Applies to whatever the encoder
+currently targets in **any** mode - Mixer pan/volume, Device/Plugin
+macros, Sends - not just Mixer-mode pan; skipped only for a genuine
+discrete/switch target (see `applyEncoderStep()`), which has no
 continuous "close to origin" to land on. Doesn't replace the existing
 encoder-push pan reset (note 87/case in `handleButtonPress` - "Pan only -
 centers the pan, nothing else") - that's still there as an exact,
 always-available reset; this just makes turning the encoder itself land
-on the origin more often, without needing the separate push. Turn the
-range down to 0% to disable snapping without touching the on/off toggle,
-or use the toggle directly.
+on the origin more often, without needing the separate push.
+
+**Enable and range are configured independently for two contexts**, after
+feedback that a single shared toggle/range made Device mode and Mixer mode
+interfere with each other - dialing in the range for how a macro's
+fine-tune behaves in Device mode also silently changed how pan snapped in
+Mixer mode, with no way to tune one without affecting the other:
+
+- **Encoder Snap to Origin (Device/Plugin Mode)** (on/off, default ON) +
+  **Encoder Snap Range - Device/Plugin Mode (+/- %)** (default 2%, range
+  0-10%) - governs Device mode's 8 macro knobs only.
+- **Encoder Snap to Origin (Mixer Mode)** (on/off, default ON) + **Encoder
+  Snap Range - Mixer Mode (+/- %)** (default 2%, range 0-10%) - governs
+  everything else the encoders can target: Mixer-mode pan/volume and
+  Sends. `isDeviceModeContext()` (`currentMode === MODE_DEVICE`) is the
+  only thing that decides which pair applies - Sends is bundled with
+  Mixer rather than broken out further since it's only ever reached via
+  Mixer-mode navigation.
+
+Turn a context's range down to 0% to disable snapping there without
+touching its own on/off toggle, or use the toggle directly.
 
 Went through two earlier designs that both failed on hardware before
 landing on the idle-based one above (back when this was still pan-only):
