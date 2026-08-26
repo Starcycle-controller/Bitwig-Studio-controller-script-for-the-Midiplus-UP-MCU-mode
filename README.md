@@ -783,8 +783,9 @@ jumps straight to Sends 9-16 from anywhere regardless of this setting, so
 choosing `8` for less everyday paging doesn't lock anyone out of the rest
 when they actually need them.
 
-**Mixer Mode PAGE: Loop Behavior** (`Loop Between Markers` / `Keep Loop
-Length`, default `Loop Between Markers`) - requested directly: PAGE
+**Mixer Mode PAGE: Loop Behavior** (`Keep Loop Length` / `Loop Between
+Markers`, default `Keep Loop Length` - matches normal workflow, per
+direct feedback) - requested directly: PAGE
 left/right (notes 82/83) already page the device macro bank in Device
 mode; in **Mixer mode** the same two buttons now jump the playhead to
 the previous/next cue marker **and** move the arranger loop to follow

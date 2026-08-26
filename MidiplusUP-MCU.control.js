@@ -1067,14 +1067,14 @@ function scheduleFaderSnapZeroCheck(index, target) {
 // "Mixer Mode PAGE: Loop Behavior" - see findAdjacentMarkerPosition()/
 // jumpToMarkerAndSetLoop() above (the notes 82/83 handling in Device
 // mode is untouched by this - only Mixer mode's PAGE gains this
-// behavior). "Loop Between Markers" (default) loops the section from
-// the target marker to the next one chronologically (falling back to
-// the arrangement's end if the target is the last marker); "Keep Loop
-// Length" instead just relocates the loop to start at the target
-// marker, keeping whatever length it already had. Defaults; overridden
-// live from the Controller Preferences panel setting created in init()
-// below.
-var mixerPageLoopBehavior = "Loop Between Markers";
+// behavior). "Keep Loop Length" (default - matches normal workflow, per
+// direct feedback) just relocates the loop to start at the target
+// marker, keeping whatever length it already had; "Loop Between Markers"
+// instead loops the section from the target marker to the next one
+// chronologically (falling back to the arrangement's end if the target
+// is the last marker). Defaults; overridden live from the Controller
+// Preferences panel setting created in init() below.
+var mixerPageLoopBehavior = "Keep Loop Length";
 
 // Same debounce-generation-token pattern as revealPanTemporarily() below
 // (and lcdOverrideGeneration) - only the LAST scheduled check for a given
@@ -2200,7 +2200,7 @@ function init() {
    // See mixerPageLoopBehavior/jumpToMarkerAndSetLoop() above.
    var mixerPageLoopBehaviorSetting = host.getPreferences().getEnumSetting(
       "Mixer Mode PAGE: Loop Behavior", "Mixer",
-      ["Loop Between Markers", "Keep Loop Length"], "Loop Between Markers");
+      ["Keep Loop Length", "Loop Between Markers"], "Keep Loop Length");
    mixerPageLoopBehaviorSetting.markInterested();
    mixerPageLoopBehaviorSetting.addValueObserver(function(value) {
       mixerPageLoopBehavior = value;
