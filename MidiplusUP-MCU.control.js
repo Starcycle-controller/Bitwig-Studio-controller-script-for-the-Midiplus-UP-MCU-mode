@@ -753,14 +753,32 @@ function snapToOriginThresholdForCurrentContext() {
 // name() is genuinely the only usable one; displayedValue() is the live
 // formatted value, not a stable type descriptor, so it can't serve as a
 // classifier. nameSuggestsBipolar() below matches the macro's own name
-// (as mapped/labeled on the Remote Controls page) against
-// BIPOLAR_NAME_KEYWORDS (default "pan,tun,offset" - catches "Pan", "Fine
-// Tune", "Detune", "Tuning", "Pitch Offset", "Osc Offset", etc.,
-// case-insensitively, as a substring) - so the override only ever applies
-// to a macro actually named like something bipolar, not to every
-// 0-origin macro on the device.
+// (as mapped/labeled on the Remote Controls page - either the plugin's
+// own reported parameter name, or the user's own custom label if the
+// slot's been renamed, both work identically since it's just a string
+// match either way) against BIPOLAR_NAME_KEYWORDS as a case-insensitive
+// substring, so the override only ever applies to a macro actually named
+// like something bipolar, not to every 0-origin macro on the device.
+//
+// A bare "tun" was flagged as still too unspecific on further thought -
+// checked the actual manuals for Serum 2, u-he Hive, Diva, and Zebra2 to
+// pick real, precise names instead of guessing: Serum's own pitch-section
+// labels are literally "Fine"/"Coarse" (not "Tune" at all - confirmed
+// from the official manual), Diva's fine-tune automation parameter is
+// abbreviated "FTun", and u-he's own Hive documentation describes
+// "separate parameters... for octave, semi and fine tune" (literal
+// phrase). Default "pan,fine tune,fine,ftun,offset" covers all of that
+// precisely. Deliberately does NOT include bare "detune" by default: a
+// unison/voice-spread "Detune" amount (Serum's Unison Detune, Hive's
+// Detune knob) is NOT bipolar - it's a 0-based intensity (0 = tight, max
+// = wide), and Zebra2's OWN "Detune" control is worse still, being
+// bipolar in Single oscillator mode but becoming that same non-bipolar
+// spread amount in Dual/Quad/Eleven mode - the identical parameter name
+// meaning something different depending on another setting entirely, so
+// no name-only heuristic can get both right. Add "detune" to your own
+// keyword list if you know it's safe for how you're actually using it.
 var assumeCenterForBipolarNamedMacros = true;
-var BIPOLAR_NAME_KEYWORDS = "pan,tun,offset";
+var BIPOLAR_NAME_KEYWORDS = "pan,fine tune,fine,ftun,offset";
 
 function nameSuggestsBipolar(target) {
    var name = target.name().get();
@@ -1858,7 +1876,7 @@ function init() {
    });
 
    var bipolarNameKeywordsSetting = host.getPreferences().getStringSetting(
-      "Bipolar Macro Name Keywords", "Encoders", 100, "pan,tun,offset");
+      "Bipolar Macro Name Keywords", "Encoders", 100, "pan,fine tune,fine,ftun,offset");
    bipolarNameKeywordsSetting.markInterested();
    bipolarNameKeywordsSetting.addValueObserver(function(value) {
       BIPOLAR_NAME_KEYWORDS = value;

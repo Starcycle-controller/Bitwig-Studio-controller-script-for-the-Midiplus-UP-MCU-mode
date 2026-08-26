@@ -410,47 +410,83 @@ on purpose. Turning this on lets Stepped mode keep working even while
 Automation Write is enabled.
 
 **Assume Center (0.5) for Bipolar-Named Macros** (on/off, default ON) +
-**Bipolar Macro Name Keywords** (text, default `pan,tun,offset`) - `getOrigin()`
-turns out to only be reliably `0.5` for parameters Bitwig itself
-classifies internally as pan-like; a genuinely bipolar plugin parameter
-that Bitwig merely wraps generically - confirmed on hardware with Serum
-2's oscillator Fine Tune macros - reports `0` instead, even though its
-real "no detune" center sits at `0.5`. Diagnostic logging added during the
-Fine Zone Near Origin investigation below caught it directly: the macro's
-value hovered around `0.50` on every logged tick while `getOrigin()`
-reported a flat `0.0000` the entire time, so both Fine Zone Near Origin
-and Encoder Snap to Origin were silently checking distance to the wrong
-point and never activating anywhere near the actual center being aimed
-for ("range 5%, then 10%, then resolution multiplier 4x, then 16x - no
-visible behavior change" was the symptom that led to adding the logging).
+**Bipolar Macro Name Keywords** (text, default
+`pan,fine tune,fine,ftun,offset`) - `getOrigin()` turns out to only be
+reliably `0.5` for parameters Bitwig itself classifies internally as
+pan-like; a genuinely bipolar plugin parameter that Bitwig merely wraps
+generically - confirmed on hardware with Serum 2's oscillator Fine Tune
+macros - reports `0` instead, even though its real "no detune" center
+sits at `0.5`. Diagnostic logging added during the Fine Zone Near Origin
+investigation below caught it directly: the macro's value hovered around
+`0.50` on every logged tick while `getOrigin()` reported a flat `0.0000`
+the entire time, so both Fine Zone Near Origin and Encoder Snap to Origin
+were silently checking distance to the wrong point and never activating
+anywhere near the actual center being aimed for ("range 5%, then 10%,
+then resolution multiplier 4x, then 16x - no visible behavior change" was
+the symptom that led to adding the logging).
 
-The first fix (treating ANY reported origin of `0` as `0.5`, unconditionally)
-was flagged as too broad on further hardware testing: only a handful of
-controls on an instrument like Serum 2 are actually bipolar/centered (fine
-tune, oscillator pan) - most of a device's other macros with origin `0`
-are genuinely, correctly zero-based, and shouldn't get overridden just
-because something else on the same instrument happens to be bipolar too.
-Checked the Controller API for a more precise signal to key off instead of
-a blanket override: `RemoteControl`/`Parameter` (both extend
-`RangedValue`) expose only `name()`, `discreteValueCount()`/
+The first fix (treating ANY reported origin of `0` as `0.5`,
+unconditionally) was flagged as too broad on further hardware testing:
+only a handful of controls on an instrument like Serum 2 are actually
+bipolar/centered (fine tune, oscillator pan) - most of a device's other
+macros with origin `0` are genuinely, correctly zero-based, and shouldn't
+get overridden just because something else on the same instrument happens
+to be bipolar too. Checked the Controller API for a more precise signal to
+key off instead of a blanket override: `RemoteControl`/`Parameter` (both
+extend `RangedValue`) expose only `name()`, `discreteValueCount()`/
 `discreteValueNames()`, `getOrigin()`, and `displayedValue()` - no unit,
 type, or "is bipolar" flag anywhere in the API. `name()` is the only one
 that's a stable enough signal to use (`displayedValue()` is the live
 formatted value, not a type descriptor, so it can't serve as a
 classifier). `nameSuggestsBipolar()` now matches the macro's own name (as
-labeled on its Remote Controls page slot) against the comma-separated
-**Bipolar Macro Name Keywords** list, case-insensitively, as a substring -
-default `pan,tun,offset` catches "Pan", "Fine Tune", "Detune", "Tuning",
-"Pitch Offset", "Osc Offset", etc.
-`resolveOrigin()` (shared by both features) only applies the `0.5`
-override when the origin is `0` **and** the name matches - so a
-zero-origin macro that isn't named anything like pan/tune keeps its
-correctly-reported `0`, while a fine-tune or oscillator-pan macro gets
-treated as centered. Add your own plugin's naming conventions to the
-keyword list (comma-separated) if a bipolar control there doesn't happen
-to say "pan" or "tun". Can't make Pan or a correctly-reported bipolar
-parameter any worse either way, since both already alias to `0.5`
-regardless of this setting.
+mapped/labeled on the Remote Controls page - either the plugin's own
+reported parameter name, or a custom label if you've renamed the slot
+yourself, both work identically since it's just a string match either
+way) against the comma-separated **Bipolar Macro Name Keywords** list,
+case-insensitively, as a substring. `resolveOrigin()` (shared by both
+features) only applies the `0.5` override when the origin is `0` **and**
+the name matches - so a zero-origin macro that isn't named anything like
+pan/fine-tune keeps its correctly-reported `0`, while a fine-tune or
+oscillator-pan macro gets treated as centered. Can't make Pan or a
+correctly-reported bipolar parameter any worse either way, since both
+already alias to `0.5` regardless of this setting.
+
+A bare `tun` (an earlier default) was flagged as still too unspecific.
+Rather than guess a replacement, checked the actual manuals for four
+target instruments - Serum 2, u-he Hive, Diva, and Zebra 2 - for their
+real pitch-tuning control names:
+
+- **Serum**: pitch-section labels are literally **"Fine"**/**"Coarse"**
+  (not "Tune" at all - confirmed straight from the official manual), plus
+  **"Noise Fine"** and mod-matrix entries like "A Pan".
+- **Diva**: the fine-tune automation parameter is abbreviated **"FTun"**
+  (range -24..+24, confirmed bipolar).
+- **Hive**: u-he's own documentation describes "separate parameters...
+  for octave, semi and **fine tune**" (that literal phrase).
+- **Zebra 2**: only turned up **"Detune"** - and it's a genuine trap, not
+  a name to add. In Single oscillator mode it's a bipolar per-oscillator
+  fine-tune (±50 cents); in Dual/Quad/Eleven mode the *exact same
+  parameter name* becomes a unison voice-spread amount (0 = tight, max =
+  wide - not centered at all, correctly zero-origin already). The same
+  ambiguity applies to Serum's own "Unison Detune" and Hive's "Detune"
+  knob. No name-only heuristic can tell those two meanings apart, so bare
+  `detune` is deliberately **not** in the default list - add it to your
+  own keyword list only if you know it's safe for how you actually use
+  it.
+
+Default `pan,fine tune,fine,ftun,offset` covers all four instruments'
+real control names precisely without touching unison/spread-style
+"Detune" controls. Add your own plugin's naming conventions (comma-
+separated) if a bipolar control there doesn't happen to match any of
+these.
+
+**How Bitwig gets a macro's name in the first place**: whatever string
+the plugin itself reports through its native parameter API (VST3's
+`ParameterInfo::title`, or the equivalent in CLAP/AU) - there's no
+standardization across vendors, it's entirely up to each plugin. If
+you've renamed a Remote Controls page slot yourself (typed a custom
+label), that custom text is what gets matched instead - so your own
+naming conventions work here too, not just each plugin's originals.
 
 **Encoder Snap to Origin** - encoders have no physical detent, so landing
 exactly on a parameter's own "home" value by turning alone is fiddly.
