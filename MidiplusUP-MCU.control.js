@@ -760,36 +760,74 @@ function snapToOriginThresholdForCurrentContext() {
 // substring, so the override only ever applies to a macro actually named
 // like something bipolar, not to every 0-origin macro on the device.
 //
-// A bare "tun" was flagged as still too unspecific on further thought -
-// checked the actual manuals for Serum 2, u-he Hive, Diva, and Zebra2 to
-// pick real, precise names instead of guessing: Serum's own pitch-section
-// labels are literally "Fine"/"Coarse" (not "Tune" at all - confirmed
-// from the official manual), Diva's fine-tune automation parameter is
-// abbreviated "FTun", and u-he's own Hive documentation describes
+// A bare "tun" was flagged as still too unspecific - checked the actual
+// manuals for Serum 2, u-he Hive, Diva, Zebra 2/3, and Repro (rather than
+// guessing) for their real pitch-tuning control names: Serum's own
+// pitch-section labels are literally "Fine"/"Coarse" (not "Tune" at all -
+// confirmed from the official manual), Diva's fine-tune automation
+// parameter is abbreviated "FTun", Hive's own documentation describes
 // "separate parameters... for octave, semi and fine tune" (literal
-// phrase). Default "pan,fine tune,fine,ftun,offset" covers all of that
-// precisely. Deliberately does NOT include bare "detune" by default: a
-// unison/voice-spread "Detune" amount (Serum's Unison Detune, Hive's
-// Detune knob) is NOT bipolar - it's a 0-based intensity (0 = tight, max
-// = wide), and Zebra2's OWN "Detune" control is worse still, being
-// bipolar in Single oscillator mode but becoming that same non-bipolar
-// spread amount in Dual/Quad/Eleven mode - the identical parameter name
-// meaning something different depending on another setting entirely, so
-// no name-only heuristic can get both right. Add "detune" to your own
-// keyword list if you know it's safe for how you're actually using it.
+// phrase), Zebra 3 has a standalone bipolar "Tune" (+/-48 semitones) AND
+// a "Fine Tune", and Repro has "Fine Tuning"/"OSC B Fine Tune".
+//
+// Bringing plain "tune" back into the list (to catch Zebra 3's standalone
+// "Tune") reopens the exact problem that got "tun" dropped in the first
+// place - a bare substring match can't tell "Tune" apart from "Detune",
+// and unison/voice-spread "Detune" (Serum's Unison Detune, Hive/Zebra's
+// Detune knob) is NOT bipolar; it's a 0-based intensity (0 = tight, max =
+// wide). Zebra 2/3's OWN "Detune" is worse still, being bipolar in Single
+// oscillator mode but becoming that same non-bipolar spread amount in
+// Dual/Quad/Eleven mode - the identical name meaning something different
+// depending on another setting entirely.
+//
+// Fixed properly instead of dodged: nameSuggestsBipolar() below now does
+// a WORD-BOUNDARY match (`\bkeyword\b`, via bipolarNameRegexes, compiled
+// once by rebuildBipolarNameRegexes() rather than per-tick) instead of a
+// raw substring. "tune" as a whole word matches "Tune" and "Fine Tune"
+// (both have "Tune" as its own word) but does NOT match "Detune" (no
+// boundary before "tune" there) - so "tune" is safe to include again
+// without reopening the Detune trap, and "fine tune" as a separate
+// keyword becomes redundant (already covered by "tune" + "fine"
+// individually) so it's dropped from the default. Add "detune" yourself
+// only if you know it's safe for how you actually use it - word-boundary
+// matching keeps it as its own deliberate, explicit choice rather than an
+// accidental side effect of wanting "tune".
 var assumeCenterForBipolarNamedMacros = true;
-var BIPOLAR_NAME_KEYWORDS = "pan,fine tune,fine,ftun,offset";
+var BIPOLAR_NAME_KEYWORDS = "pan,tune,fine,ftun,offset";
+var bipolarNameRegexes = [];
+
+// Escapes regex metacharacters in a user-typed keyword before it's
+// dropped into a RegExp literal, so a keyword like "1.5" or "(mod)"
+// can't accidentally build an invalid or unintended pattern.
+function escapeRegExp(text) {
+   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Rebuilds bipolarNameRegexes from BIPOLAR_NAME_KEYWORDS - called once at
+// startup below and again whenever the Controller Preferences setting
+// changes, so nameSuggestsBipolar() (on the hot path: it runs on every
+// encoder tick that Fine Zone Near Origin/Encoder Snap to Origin check,
+// whenever the target's origin is 0) just tests pre-compiled regexes
+// instead of rebuilding one from scratch per keyword on every call.
+function rebuildBipolarNameRegexes() {
+   bipolarNameRegexes = [];
+   var keywords = BIPOLAR_NAME_KEYWORDS.split(",");
+   for (var i = 0; i < keywords.length; i++) {
+      var keyword = keywords[i].trim();
+      if (keyword) {
+         bipolarNameRegexes.push(new RegExp("\\b" + escapeRegExp(keyword) + "\\b", "i"));
+      }
+   }
+}
+rebuildBipolarNameRegexes();
 
 function nameSuggestsBipolar(target) {
    var name = target.name().get();
    if (!name) {
       return false;
    }
-   var lowerName = name.toLowerCase();
-   var keywords = BIPOLAR_NAME_KEYWORDS.split(",");
-   for (var i = 0; i < keywords.length; i++) {
-      var keyword = keywords[i].trim().toLowerCase();
-      if (keyword && lowerName.indexOf(keyword) >= 0) {
+   for (var i = 0; i < bipolarNameRegexes.length; i++) {
+      if (bipolarNameRegexes[i].test(name)) {
          return true;
       }
    }
@@ -1876,10 +1914,11 @@ function init() {
    });
 
    var bipolarNameKeywordsSetting = host.getPreferences().getStringSetting(
-      "Bipolar Macro Name Keywords", "Encoders", 100, "pan,fine tune,fine,ftun,offset");
+      "Bipolar Macro Name Keywords", "Encoders", 100, "pan,tune,fine,ftun,offset");
    bipolarNameKeywordsSetting.markInterested();
    bipolarNameKeywordsSetting.addValueObserver(function(value) {
       BIPOLAR_NAME_KEYWORDS = value;
+      rebuildBipolarNameRegexes();
    });
 
    // Encoder Snap to Origin - see deviceSnapToOriginEnabled/
