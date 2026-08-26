@@ -1302,9 +1302,9 @@ var PLUGIN_DEVICE_STEP_MESSAGES = 4;
 
 // CTRL + Jog Wheel (outside MODE_DEVICE) - selects the next/previous
 // arranger clip/item. Own dedicated, independently configurable
-// threshold (Controller Preferences -> "Timing" category) rather than
-// reusing PLUGIN_DEVICE_STEP_MESSAGES, so this can be tuned separately
-// from device-stepping.
+// threshold (Controller Preferences -> "Wheel Options" category) rather
+// than reusing PLUGIN_DEVICE_STEP_MESSAGES, so this can be tuned
+// separately from device-stepping.
 var clipSelectStepAccumulator = 0;
 var CLIP_SELECT_STEP_MESSAGES = 4;
 
@@ -1421,9 +1421,9 @@ var altCtrlWheelAction = "Duplicate/Delete Track";
 var wheelComboDeleteEnabled = true;
 
 // Separate accumulators AND separate, independently configurable
-// thresholds per combo (Controller Preferences -> "Timing" category) -
-// so partial progress on one combo can't spill over and prematurely
-// trigger the other if the user switches which modifiers are held
+// thresholds per combo (Controller Preferences -> "Wheel Options"
+// category) - so partial progress on one combo can't spill over and
+// prematurely trigger the other if the user switches which modifiers are held
 // mid-turn, and each combo's sensitivity can be tuned independently
 // (e.g. duplicate/delete might want a higher threshold than scaling, to
 // make an accidental delete less likely).
@@ -1916,7 +1916,7 @@ function init() {
    // wheel message with no modifier held. Reported as too slow at the
    // fixed 1 beat/message it shipped with.
    var defaultWheelScrubStepSetting = host.getPreferences().getNumberSetting(
-      "Default Wheel Scrub Step (beats)", "Timing", 0.25, 8, 0.25, "beats", 1);
+      "Wheel (No Modifier): Playhead Jump per Tick (beats)", "Wheel Options", 0.25, 8, 0.25, "beats", 1);
    defaultWheelScrubStepSetting.markInterested();
    defaultWheelScrubStepSetting.addRawValueObserver(function(value) {
       DEFAULT_WHEEL_SCRUB_STEP = value;
@@ -1926,7 +1926,7 @@ function init() {
    // loop-length halve/double (see loopScaleAccumulator above) - lower
    // values double/halve the loop faster per flick of the wheel.
    var loopScaleThresholdSetting = host.getPreferences().getNumberSetting(
-      "Loop Halve/Double Wheel Ticks", "Timing", 2, 64, 1, "ticks", 16);
+      "OPTION+Wheel: Ticks to Halve/Double Loop Length", "Wheel Options", 2, 64, 1, "ticks", 16);
    loopScaleThresholdSetting.markInterested();
    loopScaleThresholdSetting.addRawValueObserver(function(value) {
       LOOP_SCALE_THRESHOLD = value;
@@ -1942,23 +1942,29 @@ function init() {
    // (below) is off, and stay ready to resume immediately once it's
    // switched off again.
    var clipSelectStepSetting = host.getPreferences().getNumberSetting(
-      "CTRL Wheel: Clip/Track Select Ticks", "Timing", 1, 32, 1, "ticks", 4);
+      "CTRL+Wheel: Ticks to Move to Next/Prev Clip or Track", "Wheel Options", 1, 32, 1, "ticks", 4);
    clipSelectStepSetting.markInterested();
    clipSelectStepSetting.addRawValueObserver(function(value) {
       clipSelectStepIndividual = value;
       applyWheelTickSettings();
    });
 
+   // "Scale Clip / Duplicate / Delete" in the label names all 3 possible
+   // outcomes since the actual one depends on the separate "SHIFT+CTRL
+   // Wheel Action" dropdown (Function Keys category) - this only tunes
+   // how many ticks it takes to fire whichever of the three is selected.
    var shiftCtrlWheelThresholdSetting = host.getPreferences().getNumberSetting(
-      "SHIFT+CTRL Wheel Ticks", "Timing", 2, 64, 1, "ticks", 16);
+      "SHIFT+CTRL+Wheel: Ticks to Scale Clip / Duplicate / Delete", "Wheel Options", 2, 64, 1, "ticks", 16);
    shiftCtrlWheelThresholdSetting.markInterested();
    shiftCtrlWheelThresholdSetting.addRawValueObserver(function(value) {
       shiftCtrlWheelThresholdIndividual = value;
       applyWheelTickSettings();
    });
 
+   // Same as SHIFT+CTRL+Wheel above - paired with the "ALT+CTRL Wheel
+   // Action" dropdown instead.
    var altCtrlWheelThresholdSetting = host.getPreferences().getNumberSetting(
-      "ALT+CTRL Wheel Ticks", "Timing", 2, 64, 1, "ticks", 16);
+      "ALT+CTRL+Wheel: Ticks to Scale Clip / Duplicate / Delete", "Wheel Options", 2, 64, 1, "ticks", 16);
    altCtrlWheelThresholdSetting.markInterested();
    altCtrlWheelThresholdSetting.addRawValueObserver(function(value) {
       altCtrlWheelThresholdIndividual = value;
@@ -1970,7 +1976,7 @@ function init() {
    // Tick Threshold (All Combos)" count instead, for anyone who'd rather
    // manage one shared default than three separate values.
    var useGlobalWheelTicksSetting = host.getPreferences().getBooleanSetting(
-      "Override Wheel Combo Thresholds", "Timing", false);
+      "Override Wheel Combo Thresholds", "Wheel Options", false);
    useGlobalWheelTicksSetting.markInterested();
    useGlobalWheelTicksSetting.addValueObserver(function(value) {
       useGlobalWheelTicks = value;
@@ -1978,7 +1984,7 @@ function init() {
    });
 
    var globalWheelTicksSetting = host.getPreferences().getNumberSetting(
-      "Global Tick Threshold (All Combos)", "Timing", 1, 64, 1, "ticks", 16);
+      "Global Tick Threshold (All Combos)", "Wheel Options", 1, 64, 1, "ticks", 16);
    globalWheelTicksSetting.markInterested();
    globalWheelTicksSetting.addRawValueObserver(function(value) {
       globalWheelTicks = value;
@@ -1991,7 +1997,7 @@ function init() {
    // this only pads out the minimum for a quick tap that released before
    // there was time to read anything.
    var fkeyHoldLingerSetting = host.getPreferences().getNumberSetting(
-      "F-Key Popup Duration After Release (ms)", "Timing", 0, 2000, 10, "ms", 300);
+      "F-Key Popup Duration After Release (ms)", "Function Keys", 0, 2000, 10, "ms", 300);
    fkeyHoldLingerSetting.markInterested();
    fkeyHoldLingerSetting.addRawValueObserver(function(value) {
       FKEY_HOLD_LINGER_MS = value;
@@ -2004,7 +2010,7 @@ function init() {
    // confirmation popup for that one key only, same as any other one-shot
    // LCD popup.
    var fkeyHoldThresholdSetting = host.getPreferences().getNumberSetting(
-      "F-Key Hold Threshold (ms)", "Timing", 100, 2000, 10, "ms", 400);
+      "F-Key Hold Threshold (ms)", "Function Keys", 100, 2000, 10, "ms", 400);
    fkeyHoldThresholdSetting.markInterested();
    fkeyHoldThresholdSetting.addRawValueObserver(function(value) {
       FKEY_HOLD_THRESHOLD_MS = value;
@@ -2070,8 +2076,9 @@ function init() {
    // Encoder Snap to Origin - see deviceSnapToOriginEnabled/
    // mixerSnapToOriginEnabled/isDeviceModeContext() above (the encoder CC
    // handler in onMidi). Own "Encoders" category (moved from "Mixer" now
-   // that it's no longer pan-only) rather than piling onto "Timing", since
-   // it's a snap distance, not a wheel-tick debounce threshold. Split into
+   // that it's no longer pan-only) rather than piling onto "Wheel
+   // Options", since it's a snap distance, not a wheel-tick debounce
+   // threshold. Split into
    // Device/Plugin mode vs. Mixer mode (pan/volume/sends) so tuning one
    // context's snap behavior can't silently change the other's - see the
    // big comment above deviceSnapToOriginEnabled for why.

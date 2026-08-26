@@ -243,7 +243,7 @@ own abbreviated name on its own channel strip - a lightweight "here's
 what I just did" confirmation, same as any other one-shot LCD popup, not
 a big learning overlay on every single tap.
 
-Only an actual **hold** past **F-Key Hold Threshold (ms)** (Timing
+Only an actual **hold** past **F-Key Hold Threshold (ms)** (Function Keys
 category, default 400, range 100-2000) escalates to something bigger: the
 LCD reveals **all 8 F-keys' assignments at once**, not just the one held -
 each channel strip's bottom row shows what *that* channel's F-key is
@@ -290,8 +290,8 @@ entry that needs one, used for both the tap popup and the hold reveal;
 the on-screen Bitwig popup always shows the real full name regardless,
 since that one isn't width-constrained.
 
-**F-Key Popup Duration After Release (ms)** (Timing category, default 300, range
-0-2000) - once the hold reveal has actually kicked in, it doesn't
+**F-Key Popup Duration After Release (ms)** (Function Keys category,
+default 300, range 0-2000) - once the hold reveal has actually kicked in, it doesn't
 necessarily vanish the instant the button is released: `revertBottomRowPopup()`
 (called per-channel by `revertAllFKeyAssignments()`) keeps it up this
 much longer past release before reverting, same debounce-generation-token
@@ -1197,9 +1197,9 @@ last-clicked GUI parameter, see below) > PLUG-INS held (step devices) >
 BANK held (page remote-control pages) > OPTION alone (halve/double loop
 length) > SHIFT alone (shift loop by a bar) > SCRUB toggle or wheel press
 (jump by a bar, or select-at-cursor with ALT or SHIFT+CTRL held, see
-below) > default (scrub, **Default Wheel Scrub Step (beats)** per
-message - default 1 beat, configurable, see below - no longer
-ALT-modified).
+below) > default (scrub, **Wheel (No Modifier): Playhead Jump per Tick
+(beats)** per message - default 1 beat, configurable, see below - no
+longer ALT-modified).
 
 **SHIFT+CTRL + Jog Wheel** and **ALT+CTRL + Jog Wheel** (turn, as opposed
 to SHIFT+CTRL + Jog Wheel *Press* further below - same two modifiers as
@@ -1238,15 +1238,19 @@ delete per repeat), so each combo throttles via its own accumulate-then-
 fire accumulator (`shiftCtrlWheelAccumulator`/`altCtrlWheelAccumulator` -
 kept separate so partial progress on one combo can't spill into the
 other if you switch which modifiers are held mid-turn), each with its
-**own independently configurable tick threshold** - **SHIFT+CTRL Wheel
-Ticks** and **ALT+CTRL Wheel Ticks** (Timing category, default 16 each,
-same range as "Loop Halve/Double Wheel Ticks") - rather than sharing one
-setting between them, so each combo's sensitivity can be tuned on its
-own (e.g. a higher tick count for `Duplicate/Delete` to make an
-accidental trigger less likely, while keeping `Scale Clip Size`
-responsive). Plain CTRL's clip/track-select stepping has its own
-matching setting too - **CTRL Wheel: Clip/Track Select Ticks** (Timing
-category, default 4, range 1-32) - previously shared with device-
+**own independently configurable tick threshold** - **SHIFT+CTRL+Wheel:
+Ticks to Scale Clip / Duplicate / Delete** and **ALT+CTRL+Wheel: Ticks to
+Scale Clip / Duplicate / Delete** (Wheel Options category, default 16
+each, same range as "OPTION+Wheel: Ticks to Halve/Double Loop Length") -
+the label names all 3 possible outcomes since the actual one depends on
+the paired **SHIFT+CTRL Wheel Action**/**ALT+CTRL Wheel Action** dropdown
+(Function Keys category) - rather than sharing one setting between them,
+so each combo's sensitivity can be tuned on its own (e.g. a higher tick
+count for `Duplicate/Delete` to make an accidental trigger less likely,
+while keeping `Scale Clip Size` responsive). Plain CTRL's clip/track-select
+stepping has its own matching setting too - **CTRL+Wheel: Ticks to Move
+to Next/Prev Clip or Track** (Wheel Options category, default 4, range
+1-32) - previously shared with device-
 stepping's `PLUGIN_DEVICE_STEP_MESSAGES`, now independent. This all
 fires instead of on every raw wheel message, which would compound (or
 delete) far too fast. SHIFT+CTRL replaced an earlier "jump to first/last
@@ -1256,10 +1260,10 @@ up if wanted again later. Both checked before the plain-CTRL branch so
 neither is swallowed by it.
 
 For anyone who'd rather manage one shared default than tune all three
-separately, **Override Wheel Combo Thresholds** (Timing category, off by
-default) overrides all three of the settings above with a single
-**Global Tick Threshold (All Combos)** count (Timing category, default
-16, range 1-64) once switched on -
+separately, **Override Wheel Combo Thresholds** (Wheel Options category,
+off by default) overrides all three of the settings above with a single
+**Global Tick Threshold (All Combos)** count (Wheel Options category,
+default 16, range 1-64) once switched on -
 `applyWheelTickSettings()` re-derives `CLIP_SELECT_STEP_MESSAGES`/
 `SHIFT_CTRL_WHEEL_THRESHOLD`/`ALT_CTRL_WHEEL_THRESHOLD` from either the
 global value or each combo's own individual setting depending on this
@@ -1268,18 +1272,18 @@ it (or changing any value while it's on) takes effect immediately. The
 three individual settings stay visible and adjustable in the panel while
 the toggle is on - they're just not the ones in effect - so switching it
 back off picks up right where each one was left, nothing reset. Doesn't
-touch **Loop Halve/Double Wheel Ticks** (OPTION + Jog Wheel's own
-setting, predates this round's independently-configurable-ticks request
-and covers a different gesture) - only the three CTRL-combo settings.
-Not yet tested on hardware.
+touch **OPTION+Wheel: Ticks to Halve/Double Loop Length** (OPTION + Jog
+Wheel's own setting, predates this round's independently-configurable-ticks
+request and covers a different gesture) - only the three CTRL-combo
+settings. Not yet tested on hardware.
 
 **CTRL + Jog Wheel** (outside `MODE_DEVICE`, where it still steps devices
 as before) now selects the next/previous arranger clip/item instead of
 its previous job, nudging the project tempo - via Bitwig's real "Select
 Next Item"/"Select Previous Item" actions (ids `"Select next item"`/
 `"Select previous item"`, confirmed from `bitwig-actions-reference.txt`),
-throttled once every **CTRL Wheel: Clip/Track Select Ticks** (default 4)
-wheel messages - its own dedicated setting, no longer shared with
+throttled once every **CTRL+Wheel: Ticks to Move to Next/Prev Clip or
+Track** (default 4) wheel messages - its own dedicated setting, no longer shared with
 device-stepping's `PLUGIN_DEVICE_STEP_MESSAGES`. Repurposed per request -
 **tempo nudging no longer has a jog-wheel binding** (CTRL+ALT no longer
 means "fine tempo nudge" either, since there's no longer a continuous
@@ -1324,9 +1328,10 @@ alone is claimed earlier and that code was no longer reachable. CTRL+ALT
 returns before the plain-ALT branch is ever reached.
 
 **Default (no modifier) Jog Wheel** - reported as too slow at the fixed
-one quarter note (beat) it shipped with. **Default Wheel Scrub Step
-(beats)** (Timing category, default `1`, range 0.25-8 in quarter-beat
-steps) now controls how far the playhead jumps per wheel message -
+one quarter note (beat) it shipped with. **Wheel (No Modifier): Playhead
+Jump per Tick (beats)** (Wheel Options category, default `1`, range
+0.25-8 in quarter-beat steps) now controls how far the playhead jumps
+per wheel message -
 lands exactly on that step's own grid line each time (same
 compute-the-exact-target-position approach the bar-jump/loop-shift
 combos already use, not a smooth but grid-imprecise scrub), so e.g.
