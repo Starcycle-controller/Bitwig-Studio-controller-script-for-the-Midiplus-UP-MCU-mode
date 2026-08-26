@@ -738,23 +738,57 @@ function snapToOriginThresholdForCurrentContext() {
 // diagnostic logging on hardware: the value hovered around 0.50 while
 // getOrigin() reported a flat 0.0000 throughout, so both Fine Zone Near
 // Origin and Encoder Snap to Origin (below) silently never activated at
-// the actual center being aimed for. When on (default), a reported origin
-// of exactly 0 is treated as 0.5 instead by both features via
-// resolveOrigin() - correct for the driving case (a bipolar macro
-// misreported as "Level" type) and can't make Pan or a correctly-reported
-// bipolar macro any worse (both already alias to 0.5 either way). The
-// tradeoff: a plain Level/Gain parameter whose TRUE, correctly-reported
-// origin legitimately IS 0 (e.g. unity/silence) also gets treated as
-// centered at 0.5 - turn this off if that case matters more to you than
-// fixing misreported bipolar macros.
-var assumeCenterWhenOriginIsZero = true;
+// the actual center being aimed for.
+//
+// The first fix here (blindly treating ANY reported origin of 0 as 0.5)
+// was flagged as too broad: only a few specific controls in a plugin like
+// Serum 2 are actually bipolar/centered (fine tune, oscillator pan) - most
+// of a device's other macros with origin 0 are genuinely, correctly
+// zero-based, and shouldn't have this override applied just because
+// SOMETHING on that instrument happens to be bipolar too. Checked the
+// Controller API for a more precise signal to key off instead
+// (`RemoteControl`/`Parameter extend RangedValue`, whose only members are
+// name(), discreteValueCount()/discreteValueNames(), getOrigin(), and
+// displayedValue() - no unit, type, or "is bipolar" flag anywhere) -
+// name() is genuinely the only usable one; displayedValue() is the live
+// formatted value, not a stable type descriptor, so it can't serve as a
+// classifier. nameSuggestsBipolar() below matches the macro's own name
+// (as mapped/labeled on the Remote Controls page) against
+// BIPOLAR_NAME_KEYWORDS (default "pan,tun" - catches "Pan", "Fine Tune",
+// "Detune", "Tuning", etc., case-insensitively, as a substring) - so the
+// override only ever applies to a macro actually named like something
+// bipolar, not to every 0-origin macro on the device.
+var assumeCenterForBipolarNamedMacros = true;
+var BIPOLAR_NAME_KEYWORDS = "pan,tun";
+
+function nameSuggestsBipolar(target) {
+   var name = target.name().get();
+   if (!name) {
+      return false;
+   }
+   var lowerName = name.toLowerCase();
+   var keywords = BIPOLAR_NAME_KEYWORDS.split(",");
+   for (var i = 0; i < keywords.length; i++) {
+      var keyword = keywords[i].trim().toLowerCase();
+      if (keyword && lowerName.indexOf(keyword) >= 0) {
+         return true;
+      }
+   }
+   return false;
+}
 
 // Shared by isNearOrigin() and scheduleEncoderSnapCheck() below - see
-// assumeCenterWhenOriginIsZero above for why this isn't just
-// target.getOrigin().get() directly.
+// assumeCenterForBipolarNamedMacros/nameSuggestsBipolar() above for why
+// this isn't just target.getOrigin().get() directly. Only ever calls
+// name() (needs the target's name() marked interested - see the
+// markInterested() calls added alongside every other encoder target's
+// discreteValueCount()/getOrigin() in init()) when the origin is actually
+// 0, so a target whose real, correctly-reported origin is already 0.5
+// (Pan, or a correctly-classified bipolar macro) never even reaches the
+// name check.
 function resolveOrigin(target) {
    var origin = target.getOrigin().get();
-   if (origin === 0 && assumeCenterWhenOriginIsZero) {
+   if (origin === 0 && assumeCenterForBipolarNamedMacros && nameSuggestsBipolar(target)) {
       return 0.5;
    }
    return origin;
@@ -1811,14 +1845,22 @@ function init() {
       allowSteppedDuringAutomationWrite = value;
    });
 
-   // Assume Center When Origin Is 0 - see assumeCenterWhenOriginIsZero/
-   // resolveOrigin() above. Shared by both Fine Zone Near Origin and
+   // Assume Center for Bipolar-Named Macros - see
+   // assumeCenterForBipolarNamedMacros/nameSuggestsBipolar()/
+   // BIPOLAR_NAME_KEYWORDS above. Shared by both Fine Zone Near Origin and
    // Encoder Snap to Origin below, so it lives above both.
-   var assumeCenterWhenOriginIsZeroSetting = host.getPreferences().getBooleanSetting(
-      "Assume Center (0.5) When Reported Origin Is 0", "Encoders", true);
-   assumeCenterWhenOriginIsZeroSetting.markInterested();
-   assumeCenterWhenOriginIsZeroSetting.addValueObserver(function(value) {
-      assumeCenterWhenOriginIsZero = value;
+   var assumeCenterForBipolarNamedMacrosSetting = host.getPreferences().getBooleanSetting(
+      "Assume Center (0.5) for Bipolar-Named Macros", "Encoders", true);
+   assumeCenterForBipolarNamedMacrosSetting.markInterested();
+   assumeCenterForBipolarNamedMacrosSetting.addValueObserver(function(value) {
+      assumeCenterForBipolarNamedMacros = value;
+   });
+
+   var bipolarNameKeywordsSetting = host.getPreferences().getStringSetting(
+      "Bipolar Macro Name Keywords", "Encoders", 100, "pan,tun");
+   bipolarNameKeywordsSetting.markInterested();
+   bipolarNameKeywordsSetting.addValueObserver(function(value) {
+      BIPOLAR_NAME_KEYWORDS = value;
    });
 
    // Encoder Snap to Origin - see deviceSnapToOriginEnabled/
@@ -2203,9 +2245,18 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          track.volume().discreteValueCount().markInterested();
          track.volume().discreteValueNames().markInterested();
          track.volume().getOrigin().markInterested();
+         // name() needed for nameSuggestsBipolar() (see resolveOrigin()) -
+         // Volume's own getOrigin() is already correctly 0, so this is
+         // really just there so resolveOrigin() can safely call
+         // target.name().get() on ANY encoder target without an "either
+         // call markInterested() or add an observer" error; Volume/Pan's
+         // names never actually match the bipolar keyword list, so this
+         // can't change their (already correct) origin handling.
+         track.volume().name().markInterested();
          track.pan().discreteValueCount().markInterested();
          track.pan().discreteValueNames().markInterested();
          track.pan().getOrigin().markInterested();
+         track.pan().name().markInterested();
 
          track.volume().displayedValue().addValueObserver(function (dispVal) {
             if (currentMode === MODE_MIXER && !isFlipped && isViewingReturns === isReturnsBank &&

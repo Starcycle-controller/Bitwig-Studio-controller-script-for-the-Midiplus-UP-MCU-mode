@@ -409,27 +409,47 @@ someone might genuinely want hard, quantized automation steps recorded
 on purpose. Turning this on lets Stepped mode keep working even while
 Automation Write is enabled.
 
-**Assume Center (0.5) When Reported Origin Is 0** (on/off, default ON) -
-`getOrigin()` turns out to only be reliably `0.5` for parameters Bitwig
-itself classifies internally as pan-like; a genuinely bipolar plugin
-parameter that Bitwig merely wraps generically - confirmed on hardware
-with Serum 2's oscillator Fine Tune macros - reports `0` instead, even
-though its real "no detune" center sits at `0.5`. Diagnostic logging added
-during the Fine Zone Near Origin investigation below caught it directly:
-the macro's value hovered around `0.50` on every logged tick while
-`getOrigin()` reported a flat `0.0000` the entire time, so both Fine Zone
-Near Origin and Encoder Snap to Origin were silently checking distance to
-the wrong point and never activating anywhere near the actual center being
-aimed for ("range 5%, then 10%, then resolution multiplier 4x, then 16x -
-no visible behavior change" was the symptom that led to adding the
-logging). `resolveOrigin()` (shared by both features) treats a reported
-origin of exactly `0` as `0.5` instead when this is on - correct for the
-driving case, and can't make Pan or a correctly-reported bipolar parameter
-any worse, since both already alias to `0.5` either way. The tradeoff:
-turning this on also means a plain Level/Gain parameter whose *true*,
-correctly-reported origin legitimately is `0` (e.g. unity/silence) gets
-treated as centered at `0.5` too - if that case matters more to you than
-fixing misreported bipolar macros, turn this off.
+**Assume Center (0.5) for Bipolar-Named Macros** (on/off, default ON) +
+**Bipolar Macro Name Keywords** (text, default `pan,tun`) - `getOrigin()`
+turns out to only be reliably `0.5` for parameters Bitwig itself
+classifies internally as pan-like; a genuinely bipolar plugin parameter
+that Bitwig merely wraps generically - confirmed on hardware with Serum
+2's oscillator Fine Tune macros - reports `0` instead, even though its
+real "no detune" center sits at `0.5`. Diagnostic logging added during the
+Fine Zone Near Origin investigation below caught it directly: the macro's
+value hovered around `0.50` on every logged tick while `getOrigin()`
+reported a flat `0.0000` the entire time, so both Fine Zone Near Origin
+and Encoder Snap to Origin were silently checking distance to the wrong
+point and never activating anywhere near the actual center being aimed
+for ("range 5%, then 10%, then resolution multiplier 4x, then 16x - no
+visible behavior change" was the symptom that led to adding the logging).
+
+The first fix (treating ANY reported origin of `0` as `0.5`, unconditionally)
+was flagged as too broad on further hardware testing: only a handful of
+controls on an instrument like Serum 2 are actually bipolar/centered (fine
+tune, oscillator pan) - most of a device's other macros with origin `0`
+are genuinely, correctly zero-based, and shouldn't get overridden just
+because something else on the same instrument happens to be bipolar too.
+Checked the Controller API for a more precise signal to key off instead of
+a blanket override: `RemoteControl`/`Parameter` (both extend
+`RangedValue`) expose only `name()`, `discreteValueCount()`/
+`discreteValueNames()`, `getOrigin()`, and `displayedValue()` - no unit,
+type, or "is bipolar" flag anywhere in the API. `name()` is the only one
+that's a stable enough signal to use (`displayedValue()` is the live
+formatted value, not a type descriptor, so it can't serve as a
+classifier). `nameSuggestsBipolar()` now matches the macro's own name (as
+labeled on its Remote Controls page slot) against the comma-separated
+**Bipolar Macro Name Keywords** list, case-insensitively, as a substring -
+default `pan,tun` catches "Pan", "Fine Tune", "Detune", "Tuning", etc.
+`resolveOrigin()` (shared by both features) only applies the `0.5`
+override when the origin is `0` **and** the name matches - so a
+zero-origin macro that isn't named anything like pan/tune keeps its
+correctly-reported `0`, while a fine-tune or oscillator-pan macro gets
+treated as centered. Add your own plugin's naming conventions to the
+keyword list (comma-separated) if a bipolar control there doesn't happen
+to say "pan" or "tun". Can't make Pan or a correctly-reported bipolar
+parameter any worse either way, since both already alias to `0.5`
+regardless of this setting.
 
 **Encoder Snap to Origin** - encoders have no physical detent, so landing
 exactly on a parameter's own "home" value by turning alone is fiddly.
