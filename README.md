@@ -226,7 +226,7 @@ entry that needs one, used for both the tap popup and the hold reveal;
 the on-screen Bitwig popup always shows the real full name regardless,
 since that one isn't width-constrained.
 
-**F-Key LCD Hold Linger (ms)** (Timing category, default 300, range
+**F-Key Popup Duration After Release (ms)** (Timing category, default 300, range
 0-2000) - once the hold reveal has actually kicked in, it doesn't
 necessarily vanish the instant the button is released: `revertBottomRowPopup()`
 (called per-channel by `revertAllFKeyAssignments()`) keeps it up this
@@ -409,19 +409,19 @@ someone might genuinely want hard, quantized automation steps recorded
 on purpose. Turning this on lets Stepped mode keep working even while
 Automation Write is enabled.
 
-**Assume Center (0.5) for Bipolar-Named Macros** (on/off, default ON) +
-**Bipolar Macro Name Keywords** (text, default `pan,tune,fine,ftun,offset`)
+**Auto-Detect Centered Macros by Name** (on/off, default ON) +
+**Centered Macro Keywords** (text, default `pan,tune,fine,ftun,offset`)
 - `getOrigin()` turns out to only be reliably `0.5` for parameters Bitwig
-itself classifies internally as pan-like; a genuinely bipolar plugin
-parameter that Bitwig merely wraps generically - confirmed on hardware
-with Serum 2's oscillator Fine Tune macros - reports `0` instead, even
-though its real "no detune" center sits at `0.5`. Diagnostic logging
-added during the Fine Zone Near Origin investigation below caught it
-directly: the macro's value hovered around `0.50` on every logged tick
-while `getOrigin()` reported a flat `0.0000` the entire time, so both
-Fine Zone Near Origin and Encoder Snap to Origin were silently checking
-distance to the wrong point and never activating anywhere near the
-actual center being aimed for.
+itself classifies internally as pan-like; a genuinely bipolar (centered)
+plugin parameter that Bitwig merely wraps generically - confirmed on
+hardware with Serum 2's oscillator Fine Tune macros - reports `0`
+instead, even though its real "no detune" center sits at `0.5`.
+Diagnostic logging added during the Finer Resolution Near Center
+investigation below caught it directly: the macro's value hovered around
+`0.50` on every logged tick while `getOrigin()` reported a flat `0.0000`
+the entire time, so both Finer Resolution Near Center and Encoder Snap
+to Origin were silently checking distance to the wrong point and never
+activating anywhere near the actual center being aimed for.
 
 The first fix (treating ANY reported origin of `0` as `0.5`,
 unconditionally) was flagged as too broad: only a handful of controls on
@@ -436,7 +436,7 @@ the API. `name()` is the only stable enough signal to use.
 `nameSuggestsBipolar()` matches the macro's own name (as mapped/labeled
 on the Remote Controls page - either the plugin's own reported parameter
 name, or a custom label if you've renamed the slot yourself, both work
-identically) against the comma-separated **Bipolar Macro Name Keywords**
+identically) against the comma-separated **Centered Macro Keywords**
 list. `resolveOrigin()` (shared by both features) only applies the `0.5`
 override when the origin is `0` **and** the name matches - so a
 zero-origin macro that isn't named anything bipolar keeps its
@@ -580,47 +580,48 @@ target) version is not yet re-tested.
 None of this is yet tested on hardware, except where individually noted
 above.
 
-**Fine Zone Near Origin** (on/off, default ON) - reported live from
-hardware: with 8 macro knobs mapped to Serum 2 in bank 1 and oscillator
-fine-tune macros (osc1/osc2/osc3/noise) in bank 2, turning slowly to land
-back on exact center was nearly impossible - "it jumps between +1 and -1".
-The cause: even the plain turn's finest resolution (128) still moves in
-steps of roughly 0.8% of the full range per tick, which on a narrow,
-origin-centered macro like fine-tune is already coarser than the "close to
-center" window a careful hand is aiming for - so every tick either
-overshoots past 0 or undershoots back away from it, with nothing in
-between. `isNearOrigin()` checks, on every tick, whether the target's
-*current* value sits within **Fine Zone Range (+/- %)** (default 5%, range
-0.5-20%) of its real `getOrigin()`; when it does, the resolution argument
-passed to `target.inc()` in `applyEncoderStep()`'s two continuous
-(Fine-mode) branches is multiplied by **Fine Zone Resolution Multiplier**
-(default 4x, range 2-16x) - a higher resolution value means a *smaller*
-step per tick (`inc(delta, resolution)` moves `delta/resolution` of the
-full range), so ticks taken near center land far more precisely than ticks
-further out, without changing anything about how the encoder behaves once
-back out in the normal range. Stacks independently with SHIFT's own
-resolution bump (512 vs. the plain turn's 128) - near-origin SHIFT ticks
-get sharpened too. Skipped for the same two cases **Encoder Snap to
-Origin** skips: a genuine discrete/switch target (no "near origin" concept
-for an enum, and that branch returns before reaching this code anyway) and
-Stepped mode (which already lands exactly on the origin whenever the
-configured **Encoder Step Size (%)** divides evenly into it, e.g. 10%
-steps hit 50%/origin=0.5 exactly, so there's nothing to sharpen). Works
-well together with **Encoder Snap to Origin** above - the fine zone makes
-it possible to carefully creep toward center by hand, and the idle-based
-snap still cleans up the last fraction of a percent once the encoder comes
-to rest nearby.
+**Finer Resolution Near Center** (on/off, default ON) - reported live
+from hardware: with 8 macro knobs mapped to Serum 2 in bank 1 and
+oscillator fine-tune macros (osc1/osc2/osc3/noise) in bank 2, turning
+slowly to land back on exact center was nearly impossible - "it jumps
+between +1 and -1". The cause: even the plain turn's finest resolution
+(128) still moves in steps of roughly 0.8% of the full range per tick,
+which on a narrow, origin-centered macro like fine-tune is already
+coarser than the "close to center" window a careful hand is aiming for -
+so every tick either overshoots past 0 or undershoots back away from it,
+with nothing in between. `isNearOrigin()` checks, on every tick, whether
+the target's *current* value sits within **Finer Resolution Range (+/-
+%)** (default 5%, range 0.5-20%) of its real `getOrigin()`; when it does,
+the resolution argument passed to `target.inc()` in
+`applyEncoderStep()`'s two continuous (Fine-mode) branches is multiplied
+by **Finer Resolution Multiplier** (default 4x, range 2-16x) - a higher
+resolution value means a *smaller* step per tick (`inc(delta,
+resolution)` moves `delta/resolution` of the full range), so ticks taken
+near center land far more precisely than ticks further out, without
+changing anything about how the encoder behaves once back out in the
+normal range. Stacks independently with SHIFT's own resolution bump (512
+vs. the plain turn's 128) - near-origin SHIFT ticks get sharpened too.
+Skipped for the same two cases **Encoder Snap to Origin** skips: a
+genuine discrete/switch target (no "near origin" concept for an enum, and
+that branch returns before reaching this code anyway) and Stepped mode
+(which already lands exactly on the origin whenever the configured
+**Encoder Step Size (%)** divides evenly into it, e.g. 10% steps hit
+50%/origin=0.5 exactly, so there's nothing to sharpen). Works well
+together with **Encoder Snap to Origin** above - this feature makes it
+possible to carefully creep toward center by hand, and the idle-based
+snap still cleans up the last fraction of a percent once the encoder
+comes to rest nearby.
 
-First hardware round after shipping this: reported as still just as jumpy,
-with zero observable change from raising **Fine Zone Range** 5% -> 10% or
-**Fine Zone Resolution Multiplier** 4x -> 16x - a strong signal the
-near-origin branch wasn't running at all, not that it was under-tuned.
-Diagnostic logging confirmed it: for these exact fine-tune macros,
-`target.get()` sat around `0.50` while `target.getOrigin()` reported a
-flat `0.0000` throughout, so `isNearOrigin()` was comparing distance to
-the wrong point and staying `false` the whole time no matter how wide the
-range or how high the multiplier went - see **Assume Center (0.5) for
-Bipolar-Named Macros** above (now on by default) for the fix.
+First hardware round after shipping this: reported as still just as
+jumpy, with zero observable change from raising **Finer Resolution
+Range** 5% -> 10% or **Finer Resolution Multiplier** 4x -> 16x - a strong
+signal the near-origin branch wasn't running at all, not that it was
+under-tuned. Diagnostic logging confirmed it: for these exact fine-tune
+macros, `target.get()` sat around `0.50` while `target.getOrigin()`
+reported a flat `0.0000` throughout, so `isNearOrigin()` was comparing
+distance to the wrong point and staying `false` the whole time no matter
+how wide the range or how high the multiplier went - see **Auto-Detect
+Centered Macros by Name** above (now on by default) for the fix.
 
 **Encoder Push Behavior (Device/Plugin Mode)** (`Fine Resolution` /
 `Reset to Default` / `Open/Close Plugin Window`, default `Fine
@@ -637,7 +638,7 @@ exclusive choices instead, only ever one active at a time:
   `target.inc()` is scaled by **Encoder Push Fine Resolution Multiplier**
   (default 8x - so an encoder normally moving in ~0.8% steps per tick
   moves in ~0.1% steps instead) for exactly as long as it's held, on top
-  of whatever Fine Zone Near Origin/SHIFT would otherwise apply. A quick
+  of whatever Finer Resolution Near Center/SHIFT would otherwise apply. A quick
   tap that never actually turns the encoder does nothing (no reset) -
   that's deliberately the "Reset to Default" choice's job, not blended
   into this one. Takes priority over SHIFT if somehow both are held at
@@ -1117,9 +1118,10 @@ up if wanted again later. Both checked before the plain-CTRL branch so
 neither is swallowed by it.
 
 For anyone who'd rather manage one shared default than tune all three
-separately, **Use Global Wheel Ticks** (Timing category, off by default)
-overrides all three of the settings above with a single **Global Wheel
-Ticks** count (Timing category, default 16, range 1-64) once switched on -
+separately, **Override Wheel Combo Thresholds** (Timing category, off by
+default) overrides all three of the settings above with a single
+**Global Tick Threshold (All Combos)** count (Timing category, default
+16, range 1-64) once switched on -
 `applyWheelTickSettings()` re-derives `CLIP_SELECT_STEP_MESSAGES`/
 `SHIFT_CTRL_WHEEL_THRESHOLD`/`ALT_CTRL_WHEEL_THRESHOLD` from either the
 global value or each combo's own individual setting depending on this

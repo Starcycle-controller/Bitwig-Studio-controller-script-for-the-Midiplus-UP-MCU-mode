@@ -750,9 +750,9 @@ function snapToOriginThresholdForCurrentContext() {
 // (e.g. Serum 2's oscillator Fine Tune macro) reports 0 instead, even
 // though its real "no detune" center sits at 0.5 - confirmed via
 // diagnostic logging on hardware: the value hovered around 0.50 while
-// getOrigin() reported a flat 0.0000 throughout, so both Fine Zone Near
-// Origin and Encoder Snap to Origin (below) silently never activated at
-// the actual center being aimed for.
+// getOrigin() reported a flat 0.0000 throughout, so both Finer Resolution
+// Near Center and Encoder Snap to Origin (below) silently never activated
+// at the actual center being aimed for.
 //
 // The first fix here (blindly treating ANY reported origin of 0 as 0.5)
 // was flagged as too broad: only a few specific controls in a plugin like
@@ -820,7 +820,7 @@ function escapeRegExp(text) {
 // Rebuilds bipolarNameRegexes from BIPOLAR_NAME_KEYWORDS - called once at
 // startup below and again whenever the Controller Preferences setting
 // changes, so nameSuggestsBipolar() (on the hot path: it runs on every
-// encoder tick that Fine Zone Near Origin/Encoder Snap to Origin check,
+// encoder tick that Finer Resolution Near Center/Encoder Snap to Origin check,
 // whenever the target's origin is 0) just tests pre-compiled regexes
 // instead of rebuilding one from scratch per keyword on every call.
 function rebuildBipolarNameRegexes() {
@@ -865,7 +865,7 @@ function resolveOrigin(target) {
    return origin;
 }
 
-// "Fine Zone Near Origin" (Encoders category, default on) - a narrow-range,
+// "Finer Resolution Near Center" (Encoders category, default on) - a narrow-range,
 // origin-centered macro (e.g. an oscillator fine-tune knob, or pan) is hard
 // to land back on its exact center by hand: even the coarsest single tick's
 // normalized-space movement (~0.8% at the plain turn's resolution 128)
@@ -1283,13 +1283,13 @@ var PLUGIN_DEVICE_STEP_MESSAGES = 4;
 var clipSelectStepAccumulator = 0;
 var CLIP_SELECT_STEP_MESSAGES = 4;
 
-// "Use Global Wheel Ticks" (Timing) - convenience override for anyone who
-// doesn't want to tune CTRL/SHIFT+CTRL/ALT+CTRL's tick thresholds
-// separately. When on, all three combos use the single "Global Wheel
-// Ticks" value below instead of their own individual settings; the
-// individual settings stay visible/settable in the panel but are ignored
-// while this is on, so switching it back off restores each combo's own
-// last value with nothing lost.
+// "Override Wheel Combo Thresholds" (Timing) - convenience override for
+// anyone who doesn't want to tune CTRL/SHIFT+CTRL/ALT+CTRL's tick
+// thresholds separately. When on, all three combos use the single
+// "Global Tick Threshold (All Combos)" value below instead of their own
+// individual settings; the individual settings stay visible/settable in
+// the panel but are ignored while this is on, so switching it back off
+// restores each combo's own last value with nothing lost.
 var useGlobalWheelTicks = false;
 var globalWheelTicks = 16;
 
@@ -1842,9 +1842,9 @@ function init() {
    // on its own rather than sharing one setting between all of them. Each
    // observer stores into its own "Individual" var and re-derives the
    // live thresholds via applyWheelTickSettings(), so these keep working
-   // as the per-combo values whenever "Use Global Wheel Ticks" (below) is
-   // off, and stay ready to resume immediately once it's switched off
-   // again.
+   // as the per-combo values whenever "Override Wheel Combo Thresholds"
+   // (below) is off, and stay ready to resume immediately once it's
+   // switched off again.
    var clipSelectStepSetting = host.getPreferences().getNumberSetting(
       "CTRL Wheel: Clip/Track Select Ticks", "Timing", 1, 32, 1, "ticks", 4);
    clipSelectStepSetting.markInterested();
@@ -1869,12 +1869,12 @@ function init() {
       applyWheelTickSettings();
    });
 
-   // "Use Global Wheel Ticks" - when on, all three combos above ignore
-   // their own individual settings and use the single "Global Wheel
-   // Ticks" count instead, for anyone who'd rather manage one shared
-   // default than three separate values.
+   // "Override Wheel Combo Thresholds" - when on, all three combos above
+   // ignore their own individual settings and use the single "Global
+   // Tick Threshold (All Combos)" count instead, for anyone who'd rather
+   // manage one shared default than three separate values.
    var useGlobalWheelTicksSetting = host.getPreferences().getBooleanSetting(
-      "Use Global Wheel Ticks", "Timing", false);
+      "Override Wheel Combo Thresholds", "Timing", false);
    useGlobalWheelTicksSetting.markInterested();
    useGlobalWheelTicksSetting.addValueObserver(function(value) {
       useGlobalWheelTicks = value;
@@ -1882,7 +1882,7 @@ function init() {
    });
 
    var globalWheelTicksSetting = host.getPreferences().getNumberSetting(
-      "Global Wheel Ticks", "Timing", 1, 64, 1, "ticks", 16);
+      "Global Tick Threshold (All Combos)", "Timing", 1, 64, 1, "ticks", 16);
    globalWheelTicksSetting.markInterested();
    globalWheelTicksSetting.addRawValueObserver(function(value) {
       globalWheelTicks = value;
@@ -1895,7 +1895,7 @@ function init() {
    // this only pads out the minimum for a quick tap that released before
    // there was time to read anything.
    var fkeyHoldLingerSetting = host.getPreferences().getNumberSetting(
-      "F-Key LCD Hold Linger (ms)", "Timing", 0, 2000, 10, "ms", 300);
+      "F-Key Popup Duration After Release (ms)", "Timing", 0, 2000, 10, "ms", 300);
    fkeyHoldLingerSetting.markInterested();
    fkeyHoldLingerSetting.addRawValueObserver(function(value) {
       FKEY_HOLD_LINGER_MS = value;
@@ -1952,19 +1952,19 @@ function init() {
       allowSteppedDuringAutomationWrite = value;
    });
 
-   // Assume Center for Bipolar-Named Macros - see
+   // Auto-Detect Centered Macros by Name - see
    // assumeCenterForBipolarNamedMacros/nameSuggestsBipolar()/
-   // BIPOLAR_NAME_KEYWORDS above. Shared by both Fine Zone Near Origin and
-   // Encoder Snap to Origin below, so it lives above both.
+   // BIPOLAR_NAME_KEYWORDS above. Shared by both Finer Resolution Near
+   // Center and Encoder Snap to Origin below, so it lives above both.
    var assumeCenterForBipolarNamedMacrosSetting = host.getPreferences().getBooleanSetting(
-      "Assume Center (0.5) for Bipolar-Named Macros", "Encoders", true);
+      "Auto-Detect Centered Macros by Name", "Encoders", true);
    assumeCenterForBipolarNamedMacrosSetting.markInterested();
    assumeCenterForBipolarNamedMacrosSetting.addValueObserver(function(value) {
       assumeCenterForBipolarNamedMacros = value;
    });
 
    var bipolarNameKeywordsSetting = host.getPreferences().getStringSetting(
-      "Bipolar Macro Name Keywords", "Encoders", 100, "pan,tune,fine,ftun,offset");
+      "Centered Macro Keywords", "Encoders", 100, "pan,tune,fine,ftun,offset");
    bipolarNameKeywordsSetting.markInterested();
    bipolarNameKeywordsSetting.addValueObserver(function(value) {
       BIPOLAR_NAME_KEYWORDS = value;
@@ -2018,27 +2018,27 @@ function init() {
       ENCODER_SNAP_IDLE_MS = value;
    });
 
-   // Fine Zone Near Origin - see fineZoneNearOriginEnabled/FINE_ZONE_RANGE/
-   // FINE_ZONE_RESOLUTION_MULTIPLIER and isNearOrigin() above. Sharpens
-   // encoder resolution automatically near a parameter's real origin (e.g.
-   // fine-tune macros, pan) so it's actually possible to land back on
-   // center by hand.
+   // Finer Resolution Near Center - see fineZoneNearOriginEnabled/
+   // FINE_ZONE_RANGE/FINE_ZONE_RESOLUTION_MULTIPLIER and isNearOrigin()
+   // above. Sharpens encoder resolution automatically near a parameter's
+   // real origin (e.g. fine-tune macros, pan) so it's actually possible
+   // to land back on center by hand.
    var fineZoneNearOriginSetting = host.getPreferences().getBooleanSetting(
-      "Fine Zone Near Origin", "Encoders", true);
+      "Finer Resolution Near Center", "Encoders", true);
    fineZoneNearOriginSetting.markInterested();
    fineZoneNearOriginSetting.addValueObserver(function(value) {
       fineZoneNearOriginEnabled = value;
    });
 
    var fineZoneRangeSetting = host.getPreferences().getNumberSetting(
-      "Fine Zone Range (+/- %)", "Encoders", 0.5, 20, 0.5, "%", 5);
+      "Finer Resolution Range (+/- %)", "Encoders", 0.5, 20, 0.5, "%", 5);
    fineZoneRangeSetting.markInterested();
    fineZoneRangeSetting.addRawValueObserver(function(value) {
       FINE_ZONE_RANGE = value / 100;
    });
 
    var fineZoneResolutionMultiplierSetting = host.getPreferences().getNumberSetting(
-      "Fine Zone Resolution Multiplier", "Encoders", 2, 16, 1, "x", 4);
+      "Finer Resolution Multiplier", "Encoders", 2, 16, 1, "x", 4);
    fineZoneResolutionMultiplierSetting.markInterested();
    fineZoneResolutionMultiplierSetting.addRawValueObserver(function(value) {
       FINE_ZONE_RESOLUTION_MULTIPLIER = value;
