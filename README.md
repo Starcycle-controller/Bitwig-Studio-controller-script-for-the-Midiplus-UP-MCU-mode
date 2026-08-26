@@ -1197,8 +1197,9 @@ last-clicked GUI parameter, see below) > PLUG-INS held (step devices) >
 BANK held (page remote-control pages) > OPTION alone (halve/double loop
 length) > SHIFT alone (shift loop by a bar) > SCRUB toggle or wheel press
 (jump by a bar, or select-at-cursor with ALT or SHIFT+CTRL held, see
-below) > default (scrub, one quarter note per message, no longer
-ALT-modified - see below).
+below) > default (scrub, **Default Wheel Scrub Step (beats)** per
+message - default 1 beat, configurable, see below - no longer
+ALT-modified).
 
 **SHIFT+CTRL + Jog Wheel** and **ALT+CTRL + Jog Wheel** (turn, as opposed
 to SHIFT+CTRL + Jog Wheel *Press* further below - same two modifiers as
@@ -1321,6 +1322,17 @@ default scrub step (quarter note -> eighth note), now removed since ALT
 alone is claimed earlier and that code was no longer reachable. CTRL+ALT
 (fine tempo nudge) is unaffected, since CTRL is still checked first and
 returns before the plain-ALT branch is ever reached.
+
+**Default (no modifier) Jog Wheel** - reported as too slow at the fixed
+one quarter note (beat) it shipped with. **Default Wheel Scrub Step
+(beats)** (Timing category, default `1`, range 0.25-8 in quarter-beat
+steps) now controls how far the playhead jumps per wheel message -
+lands exactly on that step's own grid line each time (same
+compute-the-exact-target-position approach the bar-jump/loop-shift
+combos already use, not a smooth but grid-imprecise scrub), so e.g.
+setting it to `4` jumps a full bar (in 4/4) per message instead of a
+single beat, for faster general timeline navigation without reaching
+for Pan Mode/SCRUB.
 
 **ALT + Jog Wheel Press** (push the wheel down while holding ALT) runs
 Bitwig's real `select_item_at_cursor` action ("Select item at cursor" -

@@ -1372,6 +1372,16 @@ var ARRANGER_TOOL_ACTIONS = [
 ];
 var arrangerToolCycleIndex = 0;
 
+// Default (no modifier) Jog Wheel scrub - how far the playhead jumps per
+// wheel message, in beats (quarter notes). Reported as too slow at the
+// hardcoded 1 beat/message it shipped with; same "land exactly on the
+// grid line" approach as the bar-jump (Pan Mode)/loop-shift branches
+// nearby just generalized to an arbitrary step instead of a fixed
+// quarter note - see the "Default" branch in onMidi's jog wheel handler.
+// Default; overridden live from the Controller Preferences panel setting
+// created in init() below.
+var DEFAULT_WHEEL_SCRUB_STEP = 1;
+
 // OPTION + Jog Wheel halves/doubles the loop length (see onMidi). Raw wheel
 // CC messages arrive far more often than one per physical detent, and
 // halving/doubling is exponential, so ticks are accumulated here and only
@@ -1900,6 +1910,16 @@ function init() {
    wheelComboDeleteEnabledSetting.markInterested();
    wheelComboDeleteEnabledSetting.addValueObserver(function (value) {
       wheelComboDeleteEnabled = value;
+   });
+
+   // See DEFAULT_WHEEL_SCRUB_STEP above - how far the playhead jumps per
+   // wheel message with no modifier held. Reported as too slow at the
+   // fixed 1 beat/message it shipped with.
+   var defaultWheelScrubStepSetting = host.getPreferences().getNumberSetting(
+      "Default Wheel Scrub Step (beats)", "Timing", 0.25, 8, 0.25, "beats", 1);
+   defaultWheelScrubStepSetting.markInterested();
+   defaultWheelScrubStepSetting.addRawValueObserver(function(value) {
+      DEFAULT_WHEEL_SCRUB_STEP = value;
    });
 
    // User-configurable wheel-tick threshold for OPTION + Jog Wheel's
@@ -3219,15 +3239,16 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // Default: jump exactly one quarter note per wheel message, landing
-      // precisely on the beat grid line - same "compute the exact target
-      // position" approach as the bar-jump/loop-shift branches above,
-      // rather than a smooth but grid-imprecise scrub. No longer
-      // ALT-modified - ALT alone is now claimed above (mouseover-parameter
-      // adjust), unreachable here since it always returns first.
-      var currentBeatUnit = Math.round(transport.getPosition().get());
-      var targetBeatUnit = backwards ? currentBeatUnit - 1 : currentBeatUnit + 1;
-      transport.getPosition().set(Math.max(0, targetBeatUnit));
+      // Default: jump exactly DEFAULT_WHEEL_SCRUB_STEP beats per wheel
+      // message, landing precisely on that grid line - same "compute the
+      // exact target position" approach as the bar-jump/loop-shift
+      // branches above, rather than a smooth but grid-imprecise scrub.
+      // No longer ALT-modified - ALT alone is now claimed above
+      // (mouseover-parameter adjust), unreachable here since it always
+      // returns first.
+      var currentStepUnit = Math.round(transport.getPosition().get() / DEFAULT_WHEEL_SCRUB_STEP);
+      var targetStepUnit = backwards ? currentStepUnit - 1 : currentStepUnit + 1;
+      transport.getPosition().set(Math.max(0, targetStepUnit * DEFAULT_WHEEL_SCRUB_STEP));
       return;
    }
 
