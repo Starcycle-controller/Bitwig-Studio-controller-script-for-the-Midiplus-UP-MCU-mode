@@ -62,6 +62,9 @@ var TOOL_DEVICE_NAME = "TRLVL";
 // chains.
 var TOOL_DEVICE_SCAN_DEPTH = 4;
 var currentMode = MODE_MIXER;
+// Tracks currentMode as of the last applyModeChange() call - see there for
+// why this is how leaving MODE_DEVICE closes the plugin window centrally.
+var previousMode = MODE_MIXER;
 var sendBankPage = 0; // 0 = Sends 1-8, 1 = Sends 9-16
 var lastAssignmentNote = 40; // last note updateModeLEDs() lit in the Assignment row - see there
 var isFlipped = false;
@@ -2709,9 +2712,6 @@ function handleButtonPressInner(note) {
             if (isShiftPressed) { shiftUsedForCombo = true; }
             safeCall(application, "toggleInspector", "Toggle Track Inspector / I/O Panel");
          } else {
-            if (currentMode === MODE_DEVICE) {
-               cursorDevice.isWindowOpen().set(false);
-            }
             currentMode = MODE_MIXER;
             sendBankPage = 0;
             isToolVolumeMode = false;
@@ -2723,13 +2723,9 @@ function handleButtonPressInner(note) {
       case 41: // SEND -> 3-State Send Mode: 1st Press (Sends 1-8) -> 2nd Press (Sends 9-16) -> 3rd Press (Exit Send Mode)
          if (currentMode !== MODE_SENDS) {
             // Leaving whatever we were in before - Device mode's open
-            // plugin window doesn't belong once Sends takes over (see
-            // applyModeChange()'s doc comment - every mode jump needs to
-            // fully clean up the mode it's leaving, not just enter the
-            // new one).
-            if (currentMode === MODE_DEVICE) {
-               cursorDevice.isWindowOpen().set(false);
-            }
+            // plugin window doesn't belong once Sends takes over. Closing
+            // it is handled centrally by applyModeChange() itself now
+            // (see its doc comment), not here.
             currentMode = MODE_SENDS;
             sendBankPage = 0;
             isToolVolumeMode = false;
@@ -2747,9 +2743,6 @@ function handleButtonPressInner(note) {
          break;
 
       case 42: // PAN -> toggle TOOL_DEVICE_NAME Gain/Pan control (see isToolVolumeMode)
-         if (currentMode === MODE_DEVICE) {
-            cursorDevice.isWindowOpen().set(false);
-         }
          currentMode = MODE_MIXER;
          sendBankPage = 0;
          isToolVolumeMode = !isToolVolumeMode;
@@ -2815,7 +2808,6 @@ function handleButtonPressInner(note) {
             applyModeChange("PLUGIN");
          } else {
             currentMode = MODE_MIXER;
-            cursorDevice.isWindowOpen().set(false);
             host.showPopupNotification("Mode: Mixer (Track Volume / Pan)");
             applyModeChange("MIXER");
          }
@@ -2866,9 +2858,6 @@ function handleButtonPressInner(note) {
                // fader bindings kept pointing at the old target because
                // rebindFaders() was only called when already in Mixer
                // mode) - see applyModeChange().
-         if (currentMode === MODE_DEVICE) {
-            cursorDevice.isWindowOpen().set(false);
-         }
          currentMode = MODE_MIXER;
          sendBankPage = 0;
          isToolVolumeMode = false;
@@ -3034,9 +3023,6 @@ function handleButtonPressInner(note) {
                // AND back to the Arrange panel layout, same toggle pattern
                // as PLUGIN/SEND.
          if (currentMode !== MODE_SCENE) {
-            if (currentMode === MODE_DEVICE) {
-               cursorDevice.isWindowOpen().set(false);
-            }
             currentMode = MODE_SCENE;
             sendBankPage = 0;
             isToolVolumeMode = false;
@@ -3303,7 +3289,23 @@ function updateModeLEDs() {
 // channel-strip LEDs, and fader/encoder bindings are always resynced
 // together in one place - so there's never a in-between state where they
 // disagree about what's currently active.
+//
+// Also the single place that closes the plugin window on leaving
+// MODE_DEVICE, via previousMode (tracks currentMode as of the last call
+// here). This replaced the same `if (currentMode === MODE_DEVICE) {
+// cursorDevice.isWindowOpen().set(false); }` check duplicated by hand at
+// every individual mode-changing button (TRACK/IO, SEND, PAN, RETURNS,
+// B.T.A., PLUG-INS) right before reassigning currentMode - reported as
+// not reliably closing the window on every path, and centralizing here
+// removes any chance of a future mode-changing button forgetting the
+// check the way the per-site duplication always risked (the exact
+// failure mode rebindFaders() had before this same choke point was
+// introduced for it).
 function applyModeChange(popupText) {
+   if (previousMode === MODE_DEVICE && currentMode !== MODE_DEVICE) {
+      cursorDevice.isWindowOpen().set(false);
+   }
+   previousMode = currentMode;
    updateModeLEDs();
    refreshDisplayText();
    refreshChannelStripLEDs();

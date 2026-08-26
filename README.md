@@ -81,8 +81,7 @@ Every button that changes `currentMode` (or the `isToolVolumeMode`/
 `isViewingReturns`/`sendBankPage` state that acts like a sub-mode of it) -
 TRACK/IO, SEND, PAN, PLUG-INS, RETURNS, F1-F8, the CTRL "expanded view"
 shortcut, and B.T.A./Scene mode - fully resolves the new state first
-(including closing a Device-mode plugin window it's leaving, and
-resetting `sendBankPage`/`isToolVolumeMode` on entry) and then calls
+(resetting `sendBankPage`/`isToolVolumeMode` on entry) and then calls
 `applyModeChange()` exactly once, which re-syncs the mode LEDs, LCD text,
 channel-strip LEDs, and fader/encoder bindings together as a single unit.
 This replaced a bunch of hand-rolled per-button sequences that didn't
@@ -94,6 +93,21 @@ input/output desync, not just a cosmetic LED glitch, for as long as you
 stayed in that mode. Jumping directly between any two modes (Sends ->
 Returns, Plugin -> Sends, etc.) now always lands in one fully-consistent
 state instead of layering the new mode on top of leftover old state.
+
+Closing a `MODE_DEVICE` plugin window on the way out is `applyModeChange()`'s
+job too now, not each button's own - via `previousMode` (tracks
+`currentMode` as of the last call to `applyModeChange()`; the function
+closes the window whenever `previousMode` was `MODE_DEVICE` and the new
+`currentMode` isn't). Every mode-changing button used to carry its own
+`if (currentMode === MODE_DEVICE) { cursorDevice.isWindowOpen().set(false);
+}` check by hand, duplicated six times (TRACK/IO, SEND, PAN, RETURNS,
+B.T.A., PLUG-INS) right before reassigning `currentMode` - reported as not
+reliably closing the window on every path, the same class of bug
+`applyModeChange()` was originally created to eliminate for
+`rebindFaders()`. Centralizing it removes any chance of a future
+mode-changing button forgetting the check, since leaving `MODE_DEVICE`
+now closes the window automatically no matter which button caused the
+transition.
 
 ### Plugin Mode settings (Controller Preferences panel)
 
