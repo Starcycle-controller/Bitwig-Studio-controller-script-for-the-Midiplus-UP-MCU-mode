@@ -659,11 +659,13 @@ function applyEncoderStep(target, rawDelta, encoderIndex) {
          target.set(newVal);
          return;
       }
-      target.inc(applyEncoderAcceleration(rawDelta, velocityRatio) * 0.2, 512);
+      target.inc(applyEncoderAcceleration(rawDelta, velocityRatio) * 0.2,
+         isNearOrigin(target) ? 512 * FINE_ZONE_RESOLUTION_MULTIPLIER : 512);
       return;
    }
 
-   target.inc(applyEncoderAcceleration(rawDelta, velocityRatio), 128);
+   target.inc(applyEncoderAcceleration(rawDelta, velocityRatio),
+      isNearOrigin(target) ? 128 * FINE_ZONE_RESOLUTION_MULTIPLIER : 128);
 }
 
 // Encoders are hard to land exactly on a parameter's own "home" value by
@@ -699,6 +701,37 @@ function applyEncoderStep(target, rawDelta, encoderIndex) {
 var encoderSnapToOriginEnabled = true;
 var ENCODER_SNAP_THRESHOLD = 0.02;
 var ENCODER_SNAP_IDLE_MS = 300;
+
+// "Fine Zone Near Origin" (Encoders category, default on) - a narrow-range,
+// origin-centered macro (e.g. an oscillator fine-tune knob, or pan) is hard
+// to land back on its exact center by hand: even the coarsest single tick's
+// normalized-space movement (~0.8% at the plain turn's resolution 128)
+// already overshoots a target you're trying to nudge to within a percent
+// or two of center - "it jumps between +1 and -1, hard to adjust back to
+// center". When enabled, any tick that lands within FINE_ZONE_RANGE of
+// target.getOrigin() sharpens the resolution passed to target.inc() by
+// FINE_ZONE_RESOLUTION_MULTIPLIER, so ticks near center move in smaller
+// increments than ticks further out - independent of, and stacking with,
+// SHIFT's own resolution bump. Only applies to the two continuous
+// (Fine-mode) .inc() calls in applyEncoderStep() below - not the
+// discrete-switch branch (no "near origin" concept applies to an enum) and
+// not Stepped mode (which already lands exactly on the origin whenever the
+// configured step size divides evenly into it, e.g. 10% steps hit
+// 50%/origin=0.5 exactly). Defaults; overridden live from the Controller
+// Preferences panel settings created in init() below.
+var fineZoneNearOriginEnabled = true;
+var FINE_ZONE_RANGE = 0.05;
+var FINE_ZONE_RESOLUTION_MULTIPLIER = 4;
+
+// True if target's current value sits within FINE_ZONE_RANGE of its own
+// real origin (see getOrigin() discussion above Encoder Snap to Origin).
+function isNearOrigin(target) {
+   if (!fineZoneNearOriginEnabled) {
+      return false;
+   }
+   var origin = target.getOrigin().get();
+   return Math.abs(target.get() - origin) <= FINE_ZONE_RANGE;
+}
 
 // "Select Channel on Fader Touch" (Mixer category, default on) - see the
 // Fader Touch handling in onMidi (notes 104-112) below. Overridden live
@@ -1694,6 +1727,32 @@ function init() {
    encoderSnapIdleDelaySetting.markInterested();
    encoderSnapIdleDelaySetting.addRawValueObserver(function(value) {
       ENCODER_SNAP_IDLE_MS = value;
+   });
+
+   // Fine Zone Near Origin - see fineZoneNearOriginEnabled/FINE_ZONE_RANGE/
+   // FINE_ZONE_RESOLUTION_MULTIPLIER and isNearOrigin() above. Sharpens
+   // encoder resolution automatically near a parameter's real origin (e.g.
+   // fine-tune macros, pan) so it's actually possible to land back on
+   // center by hand.
+   var fineZoneNearOriginSetting = host.getPreferences().getBooleanSetting(
+      "Fine Zone Near Origin", "Encoders", true);
+   fineZoneNearOriginSetting.markInterested();
+   fineZoneNearOriginSetting.addValueObserver(function(value) {
+      fineZoneNearOriginEnabled = value;
+   });
+
+   var fineZoneRangeSetting = host.getPreferences().getNumberSetting(
+      "Fine Zone Range (+/- %)", "Encoders", 0.5, 20, 0.5, "%", 5);
+   fineZoneRangeSetting.markInterested();
+   fineZoneRangeSetting.addRawValueObserver(function(value) {
+      FINE_ZONE_RANGE = value / 100;
+   });
+
+   var fineZoneResolutionMultiplierSetting = host.getPreferences().getNumberSetting(
+      "Fine Zone Resolution Multiplier", "Encoders", 2, 16, 1, "x", 4);
+   fineZoneResolutionMultiplierSetting.markInterested();
+   fineZoneResolutionMultiplierSetting.addRawValueObserver(function(value) {
+      FINE_ZONE_RESOLUTION_MULTIPLIER = value;
    });
 
    // Select Channel on Fader Touch - see the Fader Touch handling in

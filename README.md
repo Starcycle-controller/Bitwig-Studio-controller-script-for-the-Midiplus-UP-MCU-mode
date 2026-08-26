@@ -471,6 +471,37 @@ target) version is not yet re-tested.
 None of this is yet tested on hardware, except where individually noted
 above.
 
+**Fine Zone Near Origin** (on/off, default ON) - reported live from
+hardware: with 8 macro knobs mapped to Serum 2 in bank 1 and oscillator
+fine-tune macros (osc1/osc2/osc3/noise) in bank 2, turning slowly to land
+back on exact center was nearly impossible - "it jumps between +1 and -1".
+The cause: even the plain turn's finest resolution (128) still moves in
+steps of roughly 0.8% of the full range per tick, which on a narrow,
+origin-centered macro like fine-tune is already coarser than the "close to
+center" window a careful hand is aiming for - so every tick either
+overshoots past 0 or undershoots back away from it, with nothing in
+between. `isNearOrigin()` checks, on every tick, whether the target's
+*current* value sits within **Fine Zone Range (+/- %)** (default 5%, range
+0.5-20%) of its real `getOrigin()`; when it does, the resolution argument
+passed to `target.inc()` in `applyEncoderStep()`'s two continuous
+(Fine-mode) branches is multiplied by **Fine Zone Resolution Multiplier**
+(default 4x, range 2-16x) - a higher resolution value means a *smaller*
+step per tick (`inc(delta, resolution)` moves `delta/resolution` of the
+full range), so ticks taken near center land far more precisely than ticks
+further out, without changing anything about how the encoder behaves once
+back out in the normal range. Stacks independently with SHIFT's own
+resolution bump (512 vs. the plain turn's 128) - near-origin SHIFT ticks
+get sharpened too. Skipped for the same two cases **Encoder Snap to
+Origin** skips: a genuine discrete/switch target (no "near origin" concept
+for an enum, and that branch returns before reaching this code anyway) and
+Stepped mode (which already lands exactly on the origin whenever the
+configured **Encoder Step Size (%)** divides evenly into it, e.g. 10%
+steps hit 50%/origin=0.5 exactly, so there's nothing to sharpen). Works
+well together with **Encoder Snap to Origin** above - the fine zone makes
+it possible to carefully creep toward center by hand, and the idle-based
+snap still cleans up the last fraction of a percent once the encoder comes
+to rest nearby.
+
 ### Mixer settings (Controller Preferences panel)
 
 Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
