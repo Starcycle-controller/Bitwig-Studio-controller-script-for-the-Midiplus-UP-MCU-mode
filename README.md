@@ -70,7 +70,16 @@ Two independent halves, both required:
   revert to volume) - i.e. FLIP only affects the faders in this mode, not
   the encoders. Entered via PLUG-INS (note 44 - see the button-map
   correction below), or via F1-F8 in their default/orange state (notes
-  54-61), which also jump directly to device 1-8 on the chain.
+  54-61), which also jump directly to device 1-8 on the chain and open
+  that device's own plugin window. Requested directly: pressing the SAME
+  F-key again for the device that's *already* selected toggles that
+  window closed (and open again on a further press) instead of
+  reselecting it - `cursorDevice.position().get()` is checked live
+  against the pressed key's index, so this stays correct even if the
+  selection changed some other way in the meantime (the mouse in Bitwig
+  itself, PLUG-INS, wheel-stepping), not just "whichever F-key was
+  pressed last". Pressing a *different* F-key still selects that device
+  and opens its window as before.
 - `MODE_SCENE` - entered via the button printed B.T.A. on the old Live
   overlay (note 80): shows the clip launcher, switches Bitwig to the Mix
   panel layout, and the jog wheel selects/launches scenes instead of its
@@ -1018,7 +1027,7 @@ was still in Live mode, is confirmed still correct.
 | 51 | Unconfirmed - previously (wrongly) assumed to be RETURNS | Unbound - needs testing |
 | 52 | NAME/VALUE | Unbound (no Bitwig equivalent) |
 | 53 | SMPTE/BEATS | Pure mode key, deliberately unbound - toggles the F1-F8 row's backlight red/green (and which note range F1-F8 sends) entirely in hardware firmware; no longer bound to Automation Write |
-| 54-61 | F1-F8 (default/orange-lit state) | Select device 1-8 directly on the current track (enters `MODE_DEVICE` if needed) |
+| 54-61 | F1-F8 (default/orange-lit state) | Select device 1-8 directly on the current track (enters `MODE_DEVICE` if needed), opening its window; pressing the already-selected device's key again toggles its window closed/open instead |
 | 62-69 | F1-F8 (green-lit state, toggled via SMPTE/BEATS) | Configurable editing function per key, see Function Keys settings above (defaults: F1=Duplicate, F2=Consolidate, F3-F8=None) |
 | 70-73 | SHIFT / OPTION / CTRL / ALT | Modifier hold state; standalone tap action is configurable, see Plugin Mode settings above |
 | 74 | (Live label: SESS/ARR) | Toggle clip launcher / arranger view |

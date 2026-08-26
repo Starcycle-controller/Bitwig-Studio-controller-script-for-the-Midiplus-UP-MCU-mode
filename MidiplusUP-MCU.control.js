@@ -1721,6 +1721,16 @@ function init() {
    // so needs markInterested() or .toggle()/.get() throws.
    cursorDevice.isExpanded().markInterested();
 
+   // Read on-demand (not observed) by case 54-61's F1-F8 direct
+   // device-select handling below, to tell whether the pressed F-key's
+   // device is already the current one (toggle its window) or a
+   // different one (select it and open its window) - needs
+   // markInterested() or .get() throws, same as isExpanded() above.
+   // isWindowOpen() is also .set()/.toggle()'d elsewhere in this file
+   // without ever having been read back before now.
+   cursorDevice.position().markInterested();
+   cursorDevice.isWindowOpen().markInterested();
+
    // Plugin Mode settings (Controller Preferences panel in Bitwig Studio ->
    // this controller -> "Plugin Mode" category) - which modifier button
    // toggles the expanded device view and cycles the macro bank, whether
@@ -3400,6 +3410,18 @@ function handleButtonPressInner(note) {
          // switching devices while already in it.
          var fkeyDeviceIdx = note - 54;
          var wasAlreadyInDeviceMode = currentMode === MODE_DEVICE;
+         // Requested directly: pressing the SAME F-key again, for the
+         // device that's already selected, toggles that device's own
+         // window open/closed instead of reselecting it - cursorDevice.
+         // position() (read live, not tracked separately, so this stays
+         // correct even if the selection changed some other way - the
+         // mouse in Bitwig itself, PLUG-INS, wheel-stepping) is the
+         // source of truth for "already selected", not just "which F-key
+         // was last pressed".
+         if (wasAlreadyInDeviceMode && cursorDevice.position().get() === fkeyDeviceIdx) {
+            cursorDevice.isWindowOpen().toggle();
+            break;
+         }
          currentMode = MODE_DEVICE;
          if (!wasAlreadyInDeviceMode) {
             sendBankPage = 0;
