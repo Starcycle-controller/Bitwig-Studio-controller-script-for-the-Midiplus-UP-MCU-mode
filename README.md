@@ -1025,28 +1025,39 @@ self-heals via `mainTrackScanBank`'s own name-change tracking) that
 calls `refreshMainCursors()` whenever a different real track lands at
 that slot for any reason, not just an explicit scroll.
 
-### Bank scrolling selects the first track
+### Bank scrolling selects a track, so Bitwig's view follows
 
 Reported: moving the bank on the hardware (BANK PREV/NEXT, CHANNEL
 PREV/NEXT, and their SHIFT jump-to-first/last variants) didn't make
 Bitwig's own Arranger/Mixer follow along, so the two could show
 completely different tracks. Every one of the 6 scroll helpers
 (`scrollActiveBankToStart/ToEnd/PageBackward/PageForward/
-StepBackward/StepForward`) now calls `selectFirstTrackOfBank()` right
-after moving the window - the same two calls the SELECT button (notes
-24-31) already made (`track.selectInMixer()` plus the real
+StepBackward/StepForward`) now selects a track in the new window right
+after moving it - the same two calls the SELECT button (notes 24-31)
+already made (`track.selectInMixer()` plus the real
 `cursorTrack.selectChannel(track)` - `cursorTrack` was created with
 `shouldFollowSelection=true`, so this genuinely changes Bitwig's own
-track selection, not just a local flag), just applied automatically to
-the new window's first track instead of waiting for a manual SELECT
-press. Bitwig scrolls its own view to keep a newly selected track
-visible, the same as clicking it would, so the two views now stay in
-sync on every bank move. Guarded by `isMainSlotEmpty(0)` for the one
-case where there's genuinely nothing to select (Hide mode, zero
-activated tracks left in the whole project). Applies to both Main and
-Returns; the RETURNS toggle itself and the Hide/Show mode toggle are
-unchanged (not requested, and less clearly "moving the bank" the same
-way scrolling is).
+track selection, not just a local flag). Bitwig scrolls its own view to
+keep a newly selected track visible, the same as clicking it would, so
+the two views now stay in sync on every bank move.
+
+**Which slot gets selected depends on scroll direction**, per direct
+feedback: scrolling left/backward (`ToStart`/`PageBackward`/
+`StepBackward`) selects slot 0, the new window's first/leftmost track
+(`selectFirstTrackOfBank()`); scrolling right/forward (`ToEnd`/
+`PageForward`/`StepForward`) selects slot 7, its last/rightmost track
+(`selectLastTrackOfBank()`) - selecting the edge in the direction just
+scrolled *toward* keeps Bitwig's view following the newly-revealed
+tracks, rather than always snapping back to the window's left edge
+regardless of which way it just moved. `selectLastTrackOfBank()` scans
+backward from slot 7 rather than assuming it's always populated, since
+Hide mode can leave fewer than 8 activated tracks in the window (Show
+All mode and Returns never hit that case). Guarded by
+`isMainSlotEmpty()` for the one case where there's genuinely nothing to
+select at all (Hide mode, zero activated tracks left in the whole
+project). Applies to both Main and Returns; the RETURNS toggle itself
+and the Hide/Show mode toggle are unchanged (not requested, and less
+clearly "moving the bank" the same way scrolling is).
 
 **Blink Armed Track's SELECT LED** (on/off, default ON) - the SELECT LEDs
 (notes 24-31) normally just show which track is currently selected

@@ -1826,22 +1826,48 @@ function activeBankItemCount() {
 
 // Requested directly: Bitwig's own Arranger/Mixer view didn't follow
 // when scrolling the bank here, so the hardware and Bitwig's own screen
-// could show completely different tracks. Selecting the new window's
-// first track mirrors what the SELECT button (notes 24-31) already does
-// - selectInMixer() plus the real cursorTrack.selectChannel() (cursorTrack
+// could show completely different tracks. Selecting a track in the new
+// window mirrors what the SELECT button (notes 24-31) already does -
+// selectInMixer() plus the real cursorTrack.selectChannel() (cursorTrack
 // was created with shouldFollowSelection=true, so this genuinely changes
 // Bitwig's own selection, not just a local flag) - Bitwig scrolls its own
 // view to keep a newly selected track visible, the same as clicking it
-// would. Called from every scroll helper below, for both Main and
-// Returns. isMainSlotEmpty(0) guards the one case where there's nothing
-// to select (Hide mode, zero activated tracks in the whole project).
-function selectFirstTrackOfBank() {
-   if (isMainSlotEmpty(0)) {
+// would.
+//
+// Which slot to select depends on scroll direction, per direct feedback:
+// scrolling left/backward selects slot 0 (the new window's first/
+// leftmost track), scrolling right/forward selects slot 7 (its
+// last/rightmost track) - selecting the edge in the direction just
+// scrolled *toward* keeps Bitwig's view following the newly-revealed
+// tracks, rather than always snapping back to the window's left edge
+// regardless of which way it just moved.
+function selectBankSlot(index) {
+   if (isMainSlotEmpty(index)) {
       return;
    }
-   var firstTrack = activeTrackAt(0);
-   firstTrack.selectInMixer();
-   cursorTrack.selectChannel(firstTrack);
+   var track = activeTrackAt(index);
+   track.selectInMixer();
+   cursorTrack.selectChannel(track);
+}
+
+function selectFirstTrackOfBank() {
+   selectBankSlot(0);
+}
+
+// Hide mode can leave fewer than 8 activated tracks in the window
+// (trailing slots empty) - scans backward from 7 so scrolling right
+// still selects the actual last populated track instead of silently
+// selecting nothing if slot 7 itself happens to be empty. Show All mode
+// and Returns never hit the empty-slot case at all (isMainSlotEmpty()
+// is always false there), so this is effectively just "select slot 7"
+// for those.
+function selectLastTrackOfBank() {
+   for (var i = 7; i >= 0; i--) {
+      if (!isMainSlotEmpty(i)) {
+         selectBankSlot(i);
+         return;
+      }
+   }
 }
 
 // The 6 scroll operations activeTrackBank() used to expose directly
@@ -1852,8 +1878,9 @@ function selectFirstTrackOfBank() {
 // with its own scroll methods. Each helper below picks the right
 // behavior for Returns / Main+Show All / Main+Hide, then re-syncs the
 // cursors so activeTrackAt() immediately reflects the new window, and
-// selects the first track of that window (see selectFirstTrackOfBank()
-// above) so Bitwig's own view follows along.
+// selects the appropriate edge track of that window (see
+// selectFirstTrackOfBank()/selectLastTrackOfBank() above) so Bitwig's
+// own view follows along.
 function scrollActiveBankToStart() {
    if (isViewingReturns) {
       effectTrackBank.scrollPosition().set(0);
@@ -1878,7 +1905,7 @@ function scrollActiveBankToEnd() {
       trackBank.scrollPosition().set(maxOffset);
       refreshMainCursors();
    }
-   selectFirstTrackOfBank();
+   selectLastTrackOfBank();
 }
 
 function scrollActiveBankPageBackward() {
@@ -1905,7 +1932,7 @@ function scrollActiveBankPageForward() {
       trackBank.scrollPageForwards();
       refreshMainCursors();
    }
-   selectFirstTrackOfBank();
+   selectLastTrackOfBank();
 }
 
 function scrollActiveBankStepBackward() {
@@ -1932,7 +1959,7 @@ function scrollActiveBankStepForward() {
       trackBank.scrollForwards();
       refreshMainCursors();
    }
-   selectFirstTrackOfBank();
+   selectLastTrackOfBank();
 }
 
 // Keeps mainTrackCursors[0-7] pointed at the correct real tracks for
