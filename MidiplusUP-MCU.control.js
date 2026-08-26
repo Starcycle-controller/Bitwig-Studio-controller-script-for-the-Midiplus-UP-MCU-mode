@@ -2665,6 +2665,7 @@ function init() {
    rebindFaders();
    host.scheduleTask(displayFlushTask, 100);
    host.scheduleTask(armedLedBlinkTick, ARMED_LED_BLINK_INTERVAL_MS);
+   host.scheduleTask(flushWorkaroundTick, 100);
 
    println("Midiplus UP Controller Script Ready.");
 }
@@ -3139,6 +3140,26 @@ function displayFlushTask() {
       displayNeedsUpdate = false;
    }
    host.scheduleTask(displayFlushTask, 100);
+}
+
+// Bitwig only invokes flush() (see that function below - it drives
+// hwSurface.updateHardware()/updateFaderOutputs()/
+// updateVPotRingOutputs()/updateChannelColorOutput()) when a subscribed
+// value actually changes; while stopped and otherwise idle, nothing may
+// change for a while, so any of those outputs that depend on this
+// script's own internal state (rather than a Bitwig value change) could
+// go stale until something unrelated happens to trigger the next flush.
+// Ported from DrivenByMoss's ModelImpl.flushWorkaround(), which
+// documents this as intended Bitwig behavior (not a bug) and works
+// around it the same way: force a flush periodically via
+// host.requestFlush(). Skipped while playing, since enough flushes
+// already happen naturally then (the playhead position alone keeps
+// changing every cycle).
+function flushWorkaroundTick() {
+   if (!transport.isPlaying().get()) {
+      host.requestFlush();
+   }
+   host.scheduleTask(flushWorkaroundTick, 100);
 }
 
 // MIDI Input Processing

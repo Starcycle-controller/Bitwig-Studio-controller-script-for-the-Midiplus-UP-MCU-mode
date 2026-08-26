@@ -391,6 +391,41 @@ framework for this identical issue. Applies to every position-jump
 feature in the script, not just the jog wheel - not yet confirmed on
 hardware.
 
+### Flush workaround (ported from DrivenByMoss)
+
+Reviewed the [DrivenByMoss](https://github.com/git-moss/DrivenByMoss)
+controller framework's Bitwig-specific code (`ModelImpl.java`,
+`TransportImpl.java`, `ArrangerImpl.java`, and its actual MCU protocol
+implementation) for any other Bitwig Controller API quirks it works
+around that this script doesn't yet handle, since it just took several
+rounds to track down the `getPosition()`-while-playing issue above.
+
+Found one applicable, currently-unhandled one: `ModelImpl.flushWorkaround()`
+documents that since Bitwig 3.1, `flush()` (the callback that pushes
+hardware-bound output state - faders, LED rings, colors, etc. - out to
+the wire) is only invoked when a subscribed value actually changes
+("intended, not a bug"). While the transport is stopped and otherwise
+idle, if nothing happens to change, `flush()` might not run at all -
+which could leave any hardware output that depends on this script's own
+internal state (rather than directly mirroring an observed Bitwig value)
+stale until something unrelated triggers the next flush. DrivenByMoss
+works around it with a periodic forced flush; ported the same fix here
+as `flushWorkaroundTick()` - calls `host.requestFlush()` once every
+100ms while `transport.isPlaying()` is false (skipped while playing,
+since enough flushes already happen naturally then - the playhead
+position alone keeps changing every cycle). Not confirmed this was
+actually causing a visible symptom on this hardware, but it's the exact
+same defensive fix a mature, widely-used controller framework carries
+for every one of its supported controllers, so it's included
+preventively.
+
+Everything else found while reviewing (a clip-launcher-grid-scroll
+workaround in `SlotBankImpl`/`TrackImpl`, a note-clip-type crash
+workaround in `CursorClipImpl`, a hardware-API value-routing shim in
+`RangedValueImpl`) is specific to session-view clip launching, note clip
+content, or DrivenByMoss's own internal hardware-abstraction layer - none
+of which this script touches, so nothing else applied.
+
 ### SHIFT+HOME: auto-named cue markers
 
 Note 89 (the button printed HOME under the Ableton overlay) normally
