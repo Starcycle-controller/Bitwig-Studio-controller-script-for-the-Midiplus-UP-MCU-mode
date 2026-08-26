@@ -639,6 +639,20 @@ function applyEncoderStep(target, rawDelta, encoderIndex) {
          " (> " + MAX_NATIVE_SWITCH_STEPS + ") - treated as continuous, native grid ignored");
    }
 
+   // Encoder Push + Turn Fine Resolution (Device mode only) - see
+   // deviceEncoderPushBehavior/DEVICE_ENCODER_PUSH_FINE_MULTIPLIER/
+   // encoderPushHeld above. Takes priority over SHIFT below (a more
+   // specific, single-encoder, deliberate gesture) - not stacked with it,
+   // so holding SHIFT while also pushing an encoder still just gets fine
+   // resolution, not some combination of both scalings.
+   if (currentMode === MODE_DEVICE && encoderPushHeld[encoderIndex] &&
+      deviceEncoderPushBehavior === "Fine Resolution") {
+      var pushFineResolution = 128 * DEVICE_ENCODER_PUSH_FINE_MULTIPLIER;
+      target.inc(applyEncoderAcceleration(rawDelta, velocityRatio) * 0.2,
+         isNearOrigin(target) ? pushFineResolution * FINE_ZONE_RESOLUTION_MULTIPLIER : pushFineResolution);
+      return;
+   }
+
    if (isShiftPressed) {
       var steppingSuppressedByAutomationWrite = !allowSteppedDuringAutomationWrite &&
          transport.isArrangerAutomationWriteEnabled().get();
@@ -881,6 +895,42 @@ function isNearOrigin(target) {
    var origin = resolveOrigin(target);
    return Math.abs(target.get() - origin) <= FINE_ZONE_RANGE;
 }
+
+// "Encoder Push Behavior (Device/Plugin Mode)" (Encoders category) -
+// requested directly, and specifically scoped to Device mode: Mixer/Sends
+// mode's encoder push keeps its existing behavior untouched (an
+// immediate reset-to-origin the moment it's pressed - see the note 32-39
+// case inside handleButtonPressInner below - "more useful there" per
+// direct feedback), while in Device mode the SAME physical gesture (push
+// the encoder's own click) can instead mean "hold this encoder down while
+// turning it for finer resolution", a very different but equally useful
+// action for macro knobs specifically. Three mutually exclusive choices,
+// not stacked - only one is ever active at a time:
+//   "Fine Resolution" (default) - pressing an encoder in Device mode
+//      arms encoderPushHeld[index] (see the note 32-39 interception in
+//      onMidi below, alongside Fader Touch/F-Keys, so both press AND
+//      release are available); applyEncoderStep() checks this and, while
+//      held, scales the resolution passed to target.inc() by
+//      DEVICE_ENCODER_PUSH_FINE_MULTIPLIER instead of doing anything on
+//      release. No reset-on-tap fallback - that's what the "Reset to
+//      Default" choice below is for.
+//   "Reset to Default" - keeps the classic single-press behavior (same
+//      call Mixer mode's encoder push already uses,
+//      remoteControls.getParameter(index).reset()) for anyone who'd
+//      rather have Device mode match Mixer mode's gesture for
+//      consistency instead of gaining the fine-turn gesture.
+//   "Open/Close Plugin Window" - pressing ANY of the 8 encoders toggles
+//      cursorDevice.isWindowOpen() (same object applyModeChange() closes
+//      automatically on leaving Device mode) instead of touching the
+//      macro at all - a quick way to pop the plugin's own GUI open or
+//      closed without reaching for the mouse. Doesn't depend on which
+//      encoder was pressed, since it's a device-wide toggle, not a
+//      per-macro action.
+// Defaults; overridden live from the Controller Preferences panel
+// settings created in init() below.
+var deviceEncoderPushBehavior = "Fine Resolution";
+var DEVICE_ENCODER_PUSH_FINE_MULTIPLIER = 8;
+var encoderPushHeld = [false, false, false, false, false, false, false, false];
 
 // "Select Channel on Fader Touch" (Mixer category, default on) - see the
 // Fader Touch handling in onMidi (notes 104-112) below. Overridden live
@@ -1994,6 +2044,28 @@ function init() {
       FINE_ZONE_RESOLUTION_MULTIPLIER = value;
    });
 
+   // Encoder Push Behavior (Device/Plugin Mode) - see
+   // deviceEncoderPushBehavior/DEVICE_ENCODER_PUSH_FINE_MULTIPLIER/
+   // encoderPushHeld above. Resets encoderPushHeld on change so a mode
+   // switch mid-press can't leave a stale "held" flag stuck on from
+   // whichever behavior was active when the encoder was physically
+   // pressed down.
+   var deviceEncoderPushBehaviorSetting = host.getPreferences().getEnumSetting(
+      "Encoder Push Behavior (Device/Plugin Mode)", "Encoders",
+      ["Fine Resolution", "Reset to Default", "Open/Close Plugin Window"], "Fine Resolution");
+   deviceEncoderPushBehaviorSetting.markInterested();
+   deviceEncoderPushBehaviorSetting.addValueObserver(function(value) {
+      deviceEncoderPushBehavior = value;
+      encoderPushHeld = [false, false, false, false, false, false, false, false];
+   });
+
+   var deviceEncoderPushFineMultiplierSetting = host.getPreferences().getNumberSetting(
+      "Encoder Push Fine Resolution Multiplier", "Encoders", 2, 32, 1, "x", 8);
+   deviceEncoderPushFineMultiplierSetting.markInterested();
+   deviceEncoderPushFineMultiplierSetting.addRawValueObserver(function(value) {
+      DEVICE_ENCODER_PUSH_FINE_MULTIPLIER = value;
+   });
+
    // Select Channel on Fader Touch - see the Fader Touch handling in
    // onMidi (notes 104-112) above. Same name/idea as the identically-named
    // setting in Mossgraber's DrivenByMoss MCU driver.
@@ -3056,6 +3128,29 @@ function onMidi(status, data1, data2) {
          return;
       }
 
+      // Encoder Push (Notes 32-39), Device mode only - see
+      // deviceEncoderPushBehavior/encoderPushHeld above. Intercepted here
+      // (rather than left to fall through to handleButtonPress()/its
+      // switch, like Mixer/Sends' own encoder-push-reset case still does)
+      // so both press AND release are available for the "Fine
+      // Resolution" choice - same reasoning as Fader Touch/F-Keys.
+      // Mixer/Sends mode isn't touched at all here - that case still
+      // lives in handleButtonPressInner's switch below, firing
+      // immediately on press exactly as before.
+      if (data1 >= 32 && data1 <= 39 && currentMode === MODE_DEVICE) {
+         var pushEncIdx = data1 - 32;
+         if (deviceEncoderPushBehavior === "Fine Resolution") {
+            encoderPushHeld[pushEncIdx] = isPressed;
+         } else if (isPressed && deviceEncoderPushBehavior === "Reset to Default") {
+            // Same single-press behavior Mixer mode's own encoder push
+            // already uses.
+            remoteControls.getParameter(pushEncIdx).reset();
+         } else if (isPressed && deviceEncoderPushBehavior === "Open/Close Plugin Window") {
+            cursorDevice.isWindowOpen().toggle();
+         }
+         return;
+      }
+
       // F1-F8 Green State (Notes 62-69) - configurable editing-function
       // keys (see FKEY_FUNCTION_NAMES/invokeFKeyFunction/FKEY_SHORT_NAMES
       // above). Intercepted here (rather than left to fall through to
@@ -3145,7 +3240,11 @@ function handleButtonPressInner(note) {
       return;
    }
    if (note >= 32 && note <= 39) {
-      // Encoder Push Click (Reset Parameter)
+      // Encoder Push Click (Reset Parameter) - Mixer/Sends only; Device
+      // mode's encoder push is fully intercepted earlier (see the note
+      // 32-39 block above, alongside Fader Touch/F-Keys) since it needs
+      // both press AND release for the "Fine Resolution" choice, so this
+      // branch is never reached in MODE_DEVICE.
       var encIdx = note - 32;
       if (currentMode === MODE_MIXER) {
          // Pan only - centers the pan, nothing else. A volume-touching
@@ -3157,8 +3256,6 @@ function handleButtonPressInner(note) {
       } else if (currentMode === MODE_SENDS) {
          var resetSendIdx = (sendBankPage * 8) + encIdx;
          cursorTrack.sendBank().getItemAt(resetSendIdx).reset();
-      } else if (currentMode === MODE_DEVICE) {
-         remoteControls.getParameter(encIdx).reset();
       }
       return;
    }

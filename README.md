@@ -516,8 +516,9 @@ currently targets in **any** mode - Mixer pan/volume, Device/Plugin
 macros, Sends - not just Mixer-mode pan; skipped only for a genuine
 discrete/switch target (see `applyEncoderStep()`), which has no
 continuous "close to origin" to land on. Doesn't replace the existing
-encoder-push pan reset (note 87/case in `handleButtonPress` - "Pan only -
-centers the pan, nothing else") - that's still there as an exact,
+Mixer-mode encoder-push pan reset (notes 32-39 - "Pan only - centers the
+pan, nothing else", see **Encoder Push Behavior** below for Device mode's
+own version of this gesture) - that's still there as an exact,
 always-available reset; this just makes turning the encoder itself land
 on the origin more often, without needing the separate push.
 
@@ -618,8 +619,48 @@ Diagnostic logging confirmed it: for these exact fine-tune macros,
 `target.get()` sat around `0.50` while `target.getOrigin()` reported a
 flat `0.0000` throughout, so `isNearOrigin()` was comparing distance to
 the wrong point and staying `false` the whole time no matter how wide the
-range or how high the multiplier went - see **Assume Center (0.5) When
-Reported Origin Is 0** above (now on by default) for the fix.
+range or how high the multiplier went - see **Assume Center (0.5) for
+Bipolar-Named Macros** above (now on by default) for the fix.
+
+**Encoder Push Behavior (Device/Plugin Mode)** (`Fine Resolution` /
+`Reset to Default` / `Open/Close Plugin Window`, default `Fine
+Resolution`) + **Encoder Push Fine Resolution Multiplier** (default 8x,
+range 2-32x) - requested directly: in Mixer mode, pressing an encoder
+resets pan to center immediately ("more useful there", per direct
+feedback - see **Encoder Snap to Origin** above, unaffected by this
+setting and not configurable). In Device mode, the exact same physical
+gesture - pushing an encoder's own click - now has three mutually
+exclusive choices instead, only ever one active at a time:
+
+- **`Fine Resolution`** (the preferred default) - press and *hold* an
+  encoder down while turning it, and the resolution passed to
+  `target.inc()` is scaled by **Encoder Push Fine Resolution Multiplier**
+  (default 8x - so an encoder normally moving in ~0.8% steps per tick
+  moves in ~0.1% steps instead) for exactly as long as it's held, on top
+  of whatever Fine Zone Near Origin/SHIFT would otherwise apply. A quick
+  tap that never actually turns the encoder does nothing (no reset) -
+  that's deliberately the "Reset to Default" choice's job, not blended
+  into this one. Takes priority over SHIFT if somehow both are held at
+  once (a more specific, single-encoder gesture) rather than combining
+  the two scalings.
+- **`Reset to Default`** - keeps the classic single-press-to-reset
+  behavior (`remoteControls.getParameter(index).reset()`, the same call
+  Mixer mode's own encoder push already uses) for anyone who'd rather
+  Device mode match Mixer mode's gesture for consistency, instead of
+  gaining the fine-turn gesture.
+- **`Open/Close Plugin Window`** - pressing any of the 8 encoders toggles
+  `cursorDevice.isWindowOpen()` (the same object `applyModeChange()`
+  already closes automatically on leaving Device mode, described near the
+  top of this document) instead of touching the macro at all - a quick
+  way to pop the plugin's own GUI open or closed without the mouse. It's
+  a device-wide toggle, so which of the 8 encoders you press doesn't
+  matter.
+
+Implemented via a dedicated press/release interception for notes 32-39 in
+Device mode (same pattern as Fader Touch/F-Keys - intercepted before the
+standard press-only dispatch so both directions are available), separate
+from Mixer/Sends' own note 32-39 handling, which is untouched and still
+fires immediately on press exactly as before.
 
 ### Mixer settings (Controller Preferences panel)
 
@@ -961,7 +1002,7 @@ was still in Live mode, is confirmed still correct.
 | 8-15 | Solo 1-8 | `track.solo().toggle()` |
 | 16-23 | Mute 1-8 | `track.mute().toggle()` |
 | 24-31 | Select 1-8 (double-press folds/unfolds a group track) | `selectInMixer()` / `isGroupExpanded().toggle()` |
-| 32-39 | Encoder push-click | Center pan (Mixer) / reset send (Sends) / reset macro (Device) |
+| 32-39 | Encoder push-click | Center pan (Mixer) / reset send (Sends) / Device: hold + turn = fine resolution, reset macro, or open/close plugin window - see Encoder Push Behavior |
 | 40 | I/O (TRACK on the bare Logic-label printing) | Toggle Track Inspector, or switch to Mixer mode |
 | 41 | SEND | Sends mode toggle, 2 or 3 states depending on Send/Return Bank Size (SHIFT = jump straight to Sends 9-16) |
 | 42 | PAN | Toggle `TRLVL` tool-device Gain/Pan control |
