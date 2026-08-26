@@ -61,6 +61,11 @@ var TOOL_DEVICE_NAME = "TRLVL";
 // named TOOL_DEVICE_NAME. Raise if you nest it deeper than this in your
 // chains.
 var TOOL_DEVICE_SCAN_DEPTH = 4;
+// How many devices deep into the SELECTED track's chain "EQ Mode"
+// (SHIFT+PLUG-INS - see findLastEqDeviceIndex()/case 44 below) searches
+// for the LAST device whose name matches EQ_DEVICE_NAME_KEYWORDS. Raise
+// if your chains routinely run deeper than this.
+var EQ_DEVICE_SCAN_DEPTH = 32;
 var currentMode = MODE_MIXER;
 // Tracks currentMode as of the last applyModeChange() call - see there for
 // why this is how leaving MODE_DEVICE closes the plugin window centrally.
@@ -146,12 +151,15 @@ var EXPANDED_VIEW_INSTANT = false; // false = long press, true = instant tap
 var EXPANDED_VIEW_OPENS_WINDOW = true;
 var MACRO_CYCLE_BUTTON = 73;
 // Whether opening a device's plugin window (PLUG-INS, F1-F8 direct
-// select, or the Expanded Device View action above) first closes every
-// OTHER device's window on the current track's chain, for an "only one
-// plugin window open at a time" workflow - see
+// select, EQ Mode, or the Expanded Device View action above) first
+// closes every OTHER device's window on the current track's chain, for
+// an "only one plugin window open at a time" workflow - see
 // closeOtherDeviceWindowsIfConfigured() below. Scoped to the current
 // track's 8-slot device chain (cursorDeviceBank) only - the Controller
-// API has no way to enumerate open plugin windows project-wide.
+// API has no way to enumerate open plugin windows project-wide, and
+// EQ Mode's own match can be deeper than that (see eqDeviceBank/
+// EQ_DEVICE_SCAN_DEPTH), so a device past slot 8 with its own window
+// still open won't get closed by this either.
 var CLOSE_OTHER_PLUGIN_WINDOWS = false;
 
 // Closes every other device's plugin window on the current track's chain
@@ -1492,6 +1500,7 @@ var masterTrack = null;
 var cursorTrack = null;
 var cursorDevice = null;
 var cursorDeviceBank = null; // 8-slot device chain bank for the F1-F8 (notes 54-61) direct device-select feature
+var eqDeviceBank = null; // deeper device chain bank for the EQ Mode (SHIFT+PLUG-INS) name search feature
 var remoteControls = null;
 var transport = null;
 var application = null;
@@ -1717,6 +1726,22 @@ function init() {
    // device 1-8 directly via cursorDevice.selectDevice() - see case 54-61.
    cursorDeviceBank = cursorTrack.createDeviceBank(8);
 
+   // EQ Mode (SHIFT+PLUG-INS - see findLastEqDeviceIndex()/case 44 above
+   // and below) - a separate, deeper device bank over the same selected
+   // track's chain, purely for the name-based EQ search; eqDeviceNames[i]
+   // is kept live by one observer per slot (an empty string means no
+   // device there - see scanTrackForToolDevice() below for the identical
+   // "observer instead of markInterested(), () around loop var to
+   // capture it per-iteration" pattern).
+   eqDeviceBank = cursorTrack.createDeviceBank(EQ_DEVICE_SCAN_DEPTH);
+   for (var eqScanIdx = 0; eqScanIdx < EQ_DEVICE_SCAN_DEPTH; eqScanIdx++) {
+      (function (idx) {
+         eqDeviceBank.getItemAt(idx).name().addValueObserver(function (name) {
+            eqDeviceNames[idx] = name;
+         });
+      })(eqScanIdx);
+   }
+
    // Toggled on-demand (not observed) by CTRL's long-press handling above,
    // so needs markInterested() or .toggle()/.get() throws.
    cursorDevice.isExpanded().markInterested();
@@ -1794,6 +1819,16 @@ function init() {
    closeOtherWindowsSetting.markInterested();
    closeOtherWindowsSetting.addValueObserver(function (value) {
       CLOSE_OTHER_PLUGIN_WINDOWS = value;
+   });
+
+   // EQ Mode (SHIFT+PLUG-INS) - see EQ_DEVICE_NAME_KEYWORDS/
+   // findLastEqDeviceIndex() above.
+   var eqDeviceNameKeywordsSetting = host.getPreferences().getStringSetting(
+      "EQ Device Name Keywords", "Plugin Mode", 100, "eq,pro-q");
+   eqDeviceNameKeywordsSetting.markInterested();
+   eqDeviceNameKeywordsSetting.addValueObserver(function (value) {
+      EQ_DEVICE_NAME_KEYWORDS = value;
+      rebuildEqNameRegexes();
    });
 
    // Function Keys settings (Controller Preferences panel -> "Function
@@ -2498,6 +2533,76 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
 
       })(i);
    }
+}
+
+// "EQ Mode" (SHIFT+PLUG-INS - see case 44 below) - requested directly:
+// jump straight to whichever EQ is LAST in the selected track's chain
+// (several different EQs might be stacked - a corrective one early,
+// a tonal one late - "last in chain" is deliberately the one picked,
+// not "first match") and toggle its window open/closed. Bitwig has no
+// device-category metadata usable for this (Device.deviceType() only
+// distinguishes AUDIO_FX/INSTRUMENT/NOTE_FX, not "EQ" vs. any other
+// audio effect), and third-party plugin names vary by vendor, so - same
+// approach as the Bipolar Macro Name Keywords case earlier - this
+// matches the device's own name against a configurable keyword list.
+// EQ_DEVICE_NAME_KEYWORDS defaults to "eq,pro-q": "eq" (leading-boundary
+// match, i.e. \beq, not \beq\b - see rebuildEqNameRegexes() below) covers
+// Bitwig's own built-in EQ+/EQ-2/EQ-5 and any "Equalizer"-named device,
+// while deliberately NOT requiring a trailing boundary means a version
+// suffix right after the keyword (no space) still matches; "pro-q"
+// covers FabFilter Pro-Q 3/4 by name, which - as directly reported - is
+// the EQ actually in daily use, and wouldn't match a bare "eq" keyword
+// at all ("Pro-Q" has no "eq" substring - the letters aren't even
+// adjacent). Leading-boundary-only (not full \bkeyword\b like the
+// Bipolar Macro case) specifically because of that trailing-digit
+// pattern common in plugin names ("Pro-Q4", "EQ-2") - a trailing \b
+// wouldn't match immediately before a digit with no separator. Verified
+// against a quick standalone test before shipping: "EQ+"/"EQ-2"/"EQ-5"/
+// "Equalizer"/"FabFilter Pro-Q 3"/"Pro-Q4"/"Pro-Q 4" all match; "Sequence"/
+// "Note Sequencer"/"Compressor"/"Waves API 550" correctly don't (a bare
+// substring match, without the leading boundary, would have wrongly
+// matched "Sequence" on "eq").
+var EQ_DEVICE_NAME_KEYWORDS = "eq,pro-q";
+var eqNameRegexes = [];
+
+function rebuildEqNameRegexes() {
+   eqNameRegexes = [];
+   var keywords = EQ_DEVICE_NAME_KEYWORDS.split(",");
+   for (var i = 0; i < keywords.length; i++) {
+      var keyword = keywords[i].trim();
+      if (keyword) {
+         eqNameRegexes.push(new RegExp("\\b" + escapeRegExp(keyword), "i"));
+      }
+   }
+}
+rebuildEqNameRegexes();
+
+function nameMatchesEqKeywords(name) {
+   for (var i = 0; i < eqNameRegexes.length; i++) {
+      if (eqNameRegexes[i].test(name)) {
+         return true;
+      }
+   }
+   return false;
+}
+
+// Live-updated by name observers set up in init() (one per
+// eqDeviceBank slot, EQ_DEVICE_SCAN_DEPTH deep into the SELECTED
+// track's chain) - an empty string means that slot has no device.
+var eqDeviceNames = [];
+
+// Returns the index of the LAST device in eqDeviceNames whose name
+// matches nameMatchesEqKeywords(), or -1 if none do. Deliberately keeps
+// scanning past the first match instead of returning early - "last in
+// chain" is the whole point (see the big comment above).
+function findLastEqDeviceIndex() {
+   var lastMatch = -1;
+   for (var i = 0; i < EQ_DEVICE_SCAN_DEPTH; i++) {
+      if (eqDeviceNames[i] && nameMatchesEqKeywords(eqDeviceNames[i])) {
+         lastMatch = i;
+      }
+   }
+   return lastMatch;
 }
 
 // For every track in `bank`, scans the first TOOL_DEVICE_SCAN_DEPTH devices
@@ -3396,6 +3501,41 @@ function handleButtonPressInner(note) {
                // from note 43 after confirming via console testing that
                // this hardware's Live overlay prints "PLUG-INS" over note
                // 44, not 43.
+               //
+               // SHIFT+PLUG-INS = "EQ Mode", requested directly: jumps
+               // straight to the LAST device in the chain whose name
+               // matches EQ_DEVICE_NAME_KEYWORDS (see
+               // findLastEqDeviceIndex() above) instead of the first
+               // device overall. Same already-selected-toggles-the-window
+               // behavior as F1-F8 (case 54-61) rather than PLUG-INS' own
+               // mode-toggle - pressing it again while that exact EQ is
+               // already selected closes/reopens its window instead of
+               // exiting Device mode, since the point is fast access to
+               // one specific device, not a mode toggle.
+         if (isShiftPressed) {
+            shiftUsedForCombo = true;
+            var eqDeviceIdx = findLastEqDeviceIndex();
+            if (eqDeviceIdx === -1) {
+               host.showPopupNotification("EQ Mode: No EQ Found in Chain");
+               break;
+            }
+            if (currentMode === MODE_DEVICE && cursorDevice.position().get() === eqDeviceIdx) {
+               cursorDevice.isWindowOpen().toggle();
+               break;
+            }
+            var wasAlreadyInDeviceModeForEq = currentMode === MODE_DEVICE;
+            currentMode = MODE_DEVICE;
+            if (!wasAlreadyInDeviceModeForEq) {
+               sendBankPage = 0;
+               isToolVolumeMode = false;
+            }
+            cursorDevice.selectDevice(eqDeviceBank.getItemAt(eqDeviceIdx));
+            closeOtherDeviceWindowsIfConfigured();
+            cursorDevice.isWindowOpen().set(true);
+            host.showPopupNotification("EQ: " + eqDeviceNames[eqDeviceIdx]);
+            applyModeChange(wasAlreadyInDeviceModeForEq ? null : "PLUGIN");
+            break;
+         }
          if (currentMode !== MODE_DEVICE) {
             currentMode = MODE_DEVICE;
             sendBankPage = 0;

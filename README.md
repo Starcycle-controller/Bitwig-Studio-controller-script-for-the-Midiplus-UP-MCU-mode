@@ -155,12 +155,53 @@ press and release one without using it to modify anything else:
   set to the same button as Expanded Device View, that button's tap always
   triggers Expanded Device View, never the macro cycle.
 - **Close Other Plugin Windows** (on/off, default OFF) - when on, opening
-  a device's plugin window (via PLUG-INS, F1-F8 direct select, or the
-  Expanded Device View action) first closes every *other* device's window
-  on the current track's chain, for an "only one plugin window open at a
-  time" workflow. Scoped to the current track's 8-slot device chain
+  a device's plugin window (via PLUG-INS, F1-F8 direct select, EQ Mode, or
+  the Expanded Device View action) first closes every *other* device's
+  window on the current track's chain, for an "only one plugin window open
+  at a time" workflow. Scoped to the current track's 8-slot device chain
   (`cursorDeviceBank`) - there's no Controller API way to enumerate open
-  plugin windows project-wide, so windows on other tracks aren't affected.
+  plugin windows project-wide, so windows on other tracks aren't affected,
+  and a device past slot 8 (only reachable via EQ Mode's deeper search,
+  see below) won't have its window closed by this either.
+- **EQ Device Name Keywords** (text, default `eq,pro-q`) - see **EQ Mode**
+  below.
+
+**EQ Mode** (SHIFT+PLUG-INS, note 44) - requested directly: jump straight
+to whichever EQ is **last** in the selected track's chain (several
+different EQs might be stacked - a corrective one early, a tonal one
+late - "last in chain" is deliberately the one picked, not "first
+match"), and toggle its window open/closed the same way F1-F8 (notes
+54-61) already does for direct device selection. Bitwig has no usable
+device-category metadata for this - `Device.deviceType()` only
+distinguishes `AUDIO_FX`/`INSTRUMENT`/`NOTE_FX`, not "EQ" vs. any other
+audio effect - and third-party plugin names vary by vendor, so this uses
+the same name-keyword-matching approach as **Auto-Detect Centered Macros
+by Name** above: `findLastEqDeviceIndex()` scans a dedicated, deeper
+`eqDeviceBank` (32 devices into the chain, `EQ_DEVICE_SCAN_DEPTH`) and
+matches each device's name against the comma-separated **EQ Device Name
+Keywords** list (default `eq,pro-q`).
+
+Matching is **leading-boundary only** (`\bkeyword`, not the full
+`\bkeyword\b` the Bipolar Macro Name Keywords case uses) - deliberately,
+because of a real naming collision: `eq` needs a leading boundary so it
+doesn't accidentally match mid-word (e.g. "Sequence", "Note Sequencer" -
+neither should count as an EQ), but a *trailing* boundary would break on
+the version-suffix-with-no-space naming plugins commonly use ("EQ-2",
+"Pro-Q4" - the `q` butts straight up against a digit, so `\bpro-q\b`
+would not match "Pro-Q4" the same way `\btune\b` correctly excludes
+"Detune"). `eq` alone (leading-boundary) already covers Bitwig's own
+built-in EQ+/EQ-2/EQ-5 and any "Equalizer"-named device; `pro-q` covers
+FabFilter Pro-Q 3/4 by name specifically, since - as directly reported -
+that's the EQ actually in daily use, and it wouldn't match a bare `eq`
+keyword at all (the letters "e" and "q" aren't even adjacent in
+"Pro-Q"). Verified with a standalone test before shipping: `EQ+`/`EQ-2`/
+`EQ-5`/`Equalizer`/`FabFilter Pro-Q 3`/`Pro-Q4`/`Pro-Q 4` all match;
+`Sequence`/`Note Sequencer`/`Compressor`/`Waves API 550` correctly don't.
+Add your own keywords (comma-separated) for any other EQ that doesn't
+happen to match either default.
+
+If no device in the chain matches, shows "EQ Mode: No EQ Found in Chain"
+and does nothing else. Not yet tested on hardware.
 
 ### Function Keys settings (Controller Preferences panel)
 
@@ -1021,7 +1062,7 @@ was still in Live mode, is confirmed still correct.
 | 41 | SEND | Sends mode toggle, 2 or 3 states depending on Send/Return Bank Size (SHIFT = jump straight to Sends 9-16) |
 | 42 | PAN | Toggle `TRLVL` tool-device Gain/Pan control |
 | 43 | FLIP | Swap faders/encoders - moved here from note 50 after console-log confirmation that the overlay's printed FLIP button actually sends this note, not 50 |
-| 44 | PLUG-INS | Toggle Device mode (first device, opens panel; second press also closes the panel) - confirmed via console testing that the Live overlay's "PLUG-INS" sticker is over this note, not 43 |
+| 44 | PLUG-INS (SHIFT = EQ Mode) | Toggle Device mode (first device, opens panel; second press also closes the panel) - confirmed via console testing that the Live overlay's "PLUG-INS" sticker is over this note, not 43. SHIFT+PLUG-INS jumps to the last EQ in the chain instead, toggling its window if already selected - see EQ Mode below |
 | 45 | RETURNS | Swap channel strips to/from the Return Tracks bank - moved here from note 51 after console-log confirmation (the bare-label "INST" binding that used to live here was never actually reachable under this overlay) |
 | 46 | BANK PREV | Page track bank back (SHIFT = jump to first) |
 | 47 | BANK NEXT | Page track bank forward (SHIFT = jump to last) |
