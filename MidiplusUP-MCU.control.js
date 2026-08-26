@@ -1447,7 +1447,7 @@ function effectiveWheelScrubBars() {
 // messages and only fire once enough ticks have built up, carrying any
 // remainder over to the next message instead of resetting it.
 var wheelScrubAccumulator = 0;
-var WHEEL_SCRUB_TICKS_PER_BAR = 16;
+var WHEEL_SCRUB_TICKS_PER_BAR = 8;
 
 // OPTION + Jog Wheel halves/doubles the loop length (see onMidi). Raw wheel
 // CC messages arrive far more often than one per physical detent, and
@@ -2042,10 +2042,11 @@ function init() {
    // jumps at once and a slow turn carries partial ticks over to the next
    // message, instead of every message moving the same fixed distance
    // regardless of how hard it was spun. Lower = more responsive/twitchy,
-   // higher = slower/steadier; 16 matches the other wheel-combo thresholds
-   // in this file (loop halve/double, clip/track select, etc).
+   // higher = slower/steadier. Default 8 (rather than the 16 used by the
+   // other wheel-combo thresholds in this file) - reported as needing too
+   // much physical turning per bar at 16, halved per direct request.
    var wheelScrubTicksPerBarSetting = host.getPreferences().getNumberSetting(
-      "Wheel (No Modifier): Ticks per Bar", "Wheel Options", 1, 64, 1, "ticks", 16);
+      "Wheel (No Modifier): Ticks per Bar", "Wheel Options", 1, 64, 1, "ticks", 8);
    wheelScrubTicksPerBarSetting.markInterested();
    wheelScrubTicksPerBarSetting.addRawValueObserver(function(value) {
       WHEEL_SCRUB_TICKS_PER_BAR = value;

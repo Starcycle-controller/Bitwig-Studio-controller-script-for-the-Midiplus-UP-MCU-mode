@@ -1262,7 +1262,7 @@ length) > SHIFT alone (shift loop by a bar) > SCRUB toggle or wheel press
 (jump by a bar, or select-at-cursor with ALT or SHIFT+CTRL held, see
 below) > default (scrub, **Wheel (No Modifier): Playhead Jump per Tick
 (bars)** per **Wheel (No Modifier): Ticks per Bar** accumulated raw
-ticks - default 1 bar per 16 ticks, configurable, see below - no longer
+ticks - default 1 bar per 8 ticks, configurable, see below - no longer
 ALT-modified).
 
 **SHIFT+CTRL + Jog Wheel** and **ALT+CTRL + Jog Wheel** (turn, as opposed
@@ -1428,9 +1428,11 @@ every other wheel combo above) moved exactly as far as the gentlest
 possible nudge. Fixed the same way as those other combos:
 `wheelScrubAccumulator` accumulates each message's signed raw tick value,
 and only once it reaches **Wheel (No Modifier): Ticks per Bar** (Wheel
-Options category, default `16`, range 1-64 - same range/default as
-**OPTION+Wheel: Ticks to Halve/Double Loop Length** and the other
-combo thresholds) does a bar-jump actually fire, via a `while` loop so a
+Options category, default `8`, range 1-64 - same range as
+**OPTION+Wheel: Ticks to Halve/Double Loop Length** and the other combo
+thresholds, but half their 16-tick default per direct feedback that 16
+needed too much physical turning per bar) does a bar-jump actually fire,
+via a `while` loop so a
 single fast flick spanning several thresholds' worth of ticks can fire
 multiple bar-jumps at once rather than being capped at one per message.
 Any leftover ticks below the threshold carry over to the next message
