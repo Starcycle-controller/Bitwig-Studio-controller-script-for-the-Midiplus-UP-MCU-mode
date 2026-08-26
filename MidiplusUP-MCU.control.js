@@ -4479,17 +4479,22 @@ function handleButtonPressInner(note) {
          rebindFaders();
          break;
 
-      // Note 50 - FLIP was previously (wrongly) assumed to be here; moved
-      // to note 43 above after console-log confirmation. Deliberately left
-      // unbound until it's confirmed what, if anything, this button
-      // actually does under the current overlay - press it and check the
-      // console for "RAW Note-On received".
+      case 50: // UNDO -> Moved here from note 76 after the user reported
+               // pressing the overlay's printed UNDO button produces note
+               // 50, not 76 (confirmed via console log) - same kind of
+               // wrong inherited note-number assumption as the FLIP/
+               // note-43 and RETURNS/note-45 fixes above. Still need to
+               // confirm what, if anything, note 76 does now - see README.
+         application.undo();
+         host.showPopupNotification("Undo");
+         break;
 
-      // Note 51 - RETURNS was previously (wrongly) assumed to be here;
-      // moved to note 45 above after console-log confirmation. Deliberately
-      // left unbound until it's confirmed what, if anything, this button
-      // actually does under the current overlay - press it and check the
-      // console for "RAW Note-On received".
+      case 51: // REDO -> Moved here from note 79, same reasoning as UNDO/
+               // note 50 above - confirmed via console log. Still need to
+               // confirm what, if anything, note 79 does now - see README.
+         application.redo();
+         host.showPopupNotification("Redo");
+         break;
 
       // Note 52 is the generic MCU "Name/Value display" toggle - no
       // meaningful equivalent surfaced in Bitwig's API, left unbound.
@@ -4512,10 +4517,11 @@ function handleButtonPressInner(note) {
          safeCall(application, "toggleDevices", "Toggle Device / Clip View");
          break;
 
-      case 76: // UNDO
-         application.undo();
-         host.showPopupNotification("Undo");
-         break;
+      // Note 76 - UNDO was previously (wrongly) assumed to be here; moved
+      // to note 50 above after console-log confirmation. Deliberately left
+      // unbound until it's confirmed what, if anything, this button
+      // actually does under the current overlay - press it and check the
+      // console for "RAW Note-On received".
 
       case 77: // BROWSER -> Hide/Show Browser
          safeCall(application, "toggleBrowserVisibility", "Toggle Browser");
@@ -4530,10 +4536,11 @@ function handleButtonPressInner(note) {
          }
          break;
 
-      case 79: // REDO
-         application.redo();
-         host.showPopupNotification("Redo");
-         break;
+      // Note 79 - REDO was previously (wrongly) assumed to be here; moved
+      // to note 51 above after console-log confirmation. Deliberately left
+      // unbound until it's confirmed what, if anything, this button
+      // actually does under the current overlay - press it and check the
+      // console for "RAW Note-On received".
 
       case 80: // B.T.A. -> repurposed as MODE_SCENE toggle ("Scene Mode"):
                // shows the clip launcher + switches to the Mix panel layout,

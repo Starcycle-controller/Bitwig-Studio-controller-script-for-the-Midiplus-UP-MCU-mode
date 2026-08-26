@@ -1341,8 +1341,8 @@ was still in Live mode, is confirmed still correct.
 | 47 | BANK NEXT | Page track bank forward (SHIFT = jump to last) |
 | 48 | CHANNEL PREV | Nudge one channel back (CTRL = prev device / tempo down) |
 | 49 | CHANNEL NEXT | Nudge one channel forward (CTRL = next device / tempo up) |
-| 50 | Unconfirmed - previously (wrongly) assumed to be FLIP | Unbound - needs testing, see Open Items |
-| 51 | Unconfirmed - previously (wrongly) assumed to be RETURNS | Unbound - needs testing |
+| 50 | UNDO | `application.undo()` - moved here from note 76 after console-log confirmation that the overlay's printed UNDO button actually sends this note, not 76 |
+| 51 | REDO | `application.redo()` - moved here from note 79, same confirmation as UNDO/note 50 above |
 | 52 | NAME/VALUE | Unbound (no Bitwig equivalent) |
 | 53 | SMPTE/BEATS | Pure mode key, deliberately unbound - toggles the F1-F8 row's backlight red/green (and which note range F1-F8 sends) entirely in hardware firmware; no longer bound to Automation Write |
 | 54-61 | F1-F8 (default/orange-lit state) | Select device 1-8 directly on the current track (enters `MODE_DEVICE` if needed), opening its window; pressing the already-selected device's key again toggles its window closed/open instead |
@@ -1350,10 +1350,10 @@ was still in Live mode, is confirmed still correct.
 | 70-73 | SHIFT / OPTION / CTRL / ALT | Modifier hold state; standalone tap action is configurable, see Plugin Mode settings above |
 | 74 | (Live label: SESS/ARR) | Toggle clip launcher / arranger view |
 | 75 | (Live label: CLIP/FX) | Toggle device / clip view |
-| 76 | (Live label: UNDO) | `application.undo()` |
+| 76 | Unconfirmed - previously (wrongly) assumed to be UNDO | Unbound - needs testing |
 | 77 | (Live label: BROWSER) | Toggle browser panel |
 | 78 | (Live label: DETAIL) | Toggle note/automation editor panel |
-| 79 | (Live label: REDO) | `application.redo()` |
+| 79 | Unconfirmed - previously (wrongly) assumed to be REDO | Unbound - needs testing |
 | 80 | (Live label: B.T.A.) | Toggle `MODE_SCENE` |
 | 81 | (Live label: DRAW) | Cycle the 6 arranger edit tools; SHIFT+DRAW toggles Arranger Automation Write (popup shows `Automation Write: ENABLED`/`DISABLED`) |
 | 82 | Printed "PAGE (left arrow)" under the Ableton overlay (confirmed via console - previously wrongly assumed "MARKER") | `MODE_DEVICE`: page macro bank back. `MODE_MIXER`: jump to previous cue marker and move the loop to follow it - see Mixer Mode PAGE below |
