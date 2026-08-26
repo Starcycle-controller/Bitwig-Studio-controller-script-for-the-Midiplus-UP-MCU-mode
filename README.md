@@ -491,6 +491,45 @@ jumps straight to Sends 9-16 from anywhere regardless of this setting, so
 choosing `8` for less everyday paging doesn't lock anyone out of the rest
 when they actually need them.
 
+**Blink Armed Track's SELECT LED** (on/off, default ON) - the SELECT LEDs
+(notes 24-31) normally just show which track is currently selected
+(solid on/off). With this on, any channel whose track is armed for
+recording blinks its SELECT LED instead - **regardless of whether it's
+also the selected track** - so the SELECT row doubles as an
+always-visible "which tracks are armed" overview, not just current
+selection. A track that's both selected and armed shows the blink (arm
+state takes priority over the plain selection indicator there); the
+`nameForTrackColor()` popup on selection - see the button map above -
+still fires normally either way, so selection itself is never
+ambiguous. Requested after noticing the hardware's own RECORD-button
+overlay (a separate, apparently local-firmware-only behavior recoloring
+the SELECT row on the physical unit, unrelated to this and not something
+the script can see or control) doesn't show anything until you actually
+press RECORD - this gives a persistent version driven entirely by the
+script.
+
+`selectLedValueFor()` computes the correct value for both the resync path
+(`refreshChannelStripLEDs()`, used after mode/RETURNS changes) and each
+per-track observer's own direct-send path (`track.arm()`,
+`addIsSelectedInMixerObserver`), so all three stay in agreement.
+`armedLedBlinkTick()` is a self-rescheduling `host.scheduleTask()` loop
+(started once in `init()`, same pattern as `displayFlushTask()`) that
+flips one shared `armedLedBlinkPhase` flag and re-sends the SELECT LED
+for every currently-armed channel on the active bank - every armed
+channel blinks in sync rather than drifting independently. Turning the
+setting off immediately restores every SELECT LED to its plain
+`isSelected` state via `refreshChannelStripLEDs()`, rather than leaving a
+channel stuck showing whatever the blink phase happened to be at that
+exact instant.
+
+**Armed SELECT LED Blink Rate (ms)** (default 400, range 100-2000) - the
+blink's **half-period**: how long each on/off phase lasts, not the full
+cycle - so the default is a slow ~1.25 Hz blink (800ms full cycle: 400ms
+on, 400ms off), not a 400ms one. Lower for a faster blink, higher for
+slower.
+
+Neither of these two settings is yet tested on hardware.
+
 **Select Channel on Fader Touch** (on/off, default ON) - touching one of
 the motorized faders (notes 104-111 for channels 1-8, note 112 for the
 master fader - a separate Note-On/Off the hardware sends independent of

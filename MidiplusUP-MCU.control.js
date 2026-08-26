@@ -1281,6 +1281,20 @@ var returnsLedState = { arm: [false, false, false, false, false, false, false, f
                          mute: [false, false, false, false, false, false, false, false],
                          select: [false, false, false, false, false, false, false, false] };
 
+// "Blink Armed Track's SELECT LED" (Controller Preferences -> "Mixer"
+// category, default ON) - see selectLedValueFor()/armedLedBlinkTick()
+// below. armedLedBlinkPhase is the single shared on/off flag every armed
+// channel's blink reads from, flipped once per
+// ARMED_LED_BLINK_INTERVAL_MS by armedLedBlinkTick() so they all blink in
+// sync rather than drifting independently - this is the HALF-period (time
+// spent on, same time spent off), not the full on-off cycle, so the
+// default of 400 is a slow ~1.25 Hz blink (800ms per full cycle), not
+// 400ms. Defaults; overridden live from the Controller Preferences panel
+// settings created in init() below.
+var armedLedBlinkEnabled = true;
+var armedLedBlinkPhase = false;
+var ARMED_LED_BLINK_INTERVAL_MS = 400;
+
 // Per-track TOOL_DEVICE_NAME device tracking (see isToolVolumeMode above).
 // For each bank slot, mainToolSlot[i]/returnsToolSlot[i] holds which
 // position (0 to TOOL_DEVICE_SCAN_DEPTH-1) in that track's device chain is
@@ -1699,6 +1713,27 @@ function init() {
       sendBankConfiguredPages = value === "8" ? 1 : 2;
    });
 
+   // See selectLedValueFor()/armedLedBlinkTick() above. Turning this off
+   // immediately restores every SELECT LED to its plain isSelected state
+   // via refreshChannelStripLEDs() (selectLedValueFor() checks the flag
+   // itself, so this doesn't need to wait for the next blink tick to
+   // catch up) - otherwise a channel could stay stuck showing whatever
+   // the blink phase happened to be at the exact moment it was disabled.
+   var armedLedBlinkEnabledSetting = host.getPreferences().getBooleanSetting(
+      "Blink Armed Track's SELECT LED", "Mixer", true);
+   armedLedBlinkEnabledSetting.markInterested();
+   armedLedBlinkEnabledSetting.addValueObserver(function(value) {
+      armedLedBlinkEnabled = value;
+      refreshChannelStripLEDs();
+   });
+
+   var armedLedBlinkIntervalSetting = host.getPreferences().getNumberSetting(
+      "Armed SELECT LED Blink Rate (ms)", "Mixer", 100, 2000, 10, "ms", 400);
+   armedLedBlinkIntervalSetting.markInterested();
+   armedLedBlinkIntervalSetting.addRawValueObserver(function(value) {
+      ARMED_LED_BLINK_INTERVAL_MS = value;
+   });
+
    // Remote Controls (8 Macros for selected device)
    remoteControls = cursorDevice.createCursorRemoteControlsPage(8);
    // discreteValueCount()/discreteValueNames()/getOrigin() need
@@ -1895,6 +1930,7 @@ function init() {
    updateModeLEDs();
    rebindFaders();
    host.scheduleTask(displayFlushTask, 100);
+   host.scheduleTask(armedLedBlinkTick, ARMED_LED_BLINK_INTERVAL_MS);
 
    println("Midiplus UP Controller Script Ready.");
 }
@@ -1979,6 +2015,9 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
             ledState.arm[index] = isArmed;
             if (isViewingReturns === isReturnsBank) {
                midiOut.sendMidi(0x90, 0 + index, isArmed ? 127 : 0); // Rec Arm LED
+               // Select LED reacts too - see selectLedValueFor() above,
+               // an armed track blinks there regardless of selection.
+               midiOut.sendMidi(0x90, 24 + index, selectLedValueFor(index, ledState) ? 127 : 0);
             }
          });
 
@@ -1999,7 +2038,9 @@ function setupChannelStripObservers(bank, ledState, isReturnsBank) {
          track.addIsSelectedInMixerObserver(function (isSelected) {
             ledState.select[index] = isSelected;
             if (isViewingReturns === isReturnsBank) {
-               midiOut.sendMidi(0x90, 24 + index, isSelected ? 127 : 0); // Select LED
+               // Select LED - blinks instead if this track is armed, see
+               // selectLedValueFor() above.
+               midiOut.sendMidi(0x90, 24 + index, selectLedValueFor(index, ledState) ? 127 : 0);
                if (isSelected) {
                   // Briefly show the selected track's color as a human
                   // -readable name (there's no color-name API - see
@@ -2099,6 +2140,22 @@ function refreshToolModeIfActive() {
    }
 }
 
+// Whether channel `index`'s SELECT LED (note 24+index) should currently
+// be lit - normally just ledState.select[index] (is this the selected
+// track), but a track that's armed for recording blinks there instead
+// (see "Blink Armed Track's SELECT LED" Controller Preferences settings
+// below), regardless of whether it's also the selected track - so the
+// SELECT row doubles as an always-visible "which tracks are armed"
+// overview, not just current selection. armedLedBlinkPhase is a single
+// shared on/off flag (see armedLedBlinkTick() below) so every armed
+// channel blinks in sync with every other one.
+function selectLedValueFor(index, ledState) {
+   if (armedLedBlinkEnabled && ledState.arm[index]) {
+      return armedLedBlinkPhase;
+   }
+   return ledState.select[index];
+}
+
 // Re-sends the cached Arm/Solo/Mute/Select LED state for whichever bank is
 // currently active - used after toggling RETURNS so the hardware LEDs catch
 // up to the bank that's now actually mapped to the 8 channel strips.
@@ -2108,8 +2165,31 @@ function refreshChannelStripLEDs() {
       midiOut.sendMidi(0x90, 0 + i, ledState.arm[i] ? 127 : 0);
       midiOut.sendMidi(0x90, 8 + i, ledState.solo[i] ? 127 : 0);
       midiOut.sendMidi(0x90, 16 + i, ledState.mute[i] ? 127 : 0);
-      midiOut.sendMidi(0x90, 24 + i, ledState.select[i] ? 127 : 0);
+      midiOut.sendMidi(0x90, 24 + i, selectLedValueFor(i, ledState) ? 127 : 0);
    }
+}
+
+// Self-rescheduling loop (same pattern as displayFlushTask() below,
+// started once from init()) - flips armedLedBlinkPhase and re-sends the
+// SELECT LED for every currently-armed channel on the active bank, so
+// they blink in place without needing any user input. Keeps rescheduling
+// itself even while armedLedBlinkEnabled is off, so toggling the setting
+// back on picks up immediately with no reload - just does nothing on
+// each tick while off, and refreshChannelStripLEDs()'s own live-updating
+// setting observer (see init()) restores solid LEDs immediately the
+// moment it's turned off, rather than leaving a channel stuck showing
+// whatever the blink phase happened to be at that instant.
+function armedLedBlinkTick() {
+   if (armedLedBlinkEnabled) {
+      armedLedBlinkPhase = !armedLedBlinkPhase;
+      var ledState = activeLedState();
+      for (var i = 0; i < 8; i++) {
+         if (ledState.arm[i]) {
+            midiOut.sendMidi(0x90, 24 + i, armedLedBlinkPhase ? 127 : 0);
+         }
+      }
+   }
+   host.scheduleTask(armedLedBlinkTick, ARMED_LED_BLINK_INTERVAL_MS);
 }
 
 // Scheduled task for LCD Display Refresh (throttled to avoid MIDI flooding)
