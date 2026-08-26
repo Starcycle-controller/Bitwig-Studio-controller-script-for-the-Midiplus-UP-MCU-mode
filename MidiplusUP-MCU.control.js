@@ -66,6 +66,11 @@ var TOOL_DEVICE_SCAN_DEPTH = 4;
 // for the LAST device whose name matches EQ_DEVICE_NAME_KEYWORDS. Raise
 // if your chains routinely run deeper than this.
 var EQ_DEVICE_SCAN_DEPTH = 32;
+// How many cue markers deep SHIFT+HOME's "Bar N" auto-naming (see
+// findAndRenamePendingCueMarker()/case 89 below) searches to find the
+// marker it just created. Raise if a project routinely has more markers
+// than this before the point you're adding new ones.
+var CUE_MARKER_SCAN_DEPTH = 128;
 var currentMode = MODE_MIXER;
 // Tracks currentMode as of the last applyModeChange() call - see there for
 // why this is how leaving MODE_DEVICE closes the plugin window centrally.
@@ -1505,6 +1510,7 @@ var remoteControls = null;
 var transport = null;
 var application = null;
 var arranger = null;
+var cueMarkerBank = null; // for SHIFT+HOME's "Bar N" auto-named cue marker feature - see case 89
 var midiOut = null;
 var midiIn = null;
 
@@ -2227,6 +2233,21 @@ function init() {
    application = host.createApplication();
    arranger = host.createArranger();
 
+   // SHIFT+HOME's "Bar N" auto-named cue marker (see case 89 below) needs
+   // to find the marker it JUST created (Transport has no "add marker
+   // and return it"/"add marker with this name" call - only a bare
+   // addCueMarkerAtPlaybackPosition()) by matching its position, so every
+   // slot's position() needs markInterested() up front for .get() to work
+   // later. CUE_MARKER_SCAN_DEPTH deep - a generous cap, same "big enough
+   // window" approach as EQ_DEVICE_SCAN_DEPTH/TOOL_DEVICE_SCAN_DEPTH
+   // elsewhere in this file. name() doesn't need markInterested() - only
+   // ever .set() here, never .get() (same as isWindowOpen().set() calls
+   // elsewhere in this file working fine without it).
+   cueMarkerBank = arranger.createCueMarkerBank(CUE_MARKER_SCAN_DEPTH);
+   for (var cueMarkerIdx = 0; cueMarkerIdx < CUE_MARKER_SCAN_DEPTH; cueMarkerIdx++) {
+      cueMarkerBank.getItemAt(cueMarkerIdx).position().markInterested();
+   }
+
    // Read on-demand (not observed) by END, CTRL+PUNCH IN/OUT, and the jog
    // wheel's bar-jump/loop-shift handling, so they need markInterested() or
    // .get() throws.
@@ -2603,6 +2624,35 @@ function findLastEqDeviceIndex() {
       }
    }
    return lastMatch;
+}
+
+// SHIFT+HOME's "Bar N" cue marker naming (case 89) - Transport only
+// offers a bare addCueMarkerAtPlaybackPosition(), no "add and return the
+// new marker"/"add with this name" call, so the only way to reach the
+// just-created marker is to find it again: scans cueMarkerBank for a
+// marker whose position matches expectedPositionBeats (the playhead
+// position captured at button-press time - the same value Bitwig itself
+// assigns the new marker, so an exact-ish match, not a fuzzy search) and
+// renames that one. Called from a short host.scheduleTask() delay after
+// creating the marker (see case 89), not immediately, since the new
+// marker isn't guaranteed to be visible in the bank within the same tick
+// it was requested - not yet confirmed on hardware whether this delay is
+// long enough, or even necessary; adjust CUE_MARKER_RENAME_DELAY_MS below
+// if a real project shows it's too short.
+var CUE_MARKER_RENAME_DELAY_MS = 150;
+var CUE_MARKER_POSITION_EPSILON = 0.0001; // beats (quarter-notes)
+
+function findAndRenamePendingCueMarker(expectedPositionBeats, newName) {
+   for (var i = 0; i < CUE_MARKER_SCAN_DEPTH; i++) {
+      var marker = cueMarkerBank.getItemAt(i);
+      if (Math.abs(marker.position().get() - expectedPositionBeats) < CUE_MARKER_POSITION_EPSILON) {
+         marker.name().set(newName);
+         return;
+      }
+   }
+   println("SHIFT+HOME cue marker: couldn't find the marker just created at beat " +
+      expectedPositionBeats + " to rename it (scanned " + CUE_MARKER_SCAN_DEPTH +
+      " markers) - it still exists with Bitwig's default name.");
 }
 
 // For every track in `bank`, scans the first TOOL_DEVICE_SCAN_DEPTH devices
@@ -3899,7 +3949,30 @@ function handleButtonPressInner(note) {
          }
          break;
 
-      case 89: // HOME -> Jump Playhead to Beginning of Project (1.1.1)
+      case 89: // HOME -> Jump Playhead to Beginning of Project (1.1.1).
+               // SHIFT+HOME instead adds a cue marker at the current
+               // playhead position, auto-named "Bar N" for whichever bar
+               // it's actually placed at - requested directly, for
+               // quickly dropping named markers while working through a
+               // song without touching the mouse or typing a name.
+         if (isShiftPressed) {
+            shiftUsedForCombo = true;
+            // getFormatted(positionFormatter) yields e.g. "003:02:03:045"
+            // (Bars:Beats:Subdivision:Ticks - see updateSegmentDisplay()
+            // below for the same formatter already used for the segment
+            // display) - the bar number is just its first field.
+            var barNumber = parseInt(
+               transport.getPosition().getFormatted(positionFormatter).split(":")[0], 10);
+            var markerBeatPosition = transport.getPosition().get();
+            transport.addCueMarkerAtPlaybackPosition();
+            (function (expectedPositionBeats, markerName) {
+               host.scheduleTask(function () {
+                  findAndRenamePendingCueMarker(expectedPositionBeats, markerName);
+               }, CUE_MARKER_RENAME_DELAY_MS);
+            })(markerBeatPosition, "Bar " + barNumber);
+            host.showPopupNotification("Cue Marker: Bar " + barNumber);
+            break;
+         }
          transport.getPosition().set(0);
          host.showPopupNotification("Jump to Start (Home)");
          break;

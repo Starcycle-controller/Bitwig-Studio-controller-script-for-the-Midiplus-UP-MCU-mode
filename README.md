@@ -354,6 +354,42 @@ no-op and only turning right (duplicate) does anything - the safer
 choice if a slightly-wrong turn deleting something outright is too
 risky; flagged as a "could be shaky" concern when requested.
 
+### SHIFT+HOME: auto-named cue markers
+
+Note 89 (the button printed HOME under the Ableton overlay) normally
+jumps the playhead to the project start. **SHIFT+HOME instead adds a cue
+marker at the current playhead position, automatically named "Bar N"**
+for whatever bar it's actually placed at - requested directly, for
+quickly dropping named markers while working through a song without
+reaching for the mouse or typing a name. This is a distinct feature from
+the generic `Add Cue Marker at Playhead` F-key function (see Function
+Keys above) - that one just inserts a marker with Bitwig's own default
+name; this one both places AND names it in one press. No Controller
+Preferences setting for this one - nothing about it seemed like it
+needed to be configurable.
+
+The bar number comes from the same `positionFormatter`
+(`host.createBeatTimeFormatter(":", 3, 2, 2, 3)`) already used for the
+segment display (`updateSegmentDisplay()`) - `transport.getPosition().
+getFormatted(positionFormatter)` yields e.g. `"003:02:03:045"`
+(Bars:Beats:Subdivision:Ticks), and the bar number is just its first
+field, parsed with `parseInt()`.
+
+Bitwig's Transport only exposes a bare `addCueMarkerAtPlaybackPosition()`
+- no "add and return the new marker" or "add with this name" call - so
+there's no direct way to name the marker at creation time. Instead,
+`findAndRenamePendingCueMarker()` scans a dedicated 128-marker-deep
+`cueMarkerBank` (`CUE_MARKER_SCAN_DEPTH`) for whichever marker's position
+matches the playhead position captured right before the marker was
+added, and renames that one. Since the new marker isn't guaranteed to be
+visible in the bank within the same tick it was requested, the search
+runs from a short `host.scheduleTask()` delay (`CUE_MARKER_RENAME_DELAY_MS`,
+150ms) after creating it, rather than immediately - **not yet confirmed
+on hardware whether this delay is long enough, or even necessary at
+all**; if a real project shows markers not getting renamed reliably
+(check the console for `"couldn't find the marker just created"`), raise
+`CUE_MARKER_RENAME_DELAY_MS` in the code.
+
 ### Encoders settings (Controller Preferences panel)
 
 Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
@@ -1100,7 +1136,7 @@ was still in Live mode, is confirmed still correct.
 | 86 | (Live label: LOOP) | Toggle arranger loop |
 | 87 | Jog wheel push | Momentary "Pan Mode" hold; launches selected scene in `MODE_SCENE` |
 | 88 | (Live label: PUNCH OUT) | Toggle punch-out (CTRL = set loop end from playhead) |
-| 89 | (Live label: HOME) | Jump playhead to project start |
+| 89 | (Live label: HOME), SHIFT = add "Bar N" cue marker | Jump playhead to project start; SHIFT+HOME adds a cue marker at the current position, auto-named for its bar number - see Cue Marker Naming below |
 | 90 | (Live label: END) | Jump playhead to loop start |
 | 91-95 | Transport: REWIND/FF/STOP/PLAY/RECORD | Standard transport |
 | 96-99 | Cursor arrows | Arrow keys, or zoom (while ZOOM/note 100 toggled), or device select in `MODE_DEVICE` |
