@@ -620,6 +620,12 @@ function applyEncoderStep(target, rawDelta, encoderIndex) {
       var curIndex = Math.round(target.get() * (discreteCount - 1));
       var newIndex = rawDelta < 0 ?
          Math.max(0, curIndex - 1) : Math.min(discreteCount - 1, curIndex + 1);
+      // DEBUG: confirms whether a "jumpy" macro is actually taking THIS
+      // branch (native switch stepping, Fine Zone/Stepped/Acceleration
+      // settings all irrelevant here) rather than the continuous one below
+      // - remove once the Fine Zone Near Origin investigation is resolved.
+      println("Encoder switch-branch: discreteCount=" + discreteCount +
+         " curIndex=" + curIndex + " newIndex=" + newIndex);
       if (newIndex === curIndex) {
          return;
       }
@@ -638,6 +644,15 @@ function applyEncoderStep(target, rawDelta, encoderIndex) {
       println("Encoder target has discreteValueCount() " + discreteCount +
          " (> " + MAX_NATIVE_SWITCH_STEPS + ") - treated as continuous, native grid ignored");
    }
+
+   // DEBUG: confirms the continuous path's own inputs for the Fine Zone
+   // Near Origin investigation - target's current normalized value, its
+   // reported origin, whether that's currently judged "near" it, and the
+   // resolution this tick will actually use. Remove once resolved.
+   println("Encoder continuous: value=" + target.get().toFixed(4) +
+      " origin=" + target.getOrigin().get().toFixed(4) +
+      " nearOrigin=" + isNearOrigin(target) +
+      " rawDelta=" + rawDelta + " shift=" + isShiftPressed);
 
    if (isShiftPressed) {
       var steppingSuppressedByAutomationWrite = !allowSteppedDuringAutomationWrite &&
