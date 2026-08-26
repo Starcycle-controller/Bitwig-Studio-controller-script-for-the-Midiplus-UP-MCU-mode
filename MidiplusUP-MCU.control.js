@@ -2055,6 +2055,29 @@ function init() {
    trackBank.itemCount().markInterested();
    effectTrackBank.itemCount().markInterested();
 
+   // Show All mode's mainTrackCursors only get re-pointed at
+   // trackBank.getItemAt(i) at explicit trigger points (scroll, RETURNS
+   // toggle, the Hide-mode Controller Preferences toggle, init) - unlike
+   // the plain bank.getItemAt(i) pattern used everywhere before this
+   // feature, a cursor doesn't automatically follow if what's virtually
+   // "at" a bank slot changes for some other reason. Expanding/collapsing
+   // a group track is exactly that: it reflows the whole flat list (child
+   // tracks appear/disappear inline) without the user ever triggering one
+   // of those explicit refresh points - reported as the group's children
+   // not showing up on the hardware after unfolding it. name() changing
+   // is used as the signal (same "detect a different track landed at this
+   // slot" trick mainTrackScanBank's observers use above) since a
+   // reflow always means a different real track (or none) is now at that
+   // slot, so its name almost certainly differs even though nothing about
+   // trackBank's own scroll position changed.
+   for (var nativeSlotIdx = 0; nativeSlotIdx < 8; nativeSlotIdx++) {
+      trackBank.getItemAt(nativeSlotIdx).name().addValueObserver(function () {
+         if (!hideDeactivatedTracksEnabled) {
+            refreshMainCursors();
+         }
+      });
+   }
+
    // Deactivated Tracks in Bank ("Hide" mode) - see mainTrackScanBank/
    // mainTrackCursors above. Scan bank: 0 sends/0 scenes, only ever used
    // for exists()/isActivated()/name(), never displayed or bound to

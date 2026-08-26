@@ -1010,6 +1010,21 @@ much lower-risk to leave on Bitwig's plain fixed-window bank).
   script architecture than most other features here, so expect to need a
   round of real-world testing/iteration.
 
+Bug found and fixed right after shipping this (Show All mode, the
+default): expanding/collapsing a group track didn't reveal its children
+on the hardware. Root cause - `mainTrackCursors` only get re-pointed at
+`trackBank.getItemAt(i)` at explicit trigger points (scroll, RETURNS
+toggle, the mode toggle itself, init), unlike the plain
+`bank.getItemAt(i)` pattern used everywhere before this feature, which
+auto-updates no matter *why* a different track lands at that slot.
+Expanding a group reflows the whole flat list (children appear/disappear
+inline) without the user triggering any of those explicit refresh points,
+so the cursors just stayed stale. Fixed with a `name()` observer on each
+of `trackBank`'s own 8 slots (Show All mode only - Hide mode already
+self-heals via `mainTrackScanBank`'s own name-change tracking) that
+calls `refreshMainCursors()` whenever a different real track lands at
+that slot for any reason, not just an explicit scroll.
+
 **Blink Armed Track's SELECT LED** (on/off, default ON) - the SELECT LEDs
 (notes 24-31) normally just show which track is currently selected
 (solid on/off). With this on, any channel whose track is armed for
