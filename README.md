@@ -1400,37 +1400,46 @@ alone is claimed earlier and that code was no longer reachable. CTRL+ALT
 returns before the plain-ALT branch is ever reached.
 
 **Default (no modifier) Jog Wheel** - reported as too slow at the fixed
-one quarter note (beat) it shipped with. **Wheel (No Modifier): Playhead
-Jump per Tick (beats)** (Wheel Options category, default `1`, range
-0.25-32 in quarter-beat steps - widened from the original 0.25-8 per
-direct request for "up to 8 bars") controls how far the playhead jumps
-per wheel message when **Adaptive Wheel Scrub** (below) is off - lands
-exactly on that step's own grid line each time (same
-compute-the-exact-target-position approach the bar-jump/loop-shift
-combos already use, not a smooth but grid-imprecise scrub), so e.g.
-setting it to `4` jumps a full bar (in 4/4) per message instead of a
-single beat, for faster general timeline navigation without reaching
-for Pan Mode/SCRUB.
+one quarter note (beat) it shipped with; a follow-up beat-based version
+(widened range, "up to 8 bars") was then reported as feeling
+inconsistent, since an arbitrary beat count could land mid-bar instead
+of scrolling cleanly bar-to-bar. Redone as **whole bars**, always
+anchored on a bar start - never landing on an individual beat partway
+through a bar, regardless of which mode below is active.
+
+**Wheel (No Modifier): Playhead Jump per Tick (bars)** (Wheel Options
+category, default `1`, range 1-8) controls how many whole bars the
+playhead jumps per wheel message when **Adaptive Wheel Scrub** (below)
+is off - `Math.round(position / beatsPerBar)` snaps to the nearest bar
+boundary first, then moves by this many bars, so it's always exactly on
+a bar line (same compute-the-exact-target-position approach the bar-jump
+(Pan Mode)/loop-shift combos already use), not a smooth but
+grid-imprecise scrub. `getBeatsPerBar()` makes this time-signature-aware
+automatically, unlike the earlier beat-based version's range (which
+could only assume 4/4).
 
 **Adaptive Wheel Scrub (Scale with Zoom)** (on/off, default OFF) +
 **Adaptive Wheel Scrub: Pixels per Tick** (default `50`, range 10-200) -
-requested directly: a fixed beat count per tick feels tiny when zoomed
+requested directly: a fixed bar count per tick feels tiny when zoomed
 way out (barely visible movement across a wide timeline) and huge when
 zoomed way in (jumping clean past what you're trying to land on). When
-on, `effectiveWheelScrubStep()` computes the step from the **actual live
-zoom level** instead of the fixed setting above -
+on, `effectiveWheelScrubBars()` computes the bar count from the **actual
+live zoom level** instead of the fixed setting above -
 `arrangerHorizontalScrollbar.getContentPerPixel()` (see Zoom settings
-above) gives beats-per-pixel at the current zoom, multiplied by
-**Pixels per Tick** to get "how many beats correspond to N screen pixels
-of timeline right now." The wheel then always moves roughly the same
-*visual* distance per tick regardless of zoom - naturally faster in
-absolute time when zoomed out (each pixel covers more beats) and slower
-when zoomed in (each pixel covers fewer beats), without any special-case
-logic - it falls directly out of multiplying by the live zoom value.
-Floored at a 64th note (`Math.max(0.0625, ...)`) so a very tight zoom
-can't produce a zero or negative step. Off by default - an opt-in
-alternative to the fixed step above, not a replacement, until confirmed
-on hardware.
+above) gives beats-per-pixel at the current zoom, divided by
+`getBeatsPerBar()` to get bars-per-pixel, multiplied by **Pixels per
+Tick** to get "how many bars correspond to N screen pixels of timeline
+right now" - **translated to a whole-bar count up front** (`Math.round`,
+floored at `1`), specifically so the result is always a whole number of
+bars and can never land mid-bar, rather than scaling a raw pixel/beat
+value that could produce a fractional step. The wheel then always moves
+roughly the same *visual* distance per tick regardless of zoom -
+naturally faster in absolute time when zoomed out (each pixel covers
+more bars) and slower when zoomed in (each pixel covers less than a
+bar, rounding up to the 1-bar floor), without any special-case logic -
+it falls directly out of dividing by the live zoom value and rounding.
+Off by default - an opt-in alternative to the fixed bar count above, not
+a replacement, until confirmed on hardware.
 
 **ALT + Jog Wheel Press** (push the wheel down while holding ALT) runs
 Bitwig's real `select_item_at_cursor` action ("Select item at cursor" -

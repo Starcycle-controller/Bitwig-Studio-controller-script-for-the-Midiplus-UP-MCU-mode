@@ -1393,43 +1393,46 @@ var ARRANGER_TOOL_ACTIONS = [
 ];
 var arrangerToolCycleIndex = 0;
 
-// Default (no modifier) Jog Wheel scrub - how far the playhead jumps per
-// wheel message, in beats (quarter notes). Reported as too slow at the
-// hardcoded 1 beat/message it shipped with; same "land exactly on the
-// grid line" approach as the bar-jump (Pan Mode)/loop-shift branches
-// nearby just generalized to an arbitrary step instead of a fixed
-// quarter note - see the "Default" branch in onMidi's jog wheel handler.
-// Range later widened to 32 beats (8 bars in 4/4 - the setting's static
-// range can't itself adapt to the project's actual time signature, per
-// direct request for "up to 8 bars"). Default; overridden live from the
+// Default (no modifier) Jog Wheel scrub - how many WHOLE BARS the
+// playhead jumps per wheel message, always landing exactly on a bar
+// start. Originally beat-based (reported as too slow at a fixed 1
+// beat/message), then reported as inconsistent-feeling once widened -
+// jumping by an arbitrary beat count could land mid-bar, "jumping
+// between individual beats" instead of a clean bar-to-bar scroll.
+// Redone to always move in whole bars and always anchor on a bar
+// boundary, regardless of mode below. Default; overridden live from the
 // Controller Preferences panel setting created in init() below.
-var DEFAULT_WHEEL_SCRUB_STEP = 1;
+var DEFAULT_WHEEL_SCRUB_BARS = 1;
 
-// Adaptive alternative to the fixed step above - requested directly:
-// faster playhead movement per tick when zoomed further OUT, slower when
-// zoomed further IN, so the wheel always feels proportional to what's
-// actually visible rather than a fixed beat count that feels tiny zoomed
-// out and huge zoomed in. When on, effectiveWheelScrubStep() below
-// computes the step from arrangerHorizontalScrollbar.getContentPerPixel()
-// (the actual live zoom level, in beats/pixel - see the Zoom settings
-// above for where this was discovered) times
-// ADAPTIVE_WHEEL_SCRUB_PIXELS_PER_TICK - i.e. "jump by however many beats
-// correspond to N screen pixels of timeline at the current zoom", instead
-// of DEFAULT_WHEEL_SCRUB_STEP's fixed beat count. Off by default - an
+// Adaptive alternative to the fixed bar count above - requested
+// directly: faster playhead movement per tick when zoomed further OUT,
+// slower when zoomed further IN, so the wheel always feels proportional
+// to what's actually visible rather than a fixed bar count that feels
+// tiny zoomed out and huge zoomed in. When on, effectiveWheelScrubBars()
+// below computes the bar count from arrangerHorizontalScrollbar.
+// getContentPerPixel() (the actual live zoom level, in beats/pixel - see
+// the Zoom settings above for where this was discovered) converted to
+// bars/pixel via getBeatsPerBar(), times
+// ADAPTIVE_WHEEL_SCRUB_PIXELS_PER_TICK, rounded to the nearest whole bar
+// (never less than 1 - translated to bars up front, not scaled in raw
+// pixels/beats, specifically so the result is always a whole-bar count,
+// never a fractional one that could land mid-bar). Off by default - an
 // opt-in alternative mode, not a replacement, until confirmed on
 // hardware. Defaults; overridden live from the Controller Preferences
 // panel settings created in init() below.
 var adaptiveWheelScrubEnabled = false;
 var ADAPTIVE_WHEEL_SCRUB_PIXELS_PER_TICK = 50;
 
-// Resolves the actual step size (in beats) the "Default" jog wheel branch
-// in onMidi() should use for this tick, per adaptiveWheelScrubEnabled.
-function effectiveWheelScrubStep() {
+// Resolves how many whole bars the "Default" jog wheel branch in
+// onMidi() should move for this tick, per adaptiveWheelScrubEnabled -
+// always >= 1, so the wheel can never move less than a full bar.
+function effectiveWheelScrubBars() {
    if (!adaptiveWheelScrubEnabled) {
-      return DEFAULT_WHEEL_SCRUB_STEP;
+      return DEFAULT_WHEEL_SCRUB_BARS;
    }
    var beatsPerPixel = arrangerHorizontalScrollbar.getContentPerPixel().get();
-   return Math.max(0.0625, beatsPerPixel * ADAPTIVE_WHEEL_SCRUB_PIXELS_PER_TICK);
+   var barsPerPixel = beatsPerPixel / getBeatsPerBar();
+   return Math.max(1, Math.round(barsPerPixel * ADAPTIVE_WHEEL_SCRUB_PIXELS_PER_TICK));
 }
 
 // OPTION + Jog Wheel halves/doubles the loop length (see onMidi). Raw wheel
@@ -2005,23 +2008,26 @@ function init() {
       wheelComboDeleteEnabled = value;
    });
 
-   // See DEFAULT_WHEEL_SCRUB_STEP above - how far the playhead jumps per
-   // wheel message with no modifier held, when Adaptive Wheel Scrub
-   // (below) is off. Reported as too slow at the fixed 1 beat/message it
-   // shipped with; range widened to 32 (8 bars in 4/4) per direct request
-   // for "up to 8 bars".
-   var defaultWheelScrubStepSetting = host.getPreferences().getNumberSetting(
-      "Wheel (No Modifier): Playhead Jump per Tick (beats)", "Wheel Options", 0.25, 32, 0.25, "beats", 1);
-   defaultWheelScrubStepSetting.markInterested();
-   defaultWheelScrubStepSetting.addRawValueObserver(function(value) {
-      DEFAULT_WHEEL_SCRUB_STEP = value;
+   // See DEFAULT_WHEEL_SCRUB_BARS above - how many whole bars the
+   // playhead jumps per wheel message with no modifier held, when
+   // Adaptive Wheel Scrub (below) is off. Originally beat-based
+   // (reported as too slow at a fixed 1 beat/message), then reported as
+   // inconsistent-feeling once widened to arbitrary beat counts - redone
+   // as whole bars, always landing on a bar start, per direct request.
+   var defaultWheelScrubBarsSetting = host.getPreferences().getNumberSetting(
+      "Wheel (No Modifier): Playhead Jump per Tick (bars)", "Wheel Options", 1, 8, 1, "bars", 1);
+   defaultWheelScrubBarsSetting.markInterested();
+   defaultWheelScrubBarsSetting.addRawValueObserver(function(value) {
+      DEFAULT_WHEEL_SCRUB_BARS = value;
    });
 
-   // See adaptiveWheelScrubEnabled/effectiveWheelScrubStep() above -
+   // See adaptiveWheelScrubEnabled/effectiveWheelScrubBars() above -
    // requested directly, faster playhead movement per tick when zoomed
-   // further out, slower when zoomed further in, instead of a fixed beat
-   // count regardless of zoom. Off by default (uses the fixed step above
-   // instead) until confirmed on hardware.
+   // further out, slower when zoomed further in, instead of a fixed bar
+   // count regardless of zoom - translated to a whole-bar count up
+   // front (not scaled in raw pixels/beats), so it always lands on a bar
+   // start, never mid-bar. Off by default (uses the fixed bar count
+   // above instead) until confirmed on hardware.
    var adaptiveWheelScrubSetting = host.getPreferences().getBooleanSetting(
       "Adaptive Wheel Scrub (Scale with Zoom)", "Wheel Options", false);
    adaptiveWheelScrubSetting.markInterested();
@@ -3374,17 +3380,21 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // Default: jump exactly effectiveWheelScrubStep() beats per wheel
-      // message, landing precisely on that grid line - same "compute the
-      // exact target position" approach as the bar-jump/loop-shift
-      // branches above, rather than a smooth but grid-imprecise scrub.
-      // No longer ALT-modified - ALT alone is now claimed above
-      // (mouseover-parameter adjust), unreachable here since it always
-      // returns first.
-      var wheelScrubStep = effectiveWheelScrubStep();
-      var currentStepUnit = Math.round(transport.getPosition().get() / wheelScrubStep);
-      var targetStepUnit = backwards ? currentStepUnit - 1 : currentStepUnit + 1;
-      transport.getPosition().set(Math.max(0, targetStepUnit * wheelScrubStep));
+      // Default: jump exactly effectiveWheelScrubBars() whole bars per
+      // wheel message, always landing precisely on a bar start - same
+      // "compute the exact target position" approach as the bar-jump
+      // (Pan Mode)/loop-shift branches above, generalized to a
+      // configurable/adaptive bar count instead of a fixed single bar.
+      // Bar-based (not beat-based) and always anchored on the bar grid
+      // specifically so it always scrolls bar-to-bar, never landing
+      // mid-bar on an individual beat. No longer ALT-modified - ALT
+      // alone is now claimed above (mouseover-parameter adjust),
+      // unreachable here since it always returns first.
+      var wheelScrubBeatsPerBar = getBeatsPerBar();
+      var wheelScrubBars = effectiveWheelScrubBars();
+      var currentBarUnit = Math.round(transport.getPosition().get() / wheelScrubBeatsPerBar);
+      var targetBarUnit = backwards ? currentBarUnit - wheelScrubBars : currentBarUnit + wheelScrubBars;
+      transport.getPosition().set(Math.max(0, targetBarUnit * wheelScrubBeatsPerBar));
       return;
    }
 
