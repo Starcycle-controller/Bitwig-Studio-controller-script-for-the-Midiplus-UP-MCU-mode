@@ -671,6 +671,41 @@ touch messages arrive in the meantime. **Confirmed working on hardware**
 - fader-driven channel selection "feels better now", and the delay
 setting ("pickup sensitivity") stays as-is alongside it.
 
+**Fader Snap to Zero** (on/off, default ON) - requested directly, the
+motorized-fader counterpart to **Encoder Snap to Origin** above: landing a
+fader exactly on true `-inf` ("true volume zero") by hand is just as
+fiddly as landing an encoder on its origin, for the same reason (no
+detent - you can get close, but not exact). When on, **releasing** a
+fader that's currently sitting within **Fader Snap to Zero Range (%)**
+(default 3%, range 0-10%) of the bottom arms a check
+`scheduleFaderSnapZeroCheck()` runs **Fader Snap to Zero Delay (ms)**
+later (default 500ms, range 100-3000ms); if the fader is **still
+untouched** at that point (re-touching it during the delay cancels the
+pending check, and the check itself re-verifies `faderTouchHeld` even if
+it does fire) and still within range, it snaps the rest of the way down
+to exactly `0`.
+
+Deliberately **release-triggered**, not checked continuously while the
+fader is moving, unlike the encoder version: a motorized fader's position
+during a drag is exactly wherever the hand physically put it, so there's
+nothing to correct until the hand actually lets go - an encoder, by
+contrast, has no absolute position of its own and can only be nudged
+relative to wherever it last landed, which is what made an idle-based
+check necessary there. "Only if it's not currently controlled" is
+enforced twice: once by only ever arming the check on touch-*release* in
+the first place, and again by the check itself bailing out if
+`faderTouchHeld` for that fader has gone back to `true` by the time the
+delay elapses.
+
+Applies to whatever the fader is **currently bound to** - Volume in
+Mixer mode, Send level in Sends mode, or (under FLIP) Pan/device macros -
+the same generalization **Encoder Snap to Origin** uses, via
+`getFaderSnapZeroTarget()` (identical to `getFaderTarget()`, plus the
+master fader, which `getFaderTarget()` itself doesn't cover since it's
+always bound straight to `masterTrack.volume()` regardless of mode).
+Skipped for a genuine discrete/switch target, which has no continuous
+"close to the bottom" to land on. Not yet tested on hardware.
+
 ### Diagnostics settings (Controller Preferences panel)
 
 Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences

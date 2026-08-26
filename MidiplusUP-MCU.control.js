@@ -859,6 +859,57 @@ function isFaderTouchLocked(faderTouchIndex) {
    return false;
 }
 
+// "Fader Snap to Zero" (Mixer category) - requested directly: landing a
+// motorized fader exactly on true -inf (normalized 0 - "true volume zero")
+// by hand is as fiddly as landing an encoder exactly on its origin, for
+// the same reason (no detent). When enabled (default on), releasing a
+// fader that's currently sitting within FADER_SNAP_ZERO_RANGE of the
+// bottom schedules a check FADER_SNAP_ZERO_DELAY_MS later; if the fader
+// is STILL untouched at that point (re-touching during the delay cancels
+// it - see faderSnapZeroGeneration below) and still within range, it
+// snaps the rest of the way down to exactly 0. Deliberately release-
+// triggered rather than checked continuously while moving: a motorized
+// fader's position during a drag is exactly where the hand put it, so
+// there's nothing to "snap" until the hand lets go - unlike an encoder,
+// which has no absolute position of its own and can drift from its last
+// intended stop. Applies to whatever the fader is CURRENTLY bound to
+// (Volume in Mixer mode, Send level in Sends mode, or - under FLIP - Pan/
+// device macros), same generalization as Encoder Snap to Origin; skipped
+// for a genuine discrete/switch target, which has no continuous "close to
+// the bottom" to land on. Defaults; overridden live from the Controller
+// Preferences panel settings created in init() below.
+var faderSnapToZeroEnabled = true;
+var FADER_SNAP_ZERO_RANGE = 0.03;
+var FADER_SNAP_ZERO_DELAY_MS = 500;
+
+// Same debounce-generation-token pattern as encoderSnapGeneration below -
+// bumped every time a check is (re)scheduled, so if a fader is released,
+// touched again, and released again before the first delay elapses, only
+// the LAST release's check ever actually fires. The callback also
+// re-checks faderTouchHeld itself directly (see scheduleFaderSnapZeroCheck
+// above), so a re-touch that's still held once the delay elapses is
+// caught even without a fresh release to bump this.
+var faderSnapZeroGeneration = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+function scheduleFaderSnapZeroCheck(index, target) {
+   faderSnapZeroGeneration[index]++;
+   var myGeneration = faderSnapZeroGeneration[index];
+   host.scheduleTask(function () {
+      if (faderSnapZeroGeneration[index] !== myGeneration) {
+         return;
+      }
+      if (!faderSnapToZeroEnabled || faderTouchHeld[index]) {
+         return;
+      }
+      if (target.discreteValueCount().get() > 0) {
+         return;
+      }
+      if (target.get() <= FADER_SNAP_ZERO_RANGE) {
+         target.set(0);
+      }
+   }, FADER_SNAP_ZERO_DELAY_MS);
+}
+
 // Same debounce-generation-token pattern as revealPanTemporarily() below
 // (and lcdOverrideGeneration) - only the LAST scheduled check for a given
 // encoder actually fires; every further tick before it bumps the token
@@ -1864,6 +1915,29 @@ function init() {
       SELECT_ON_TOUCH_DELAY_MS = value;
    });
 
+   // Fader Snap to Zero - see faderSnapToZeroEnabled/FADER_SNAP_ZERO_RANGE/
+   // FADER_SNAP_ZERO_DELAY_MS and scheduleFaderSnapZeroCheck() above.
+   var faderSnapToZeroSetting = host.getPreferences().getBooleanSetting(
+      "Fader Snap to Zero", "Mixer", true);
+   faderSnapToZeroSetting.markInterested();
+   faderSnapToZeroSetting.addValueObserver(function(value) {
+      faderSnapToZeroEnabled = value;
+   });
+
+   var faderSnapZeroRangeSetting = host.getPreferences().getNumberSetting(
+      "Fader Snap to Zero Range (%)", "Mixer", 0, 10, 0.5, "%", 3);
+   faderSnapZeroRangeSetting.markInterested();
+   faderSnapZeroRangeSetting.addRawValueObserver(function(value) {
+      FADER_SNAP_ZERO_RANGE = value / 100;
+   });
+
+   var faderSnapZeroDelaySetting = host.getPreferences().getNumberSetting(
+      "Fader Snap to Zero Delay (ms)", "Mixer", 100, 3000, 50, "ms", 500);
+   faderSnapZeroDelaySetting.markInterested();
+   faderSnapZeroDelaySetting.addRawValueObserver(function(value) {
+      FADER_SNAP_ZERO_DELAY_MS = value;
+   });
+
    // See sendBankConfiguredPages above - how many pages a normal SEND
    // press cycles through before exiting to Mixer. The underlying send
    // bank stays sized at MAX_SENDS (16) regardless, so this only affects
@@ -2027,8 +2101,12 @@ function init() {
    }
 
    // Master Track Volume - kept only for markInterested(), see the
-   // comment on the send observer above.
+   // comment on the send observer above. discreteValueCount() also needed
+   // for Fader Snap to Zero (see scheduleFaderSnapZeroCheck() below) to
+   // skip a genuine discrete/switch target the same way the other fader
+   // targets (channel volume/pan, sends, macros) already do.
    masterTrack.volume().value().markInterested();
+   masterTrack.volume().discreteValueCount().markInterested();
 
    // Device Parameter Observers (For Custom Device Remote Control Mode)
    for (var j = 0; j < 8; j++) {
@@ -2858,6 +2936,13 @@ function onMidi(status, data1, data2) {
             faderTouchHeld[faderTouchIndex] = true;
          } else {
             faderTouchHeld[faderTouchIndex] = false;
+            // Fader Snap to Zero - see scheduleFaderSnapZeroCheck() above.
+            // Only arms a check on RELEASE; the check itself re-verifies
+            // the fader is still untouched (and still within range) once
+            // the delay elapses.
+            if (faderSnapToZeroEnabled) {
+               scheduleFaderSnapZeroCheck(faderTouchIndex, getFaderSnapZeroTarget(faderTouchIndex));
+            }
          }
          return;
       }
@@ -3635,6 +3720,16 @@ function getFaderTarget(i) {
       return getToolParam(i, 1);
    }
    return activeTrackBank().getItemAt(i).pan();
+}
+
+// Same as getFaderTarget(), except also covers the master fader (index 8,
+// notes 104-112's 9th slot) - which getFaderTarget() itself doesn't handle
+// since it's always bound straight to masterTrack.volume() regardless of
+// mode/FLIP (see hwMasterFader in init()). Used by Fader Snap to Zero
+// (scheduleFaderSnapZeroCheck() above) to resolve whichever fader index
+// was actually released to its current live target.
+function getFaderSnapZeroTarget(i) {
+   return i === 8 ? masterTrack.volume() : getFaderTarget(i);
 }
 
 // Returns whichever Parameter encoder `i` (0-7) should currently control -
