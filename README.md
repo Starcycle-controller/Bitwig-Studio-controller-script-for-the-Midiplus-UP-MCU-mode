@@ -403,6 +403,53 @@ all**; if a real project shows markers not getting renamed reliably
 (check the console for `"couldn't find the marker just created"`), raise
 `CUE_MARKER_RENAME_DELAY_MS` in the code.
 
+### Zoom settings (Controller Preferences panel)
+
+Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
+-> **Zoom** category.
+
+**Cursor arrow note mapping correction**: an earlier round assumed the
+printed labels matched notes 96/97 = LEFT/RIGHT and 98/99 = UP/DOWN.
+Testing on real hardware showed the opposite: **96/97 are actually
+UP/DOWN, and 98/99 are actually LEFT/RIGHT**. All four `case` handlers in
+`onMidi()` were swapped to match - see the button map above for the
+corrected mapping.
+
+**ZOOM+LEFT/RIGHT** (notes 98/99 while ZOOM/note 100 is toggled) -
+reported as unsatisfying: it previously fired `zoomToFit()`/
+`zoomToSelection()` (two mismatched canned actions, not an actual
+continuous zoom) as a workaround, after confirming on hardware that
+`application.zoomIn()`/`zoomOut()` fire without error but never actually
+change the arranger's horizontal zoom. Now uses a genuine relative
+zoom instead: `Arranger` turns out to extend `TimelineEditor`, whose
+`getHorizontalScrollbarModel()` exposes the real horizontal (timeline)
+zoom as a `ScrollbarModel` (API version 21+, well within this script's
+targeted 25) - `getContentPerPixel()` is a readable `DoubleValue` (zoom
+level, content units per pixel - smaller means more zoomed in), and
+`zoomAtPosition(position, distance)` adjusts it relatively, in powers of
+2 (`distance = +1` doubles content-per-pixel = zoomed **out**, `-1`
+halves it = zoomed **in**), centered on a given position. No absolute
+"set to exactly this zoom level" call exists, but the relative adjuster
+is enough for arrow-key zoom in/out. LEFT zooms out (`distance =
++ZOOM_ARROW_STEP`), RIGHT zooms in (`distance = -ZOOM_ARROW_STEP`) -
+centered on the current playhead position (the only always-available
+reference point; `ScrollbarModel` has no "current view center" query) -
+an arbitrary but easily-reversible direction choice.
+
+**ZOOM+Left/Right: Zoom Step (2^n per Press)** (default `1`, range
+0.25-4) - how big a jump each press makes. `1` is a full double/halve per
+press (matching the same exponential-step convention `OPTION+Wheel:
+Ticks to Halve/Double Loop Length` already uses for the loop); lower for
+finer per-press control (e.g. `0.5`), higher for coarser jumps.
+
+**ZOOM+UP/DOWN** (notes 96/97 while ZOOM is toggled) is unchanged from
+before this round - `arranger.zoomInLaneHeightsSelected()`/
+`zoomOutLaneHeightsSelected()`, adjusting vertical track height rather
+than horizontal zoom. Not reported as a problem, so left alone; only the
+LEFT/RIGHT (horizontal) side was replaced.
+
+Not yet confirmed on hardware.
+
 ### Encoders settings (Controller Preferences panel)
 
 Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
@@ -1189,7 +1236,10 @@ was still in Live mode, is confirmed still correct.
 | 89 | (Live label: HOME), SHIFT = add "Bar N" cue marker | Jump playhead to project start; SHIFT+HOME adds a cue marker at the current position, auto-named for its bar number - see Cue Marker Naming below |
 | 90 | (Live label: END) | Jump playhead to loop start |
 | 91-95 | Transport: REWIND/FF/STOP/PLAY/RECORD | Standard transport |
-| 96-99 | Cursor arrows | Arrow keys, or zoom (while ZOOM/note 100 toggled), or device select in `MODE_DEVICE` |
+| 96 | Cursor UP | Arrow key up, or zoom in track height (while ZOOM/note 100 toggled) |
+| 97 | Cursor DOWN | Arrow key down, or zoom out track height (while ZOOM toggled) |
+| 98 | Cursor LEFT | Arrow key left, device select previous in `MODE_DEVICE`, or zoom out timeline (while ZOOM toggled) - see Zoom below |
+| 99 | Cursor RIGHT | Arrow key right, device select next in `MODE_DEVICE`, or zoom in timeline (while ZOOM toggled) - see Zoom below |
 | 100 | ZOOM | Toggle zoom mode for cursor arrows |
 | 101 | SCRUB | Toggle fine-scrub mode for jog wheel |
 | 104-111 | Fader touch 1-8 | Optionally selects that channel's track, see Mixer settings below |

@@ -1358,6 +1358,27 @@ var BANK_PAGE_STEP_MESSAGES = 4;
 var isZoomToggled = false;
 var isScrubToggled = false;
 
+// ZOOM+LEFT/RIGHT (case 98/99 - LEFT/RIGHT send notes 98/99 on this
+// hardware, not 96/97 as an earlier round assumed from the printed
+// labels) - reported as unsatisfying: LEFT/RIGHT
+// previously fired "Zoom to Fit"/"Zoom to Selection" (two mismatched
+// canned actions, not actual continuous zoom) as a workaround for
+// application.zoomIn()/zoomOut() confirmed not working on hardware.
+// Now uses arrangerHorizontalScrollbar.zoomAtPosition(position, distance)
+// (see init()) instead - a genuine relative horizontal zoom, centered on
+// the current playhead position, distance in powers of 2 (2^distance
+// multiplies content-per-pixel, so +1 = 200% content/pixel = zoomed OUT,
+// -1 = 50% content/pixel = zoomed IN). RIGHT = zoom in (distance -1),
+// LEFT = zoom out (distance +1) - an arbitrary but reversible direction
+// choice, easy to swap if it feels backwards on hardware.
+// ZOOM_ARROW_STEP is the |distance| used per press - default 1 (a full
+// double/halve per press, matching the exponential-step convention
+// OPTION+Wheel's loop halve/double already uses in this file); raise for
+// coarser jumps, lower (e.g. 0.5) for finer per-press control.
+// Default; overridden live from the Controller Preferences panel setting
+// created in init() below.
+var ZOOM_ARROW_STEP = 1;
+
 // DRAW (note 81): cycles through the 6 arranger edit tools (Bitwig's own
 // keyboard shortcuts 1-6), wrapping back to the first after the sixth
 // press. Real action ids confirmed via the DRAW-button diagnostic dump
@@ -1561,6 +1582,7 @@ var remoteControls = null;
 var transport = null;
 var application = null;
 var arranger = null;
+var arrangerHorizontalScrollbar = null; // for ZOOM+LEFT/RIGHT continuous timeline zoom - see case 98/99
 var cueMarkerBank = null; // for SHIFT+HOME's "Bar N" auto-named cue marker feature - see case 89
 var midiOut = null;
 var midiIn = null;
@@ -1825,6 +1847,15 @@ function init() {
       "Credits", "About", 100,
       "Based on Mossgraber's DrivenByMoss, ideas from Sternenlicht, built with Claude Code");
    creditsInfoSetting.markInterested();
+
+   // See ZOOM_ARROW_STEP above - how big a jump ZOOM+LEFT/RIGHT's
+   // horizontal timeline zoom makes per press.
+   var zoomArrowStepSetting = host.getPreferences().getNumberSetting(
+      "ZOOM+Left/Right: Zoom Step (2^n per Press)", "Zoom", 0.25, 4, 0.25, "", 1);
+   zoomArrowStepSetting.markInterested();
+   zoomArrowStepSetting.addRawValueObserver(function(value) {
+      ZOOM_ARROW_STEP = value;
+   });
 
    // Plugin Mode settings (Controller Preferences panel in Bitwig Studio ->
    // this controller -> "Plugin Mode" category) - which modifier button
@@ -2313,6 +2344,20 @@ function init() {
    transport = host.createTransport();
    application = host.createApplication();
    arranger = host.createArranger();
+
+   // ZOOM+LEFT/RIGHT (see case 98/99 below) - Arranger extends
+   // TimelineEditor, whose getHorizontalScrollbarModel() exposes the
+   // actual horizontal (timeline) zoom level as a readable/adjustable
+   // ScrollbarModel (API version 21+) - previously assumed unavailable
+   // ("no API to pan the arranger's visible timeframe independently of
+   // the playhead - same limitation as horizontal zoom"), which turned
+   // out to only be true for an absolute get/set; a relative
+   // zoomAtPosition(position, distance) adjuster does exist.
+   // getContentPerPixel() marked interested here in case a future
+   // feature wants to read/display the actual zoom level - not used by
+   // the arrow-key zoom itself, which only calls zoomAtPosition().
+   arrangerHorizontalScrollbar = arranger.getHorizontalScrollbarModel();
+   arrangerHorizontalScrollbar.getContentPerPixel().markInterested();
 
    // SHIFT+HOME's "Bar N" auto-named cue marker (see case 89 below) needs
    // to find the marker it JUST created (Transport has no "add marker
@@ -4178,37 +4223,10 @@ function handleButtonPressInner(note) {
       // Cursor Arrows (96-99): navigate normally, or zoom while ZOOM (100)
       // is toggled on - matches Ableton's Transport.__on_cursor_*_pressed()
       // pattern (zoom vs scroll depending on the zoom-toggle state).
-      case 96: // LEFT ARROW
-         if (currentMode === MODE_DEVICE) {
-            // Plugin mode: LEFT/RIGHT select the previous/next device on
-            // the current chain, same target as the PLUGIN/CTRL+jog combos.
-            cursorDevice.selectPrevious();
-         } else if (isZoomToggled) {
-            // application.zoomIn()/zoomOut() fired without error but never
-            // actually changed the arranger's horizontal zoom (confirmed on
-            // hardware, arranger focused) - trying zoomToFit() instead,
-            // since it's a distinct, confirmed-real method.
-            safeCall(application, "zoomToFit", "Zoom to Fit");
-         } else {
-            safeCall(application, "arrowKeyLeft");
-         }
-         refreshDisplayText();
-         rebindFaders();
-         break;
-
-      case 97: // RIGHT ARROW
-         if (currentMode === MODE_DEVICE) {
-            cursorDevice.selectNext();
-         } else if (isZoomToggled) {
-            safeCall(application, "zoomToSelection", "Zoom to Selection");
-         } else {
-            safeCall(application, "arrowKeyRight");
-         }
-         refreshDisplayText();
-         rebindFaders();
-         break;
-
-      case 98: // UP ARROW
+      // Notes corrected on hardware: 96/97 are actually UP/DOWN, 98/99 are
+      // actually LEFT/RIGHT - the reverse of what an earlier round
+      // assumed from the printed labels alone.
+      case 96: // UP ARROW
          if (isZoomToggled) {
             safeCall(arranger, "zoomInLaneHeightsSelected", "Zoom In (Track Height)");
          } else {
@@ -4216,12 +4234,46 @@ function handleButtonPressInner(note) {
          }
          break;
 
-      case 99: // DOWN ARROW
+      case 97: // DOWN ARROW
          if (isZoomToggled) {
             safeCall(arranger, "zoomOutLaneHeightsSelected", "Zoom Out (Track Height)");
          } else {
             safeCall(application, "arrowKeyDown");
          }
+         break;
+
+      case 98: // LEFT ARROW
+         if (currentMode === MODE_DEVICE) {
+            // Plugin mode: LEFT/RIGHT select the previous/next device on
+            // the current chain, same target as the PLUGIN/CTRL+jog combos.
+            cursorDevice.selectPrevious();
+         } else if (isZoomToggled) {
+            // Zoom OUT (see ZOOM_ARROW_STEP above) - application.zoomIn()/
+            // zoomOut() fired without error but never actually changed
+            // the arranger's horizontal zoom (confirmed on hardware,
+            // arranger focused); arrangerHorizontalScrollbar.
+            // zoomAtPosition() is the real, confirmed-working call.
+            arrangerHorizontalScrollbar.zoomAtPosition(transport.getPosition().get(), ZOOM_ARROW_STEP);
+            host.showPopupNotification("Zoom Out (Timeline)");
+         } else {
+            safeCall(application, "arrowKeyLeft");
+         }
+         refreshDisplayText();
+         rebindFaders();
+         break;
+
+      case 99: // RIGHT ARROW
+         if (currentMode === MODE_DEVICE) {
+            cursorDevice.selectNext();
+         } else if (isZoomToggled) {
+            // Zoom IN - see case 98 above.
+            arrangerHorizontalScrollbar.zoomAtPosition(transport.getPosition().get(), -ZOOM_ARROW_STEP);
+            host.showPopupNotification("Zoom In (Timeline)");
+         } else {
+            safeCall(application, "arrowKeyRight");
+         }
+         refreshDisplayText();
+         rebindFaders();
          break;
 
       // Transport Buttons
