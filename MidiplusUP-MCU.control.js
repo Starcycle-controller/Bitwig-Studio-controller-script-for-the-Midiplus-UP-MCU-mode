@@ -1399,9 +1399,38 @@ var arrangerToolCycleIndex = 0;
 // grid line" approach as the bar-jump (Pan Mode)/loop-shift branches
 // nearby just generalized to an arbitrary step instead of a fixed
 // quarter note - see the "Default" branch in onMidi's jog wheel handler.
-// Default; overridden live from the Controller Preferences panel setting
-// created in init() below.
+// Range later widened to 32 beats (8 bars in 4/4 - the setting's static
+// range can't itself adapt to the project's actual time signature, per
+// direct request for "up to 8 bars"). Default; overridden live from the
+// Controller Preferences panel setting created in init() below.
 var DEFAULT_WHEEL_SCRUB_STEP = 1;
+
+// Adaptive alternative to the fixed step above - requested directly:
+// faster playhead movement per tick when zoomed further OUT, slower when
+// zoomed further IN, so the wheel always feels proportional to what's
+// actually visible rather than a fixed beat count that feels tiny zoomed
+// out and huge zoomed in. When on, effectiveWheelScrubStep() below
+// computes the step from arrangerHorizontalScrollbar.getContentPerPixel()
+// (the actual live zoom level, in beats/pixel - see the Zoom settings
+// above for where this was discovered) times
+// ADAPTIVE_WHEEL_SCRUB_PIXELS_PER_TICK - i.e. "jump by however many beats
+// correspond to N screen pixels of timeline at the current zoom", instead
+// of DEFAULT_WHEEL_SCRUB_STEP's fixed beat count. Off by default - an
+// opt-in alternative mode, not a replacement, until confirmed on
+// hardware. Defaults; overridden live from the Controller Preferences
+// panel settings created in init() below.
+var adaptiveWheelScrubEnabled = false;
+var ADAPTIVE_WHEEL_SCRUB_PIXELS_PER_TICK = 50;
+
+// Resolves the actual step size (in beats) the "Default" jog wheel branch
+// in onMidi() should use for this tick, per adaptiveWheelScrubEnabled.
+function effectiveWheelScrubStep() {
+   if (!adaptiveWheelScrubEnabled) {
+      return DEFAULT_WHEEL_SCRUB_STEP;
+   }
+   var beatsPerPixel = arrangerHorizontalScrollbar.getContentPerPixel().get();
+   return Math.max(0.0625, beatsPerPixel * ADAPTIVE_WHEEL_SCRUB_PIXELS_PER_TICK);
+}
 
 // OPTION + Jog Wheel halves/doubles the loop length (see onMidi). Raw wheel
 // CC messages arrive far more often than one per physical detent, and
@@ -1977,13 +2006,34 @@ function init() {
    });
 
    // See DEFAULT_WHEEL_SCRUB_STEP above - how far the playhead jumps per
-   // wheel message with no modifier held. Reported as too slow at the
-   // fixed 1 beat/message it shipped with.
+   // wheel message with no modifier held, when Adaptive Wheel Scrub
+   // (below) is off. Reported as too slow at the fixed 1 beat/message it
+   // shipped with; range widened to 32 (8 bars in 4/4) per direct request
+   // for "up to 8 bars".
    var defaultWheelScrubStepSetting = host.getPreferences().getNumberSetting(
-      "Wheel (No Modifier): Playhead Jump per Tick (beats)", "Wheel Options", 0.25, 8, 0.25, "beats", 1);
+      "Wheel (No Modifier): Playhead Jump per Tick (beats)", "Wheel Options", 0.25, 32, 0.25, "beats", 1);
    defaultWheelScrubStepSetting.markInterested();
    defaultWheelScrubStepSetting.addRawValueObserver(function(value) {
       DEFAULT_WHEEL_SCRUB_STEP = value;
+   });
+
+   // See adaptiveWheelScrubEnabled/effectiveWheelScrubStep() above -
+   // requested directly, faster playhead movement per tick when zoomed
+   // further out, slower when zoomed further in, instead of a fixed beat
+   // count regardless of zoom. Off by default (uses the fixed step above
+   // instead) until confirmed on hardware.
+   var adaptiveWheelScrubSetting = host.getPreferences().getBooleanSetting(
+      "Adaptive Wheel Scrub (Scale with Zoom)", "Wheel Options", false);
+   adaptiveWheelScrubSetting.markInterested();
+   adaptiveWheelScrubSetting.addValueObserver(function(value) {
+      adaptiveWheelScrubEnabled = value;
+   });
+
+   var adaptiveWheelScrubPixelsSetting = host.getPreferences().getNumberSetting(
+      "Adaptive Wheel Scrub: Pixels per Tick", "Wheel Options", 10, 200, 5, "px", 50);
+   adaptiveWheelScrubPixelsSetting.markInterested();
+   adaptiveWheelScrubPixelsSetting.addRawValueObserver(function(value) {
+      ADAPTIVE_WHEEL_SCRUB_PIXELS_PER_TICK = value;
    });
 
    // User-configurable wheel-tick threshold for OPTION + Jog Wheel's
@@ -3324,16 +3374,17 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // Default: jump exactly DEFAULT_WHEEL_SCRUB_STEP beats per wheel
+      // Default: jump exactly effectiveWheelScrubStep() beats per wheel
       // message, landing precisely on that grid line - same "compute the
       // exact target position" approach as the bar-jump/loop-shift
       // branches above, rather than a smooth but grid-imprecise scrub.
       // No longer ALT-modified - ALT alone is now claimed above
       // (mouseover-parameter adjust), unreachable here since it always
       // returns first.
-      var currentStepUnit = Math.round(transport.getPosition().get() / DEFAULT_WHEEL_SCRUB_STEP);
+      var wheelScrubStep = effectiveWheelScrubStep();
+      var currentStepUnit = Math.round(transport.getPosition().get() / wheelScrubStep);
       var targetStepUnit = backwards ? currentStepUnit - 1 : currentStepUnit + 1;
-      transport.getPosition().set(Math.max(0, targetStepUnit * DEFAULT_WHEEL_SCRUB_STEP));
+      transport.getPosition().set(Math.max(0, targetStepUnit * wheelScrubStep));
       return;
    }
 

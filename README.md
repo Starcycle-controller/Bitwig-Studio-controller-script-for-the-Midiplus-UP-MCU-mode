@@ -1402,14 +1402,35 @@ returns before the plain-ALT branch is ever reached.
 **Default (no modifier) Jog Wheel** - reported as too slow at the fixed
 one quarter note (beat) it shipped with. **Wheel (No Modifier): Playhead
 Jump per Tick (beats)** (Wheel Options category, default `1`, range
-0.25-8 in quarter-beat steps) now controls how far the playhead jumps
-per wheel message -
-lands exactly on that step's own grid line each time (same
+0.25-32 in quarter-beat steps - widened from the original 0.25-8 per
+direct request for "up to 8 bars") controls how far the playhead jumps
+per wheel message when **Adaptive Wheel Scrub** (below) is off - lands
+exactly on that step's own grid line each time (same
 compute-the-exact-target-position approach the bar-jump/loop-shift
 combos already use, not a smooth but grid-imprecise scrub), so e.g.
 setting it to `4` jumps a full bar (in 4/4) per message instead of a
 single beat, for faster general timeline navigation without reaching
 for Pan Mode/SCRUB.
+
+**Adaptive Wheel Scrub (Scale with Zoom)** (on/off, default OFF) +
+**Adaptive Wheel Scrub: Pixels per Tick** (default `50`, range 10-200) -
+requested directly: a fixed beat count per tick feels tiny when zoomed
+way out (barely visible movement across a wide timeline) and huge when
+zoomed way in (jumping clean past what you're trying to land on). When
+on, `effectiveWheelScrubStep()` computes the step from the **actual live
+zoom level** instead of the fixed setting above -
+`arrangerHorizontalScrollbar.getContentPerPixel()` (see Zoom settings
+above) gives beats-per-pixel at the current zoom, multiplied by
+**Pixels per Tick** to get "how many beats correspond to N screen pixels
+of timeline right now." The wheel then always moves roughly the same
+*visual* distance per tick regardless of zoom - naturally faster in
+absolute time when zoomed out (each pixel covers more beats) and slower
+when zoomed in (each pixel covers fewer beats), without any special-case
+logic - it falls directly out of multiplying by the live zoom value.
+Floored at a 64th note (`Math.max(0.0625, ...)`) so a very tight zoom
+can't produce a zero or negative step. Off by default - an opt-in
+alternative to the fixed step above, not a replacement, until confirmed
+on hardware.
 
 **ALT + Jog Wheel Press** (push the wheel down while holding ALT) runs
 Bitwig's real `select_item_at_cursor` action ("Select item at cursor" -
