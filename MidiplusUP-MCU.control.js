@@ -1731,6 +1731,19 @@ function init() {
    cursorDevice.position().markInterested();
    cursorDevice.isWindowOpen().markInterested();
 
+   // "About" category - no actual effect on the script; the Settings API
+   // has no plain read-only label type, so a getStringSetting() showing
+   // fixed info text as its default value is the standard way controller
+   // scripts surface this kind of thing in the Preferences panel.
+   var requiresInfoSetting = host.getPreferences().getStringSetting(
+      "Requires", "About", 60, "Bitwig 6.x (Controller API 25)");
+   requiresInfoSetting.markInterested();
+
+   var creditsInfoSetting = host.getPreferences().getStringSetting(
+      "Credits", "About", 100,
+      "Based on Mossgraber's DrivenByMoss, ideas from Sternenlicht, built with Claude Code");
+   creditsInfoSetting.markInterested();
+
    // Plugin Mode settings (Controller Preferences panel in Bitwig Studio ->
    // this controller -> "Plugin Mode" category) - which modifier button
    // toggles the expanded device view and cycles the macro bank, whether

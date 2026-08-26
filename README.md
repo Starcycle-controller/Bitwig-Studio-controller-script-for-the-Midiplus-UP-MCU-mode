@@ -5,7 +5,11 @@
 and section 8) - not one of the Logic/Cubase/Live "customized" modes. The
 plastic Ableton Live overlay has been removed, so the buttons show their
 real printed labels.
-**Bitwig API version:** 25
+**Bitwig API version:** 25 (minimum) - intended for **Bitwig Studio 6.x**;
+confirmed unchanged in 6.1.
+**Credits:** based on Mossgraber's DrivenByMoss, with additional ideas
+from a user named Sternenlicht, built with Claude Code. Also shown in
+Controller Preferences -> **About** category.
 **Current script version string:** `3.0.0-native-faders` (shown in Bitwig's
 Settings -> Controllers panel - check this after every reload to confirm
 Bitwig is actually running the current file, not a stale cached copy).
