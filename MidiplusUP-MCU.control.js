@@ -754,12 +754,13 @@ function snapToOriginThresholdForCurrentContext() {
 // formatted value, not a stable type descriptor, so it can't serve as a
 // classifier. nameSuggestsBipolar() below matches the macro's own name
 // (as mapped/labeled on the Remote Controls page) against
-// BIPOLAR_NAME_KEYWORDS (default "pan,tun" - catches "Pan", "Fine Tune",
-// "Detune", "Tuning", etc., case-insensitively, as a substring) - so the
-// override only ever applies to a macro actually named like something
-// bipolar, not to every 0-origin macro on the device.
+// BIPOLAR_NAME_KEYWORDS (default "pan,tun,offset" - catches "Pan", "Fine
+// Tune", "Detune", "Tuning", "Pitch Offset", "Osc Offset", etc.,
+// case-insensitively, as a substring) - so the override only ever applies
+// to a macro actually named like something bipolar, not to every
+// 0-origin macro on the device.
 var assumeCenterForBipolarNamedMacros = true;
-var BIPOLAR_NAME_KEYWORDS = "pan,tun";
+var BIPOLAR_NAME_KEYWORDS = "pan,tun,offset";
 
 function nameSuggestsBipolar(target) {
    var name = target.name().get();
@@ -1857,7 +1858,7 @@ function init() {
    });
 
    var bipolarNameKeywordsSetting = host.getPreferences().getStringSetting(
-      "Bipolar Macro Name Keywords", "Encoders", 100, "pan,tun");
+      "Bipolar Macro Name Keywords", "Encoders", 100, "pan,tun,offset");
    bipolarNameKeywordsSetting.markInterested();
    bipolarNameKeywordsSetting.addValueObserver(function(value) {
       BIPOLAR_NAME_KEYWORDS = value;

@@ -410,7 +410,7 @@ on purpose. Turning this on lets Stepped mode keep working even while
 Automation Write is enabled.
 
 **Assume Center (0.5) for Bipolar-Named Macros** (on/off, default ON) +
-**Bipolar Macro Name Keywords** (text, default `pan,tun`) - `getOrigin()`
+**Bipolar Macro Name Keywords** (text, default `pan,tun,offset`) - `getOrigin()`
 turns out to only be reliably `0.5` for parameters Bitwig itself
 classifies internally as pan-like; a genuinely bipolar plugin parameter
 that Bitwig merely wraps generically - confirmed on hardware with Serum
@@ -440,7 +440,8 @@ formatted value, not a type descriptor, so it can't serve as a
 classifier). `nameSuggestsBipolar()` now matches the macro's own name (as
 labeled on its Remote Controls page slot) against the comma-separated
 **Bipolar Macro Name Keywords** list, case-insensitively, as a substring -
-default `pan,tun` catches "Pan", "Fine Tune", "Detune", "Tuning", etc.
+default `pan,tun,offset` catches "Pan", "Fine Tune", "Detune", "Tuning",
+"Pitch Offset", "Osc Offset", etc.
 `resolveOrigin()` (shared by both features) only applies the `0.5`
 override when the origin is `0` **and** the name matches - so a
 zero-origin macro that isn't named anything like pan/tune keeps its
