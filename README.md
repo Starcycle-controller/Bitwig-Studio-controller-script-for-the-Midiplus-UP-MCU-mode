@@ -59,8 +59,11 @@ Two independent halves, both required:
   `TRLVL` tool device's Gain/Pan, if `isToolVolumeMode` is active - see PAN
   button, note 42).
 - `MODE_SENDS` - faders/encoders control the focused track's sends.
-  3-state toggle via the SEND button (note 41): sends 1-8 -> sends 9-16 ->
-  back to Mixer.
+  Toggle via the SEND button (note 41): sends 1-8 -> sends 9-16 -> back to
+  Mixer by default, or sends 1-8 -> back to Mixer directly if
+  **Send/Return Bank Size** (Mixer settings below) is set to `8` - see
+  there. SHIFT+SEND always jumps straight to sends 9-16 regardless of
+  that setting.
 - `MODE_DEVICE` - encoders **always** control the selected device's 8
   remote control macros, regardless of FLIP. Faders control track volume
   by default and swap to the macros when FLIP is on (press again to
@@ -475,6 +478,19 @@ Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
 **Encoder Snap to Origin** in the Encoders settings above now, alongside
 the other encoder-turn behaviors it was generalized to work with.)
 
+**Send/Return Bank Size** (`8` or `16`, default `16`) - how many sends a
+normal SEND-button (note 41) press cycles through before exiting back to
+Mixer: `16` is the older 3-state cycle (Sends 1-8 -> Sends 9-16 -> Mixer),
+`8` toggles straight between Sends 1-8 and Mixer (one press in, one press
+out) - less paging for anyone who rarely touches more than 8 sends per
+track. Only changes the button's own paging logic (`sendBankConfiguredPages`)
+- the underlying send bank itself is always created at the full 16
+(`MAX_SENDS`, unchanged), so this takes effect live with no reload
+needed, and doesn't cap what's actually reachable: **SHIFT+SEND** always
+jumps straight to Sends 9-16 from anywhere regardless of this setting, so
+choosing `8` for less everyday paging doesn't lock anyone out of the rest
+when they actually need them.
+
 **Select Channel on Fader Touch** (on/off, default ON) - touching one of
 the motorized faders (notes 104-111 for channels 1-8, note 112 for the
 master fader - a separate Note-On/Off the hardware sends independent of
@@ -710,7 +726,7 @@ was still in Live mode, is confirmed still correct.
 | 24-31 | Select 1-8 (double-press folds/unfolds a group track) | `selectInMixer()` / `isGroupExpanded().toggle()` |
 | 32-39 | Encoder push-click | Center pan (Mixer) / reset send (Sends) / reset macro (Device) |
 | 40 | I/O (TRACK on the bare Logic-label printing) | Toggle Track Inspector, or switch to Mixer mode |
-| 41 | SEND | 3-state Sends mode toggle |
+| 41 | SEND | Sends mode toggle, 2 or 3 states depending on Send/Return Bank Size (SHIFT = jump straight to Sends 9-16) |
 | 42 | PAN | Toggle `TRLVL` tool-device Gain/Pan control |
 | 43 | FLIP | Swap faders/encoders - moved here from note 50 after console-log confirmation that the overlay's printed FLIP button actually sends this note, not 50 |
 | 44 | PLUG-INS | Toggle Device mode (first device, opens panel; second press also closes the panel) - confirmed via console testing that the Live overlay's "PLUG-INS" sticker is over this note, not 43 |

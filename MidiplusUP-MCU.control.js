@@ -66,6 +66,21 @@ var currentMode = MODE_MIXER;
 // why this is how leaving MODE_DEVICE closes the plugin window centrally.
 var previousMode = MODE_MIXER;
 var sendBankPage = 0; // 0 = Sends 1-8, 1 = Sends 9-16
+
+// "Send/Return Bank Size" (Controller Preferences -> "Mixer" category) -
+// "8" (one page, SEND toggles straight between Sends 1-8 and Mixer - less
+// paging for anyone who rarely uses more than 8 sends) or "16" (default,
+// today's existing 3-state cycle: 1-8 -> 9-16 -> Mixer). Only changes how
+// many pages a NORMAL SEND press cycles through - the underlying send
+// bank itself is always created at the full 16 (MAX_SENDS, unchanged),
+// so this is purely about the button's own paging behavior and takes
+// effect live with no reload needed. Even at "8", the other 8 sends stay
+// reachable via SHIFT+SEND (see case 41) - jumps straight to Sends 9-16
+// from anywhere, regardless of this setting - so choosing "8" for less
+// everyday paging doesn't lock anyone out of the rest when they actually
+// need them. Default; overridden live from the Controller Preferences
+// panel setting created in init() below.
+var sendBankConfiguredPages = 2;
 var lastAssignmentNote = 40; // last note updateModeLEDs() lit in the Assignment row - see there
 var isFlipped = false;
 
@@ -1673,6 +1688,17 @@ function init() {
       SELECT_ON_TOUCH_DELAY_MS = value;
    });
 
+   // See sendBankConfiguredPages above - how many pages a normal SEND
+   // press cycles through before exiting to Mixer. The underlying send
+   // bank stays sized at MAX_SENDS (16) regardless, so this only affects
+   // the button's own paging and takes effect live.
+   var sendBankSizeSetting = host.getPreferences().getEnumSetting(
+      "Send/Return Bank Size", "Mixer", ["8", "16"], "16");
+   sendBankSizeSetting.markInterested();
+   sendBankSizeSetting.addValueObserver(function(value) {
+      sendBankConfiguredPages = value === "8" ? 1 : 2;
+   });
+
    // Remote Controls (8 Macros for selected device)
    remoteControls = cursorDevice.createCursorRemoteControlsPage(8);
    // discreteValueCount()/discreteValueNames()/getOrigin() need
@@ -2720,8 +2746,24 @@ function handleButtonPressInner(note) {
          }
          break;
 
-      case 41: // SEND -> 3-State Send Mode: 1st Press (Sends 1-8) -> 2nd Press (Sends 9-16) -> 3rd Press (Exit Send Mode)
-         if (currentMode !== MODE_SENDS) {
+      case 41: // SEND -> Cycles through send pages, then exits back to
+               // Mixer - how many pages a normal press cycles through is
+               // configurable (see sendBankConfiguredPages/"Send/Return
+               // Bank Size" above): "8" toggles straight between Sends
+               // 1-8 and Mixer (1 press in, 1 press out), "16" (default)
+               // is the older 3-state cycle (1-8 -> 9-16 -> Mixer).
+               // SHIFT+SEND is an escape hatch regardless of the
+               // configured size - jumps straight into Sends 9-16 from
+               // anywhere, so the extra 8 sends stay reachable even with
+               // the default cycle set to 8.
+         if (isShiftPressed) {
+            shiftUsedForCombo = true;
+            currentMode = MODE_SENDS;
+            sendBankPage = 1;
+            isToolVolumeMode = false;
+            host.showPopupNotification("Mode: Send Faders (Sends 9 - 16)");
+            applyModeChange("SENDS");
+         } else if (currentMode !== MODE_SENDS) {
             // Leaving whatever we were in before - Device mode's open
             // plugin window doesn't belong once Sends takes over. Closing
             // it is handled centrally by applyModeChange() itself now
@@ -2731,7 +2773,7 @@ function handleButtonPressInner(note) {
             isToolVolumeMode = false;
             host.showPopupNotification("Mode: Send Faders (Sends 1 - 8)");
             applyModeChange("SENDS");
-         } else if (sendBankPage === 0) {
+         } else if (sendBankPage === 0 && sendBankConfiguredPages > 1) {
             sendBankPage = 1;
             host.showPopupNotification("Mode: Send Faders (Sends 9 - 16)");
             applyModeChange(null);
