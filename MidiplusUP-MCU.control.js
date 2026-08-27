@@ -1,11 +1,14 @@
 // Midiplus UP Bitwig Controller Script (Standard MCU Mode)
-// Author: Antigravity
+// Author: Sternenlicht / Claude
 // API Version: 25
 //
 // This hardware is run in the Up/Up+'s standard "MCU" control mode (not one
 // of the Logic/Cubase/Live "customized" modes - see the manual, section 3.3
-// and section 8), with the plastic Ableton Live overlay removed, so the
-// buttons show their real printed labels. Note numbers below match the
+// and section 8), with the plastic Ableton Live overlay's top piece
+// removed - the left and right pieces are still in place, so only the
+// buttons under the top piece show their real printed labels; buttons
+// under the left/right pieces still show their Live-overlay labels.
+// Note numbers below match the
 // standard Mackie Control Universal protocol (cross-checked against both
 // Ableton's own shipped "MackieControl" remote script and Jurgen
 // Mossgraber's open-source DrivenByMoss MCU driver - both land on identical
@@ -34,7 +37,7 @@ host.defineController(
    "Midiplus UP (MCU Mode)",
    "3.0.0-native-faders",
    "6f56e9e0-0871-4623-a178-5e82485a3c10",
-   "Antigravity"
+   "Sternenlicht / Claude"
 );
 
 // Define MIDI Ports (1 Input, 1 Output)
@@ -2298,7 +2301,7 @@ function init() {
 
    var creditsInfoSetting = host.getPreferences().getStringSetting(
       "Credits", "About", 100,
-      "Based on Mossgraber's DrivenByMoss, ideas from Sternenlicht, built with Claude Code");
+      "Based on Mossgraber's DrivenByMoss SSL UF8 script, ideas from Sternenlicht, built with Claude Code");
    creditsInfoSetting.markInterested();
 
    // See ZOOM_ARROW_STEP above - how big a jump ZOOM+LEFT/RIGHT's

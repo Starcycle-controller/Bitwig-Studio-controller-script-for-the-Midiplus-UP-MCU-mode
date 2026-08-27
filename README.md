@@ -2,14 +2,17 @@
 
 **File:** `MidiplusUP-MCU.control.js`
 **Hardware mode:** standard **MCU mode** (see the unit's manual, section 3.3
-and section 8) - not one of the Logic/Cubase/Live "customized" modes. The
-plastic Ableton Live overlay has been removed, so the buttons show their
-real printed labels.
+and section 8) - not one of the Logic/Cubase/Live "customized" modes. Only
+the **top piece** of the plastic Ableton Live overlay has been removed -
+the left and right pieces are still in place - so buttons under the top
+piece show their real printed labels, while buttons under the left/right
+pieces still show their Live-overlay labels.
 **Bitwig API version:** 25 (minimum) - intended for **Bitwig Studio 6.x**;
 confirmed unchanged in 6.1.
-**Credits:** based on Mossgraber's DrivenByMoss, with additional ideas
-from a user named Sternenlicht, built with Claude Code. Also shown in
-Controller Preferences -> **About** category.
+**Author:** Sternenlicht / Claude
+**Credits:** based on Mossgraber's DrivenByMoss SSL UF8 script, with
+additional ideas from Sternenlicht, built with Claude Code. Also shown
+in Controller Preferences -> **About** category.
 **Current script version string:** `3.0.0-native-faders` (shown in Bitwig's
 Settings -> Controllers panel - check this after every reload to confirm
 Bitwig is actually running the current file, not a stale cached copy).
@@ -25,9 +28,9 @@ fresh diagnostic dump.
 
 The long-standing "motorized faders don't move" bug is **fixed** (see
 below). What's left for next session is finishing the audit of button
-assignments in the higher note range (74-90) now that the Live overlay is
-off and the real printed labels are different from what the script's
-comments still say - see **Open Items** below.
+assignments in the higher note range (74-90) now that the Live overlay's
+top piece is off and the real printed labels there are different from
+what the script's comments still say - see **Open Items** below.
 
 ## Architecture
 
