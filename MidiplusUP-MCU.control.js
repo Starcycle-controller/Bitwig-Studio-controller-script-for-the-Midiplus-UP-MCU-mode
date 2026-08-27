@@ -967,9 +967,25 @@ var selectChannelOnFaderTouch = true;
 var SELECT_ON_TOUCH_DELAY_MS = 0;
 var selectOnTouchGeneration = 0;
 
+// selectInMixer() alone (the only one ever called here before) only sets
+// Mixer-panel selection - confirmed on hardware that a track selected
+// this way shows no visible change in the Arranger at all (no "white
+// circle" around the track header, unlike a real mouse click there) and
+// doesn't establish whatever anchor select_item_at_cursor/"Select item
+// above"/"Select item below" need to navigate clips. Channel.select()
+// is deprecated specifically in favor of two separate calls -
+// selectInMixer() and selectInEditor() ("Selects the device chain in
+// Bitwig Studio [Arranger/editors]") - so selectInEditor() is very
+// likely the missing piece: added alongside selectInMixer() at every
+// track-selection call site in this script (here, selectBankSlot() and
+// the SELECT button handler below) to also set the Arranger's own
+// selection/focus state a real mouse click would. Not yet confirmed on
+// hardware whether this actually produces the white circle or unblocks
+// the wheel-press clip-navigation experiments.
 function scheduleSelectChannelOnTouch(track) {
    if (SELECT_ON_TOUCH_DELAY_MS <= 0) {
       track.selectInMixer();
+      track.selectInEditor();
       cursorTrack.selectChannel(track);
       return;
    }
@@ -980,6 +996,7 @@ function scheduleSelectChannelOnTouch(track) {
          return;
       }
       track.selectInMixer();
+      track.selectInEditor();
       cursorTrack.selectChannel(track);
    }, SELECT_ON_TOUCH_DELAY_MS);
 }
@@ -1867,6 +1884,7 @@ function selectBankSlot(index) {
    }
    var track = activeTrackAt(index);
    track.selectInMixer();
+   track.selectInEditor();
    cursorTrack.selectChannel(track);
 }
 
@@ -4303,6 +4321,7 @@ function handleButtonPressInner(note) {
          lastSelectPressTime[selIdx] = 0; // don't let a 3rd quick press toggle again
       } else {
          selectedTrack.selectInMixer();
+         selectedTrack.selectInEditor();
          cursorTrack.selectChannel(selectedTrack);
       }
       return;

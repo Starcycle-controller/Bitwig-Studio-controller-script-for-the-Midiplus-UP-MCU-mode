@@ -1723,6 +1723,27 @@ ceiling (no direct clip object model - see "Bank scrolling selects a
 track" and the hidden-track/Show-Hide-Chains dead ends elsewhere in this
 document for the same underlying limitation).
 
+**Likely root cause found and fixed**: reported that clicking a track's
+header with the mouse produces a visible "white circle" indicator around
+it, and that selecting a track from the hardware (SELECT button/bank
+scroll) leaves the track selected but shows no white circle at all.
+`Channel.select()` is deprecated with an explicit note: "Use
+`selectInEditor()` or `Channel.selectInMixer()` instead" - confirming
+these are two genuinely separate selection concepts (`selectInEditor()`:
+"Selects the device chain in Bitwig Studio [Arranger/editors]" vs.
+`selectInMixer()`: "...in the Bitwig Studio mixer"). This script had
+only ever called `selectInMixer()` at every track-selection call site
+(fader touch, bank scroll's `selectBankSlot()`, the SELECT button
+handler) - very likely why the white circle never appeared and why
+`select_item_at_cursor`/`Select item above`/`Select item below` never
+had any anchor to work from, since those probably read the Arranger's
+own (editor) selection state, not the Mixer's. `track.selectInEditor()`
+now runs alongside `selectInMixer()` at all 4 of those call sites. Not
+yet confirmed on hardware whether this actually produces the white
+circle or unblocks the wheel-press clip-navigation experiments above -
+if it does, that's the whole "need to click with the mouse to target a
+clip" problem solved in one line per call site.
+
 ### Jog-wheel "mode" buttons (CURSOR / SCROLL / ZOOM / MASTER / MARKER /
 NUDGE / BANK / CHANNEL, per the manual's "Multi-Purpose Jog Wheel Section")
 
