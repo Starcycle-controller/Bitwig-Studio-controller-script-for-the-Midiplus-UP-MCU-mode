@@ -3940,7 +3940,17 @@ function onMidi(status, data1, data2) {
    if (msgType === 0x90 || msgType === 0x80) {
       var isPressed = (msgType === 0x90 && data2 > 0);
       if (isPressed) {
-         println("RAW Note-On received - Note: " + data1); // DEBUG: catches modifier buttons too
+         // DEBUG: catches modifier buttons too. Includes live modifier/
+         // toggle state so a note that varies by what's currently held
+         // (reported: the jog wheel's own click reportedly sends
+         // different notes depending on modifier state, similar to the
+         // already-documented CHANNEL PREV/NEXT wheel-assignment quirk)
+         // can be fully characterized from one round of testing instead
+         // of many back-and-forth single-note reports.
+         println("RAW Note-On received - Note: " + data1 +
+            " [SHIFT=" + isShiftPressed + " OPTION=" + isOptionPressed +
+            " CTRL=" + isControlPressed + " ALT=" + isAltPressed +
+            " ZOOM=" + isZoomToggled + " SCRUB=" + isScrubToggled + "]");
       }
 
       // SHIFT Button (Note 70) - held modifier for other actions (fine
