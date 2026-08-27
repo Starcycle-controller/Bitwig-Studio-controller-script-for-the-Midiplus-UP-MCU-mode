@@ -1555,35 +1555,42 @@ request and covers a different gesture) - only the three CTRL-combo
 settings. Not yet tested on hardware.
 
 **CTRL + Jog Wheel** (outside `MODE_DEVICE`, where it still steps devices
-as before) selects the next/previous arranger clip/item **on the same
-track** instead of its original job, nudging the project tempo - via
-Bitwig's real "Select item to left"/"Select item to right" actions
-(confirmed ids from `bitwig-actions-reference.txt`), throttled once
-every **CTRL+Wheel: Ticks to Move to Next/Prev Clip or Track** (default
-4) wheel messages - its own dedicated setting, no longer shared with
-device-stepping's `PLUGIN_DEVICE_STEP_MESSAGES`. Repurposed per request -
-**tempo nudging no longer has a jog-wheel binding** (CTRL+ALT no longer
-means "fine tempo nudge" either, since there's no longer a continuous
-nudge to make fine - CTRL+ALT+wheel is now its own separate combo, see
-above, no longer swallowed into plain CTRL's behavior).
+as before) selects the next/previous arranger clip/item instead of its
+original job, nudging the project tempo - via Bitwig's real "Select Next
+Item"/"Select Previous Item" actions (ids `"Select next item"`/`"Select
+previous item"`, confirmed from `bitwig-actions-reference.txt`),
+throttled once every **CTRL+Wheel: Ticks to Move to Next/Prev Clip or
+Track** (default 4) wheel messages - its own dedicated setting, no longer
+shared with device-stepping's `PLUGIN_DEVICE_STEP_MESSAGES`. Repurposed
+per request - **tempo nudging no longer has a jog-wheel binding**
+(CTRL+ALT no longer means "fine tempo nudge" either, since there's no
+longer a continuous nudge to make fine - CTRL+ALT+wheel is now its own
+separate combo, see above, no longer swallowed into plain CTRL's
+behavior).
 
-Originally used "Select next item"/"Select previous item" instead -
-**confirmed working on hardware** at the time, stepping between arranger
-clips when one was selected, and falling back to stepping between
-tracks (above/below) once you ran out of items in that direction, which
-was reported back then as a liked side effect ("gives freedom to move
-around the arrangement"). Revisited after the `selectInEditor()` fix
-(see "Likely root cause found and fixed" above) gave the Arranger a
-genuine, persistent selection anchor for the first time - with that
-anchor now reliably in place, the track-crossing fallback started firing
-far more often than before (previously it mostly only showed up when
-nothing was selected at all) and was reported as actively breaking the
-expected "just step along the current track" gesture rather than a
-welcome occasional side effect. "Select item to left"/"Select item to
-right" mirror the LEFT/RIGHT arrow-key behavior specifically, which
-should be same-track only, unlike "Select next/previous item"'s more
-generic list-style stepping - not yet re-confirmed on hardware whether
-they stay confined to the current track the way hoped.
+**Confirmed working on hardware** - steps between arranger clips when one
+is selected; falls back to stepping between tracks (above/below) once
+you run out of items in that direction, which is real Bitwig behavior
+from the same action, not something this script special-cases. Whether
+that fallback is welcome has flipped over the course of this session:
+originally reported as a liked side effect ("gives freedom to move
+around the arrangement") when it mostly only showed up with nothing
+selected; then, once the `selectInEditor()` fix (see "Likely root cause
+found and fixed" above) gave the Arranger a genuine, persistent
+selection anchor for the first time, the same fallback started firing
+far more often and was reported as actively breaking the expected "just
+step along the current track" gesture. Briefly swapped to "Select item
+to left"/"Select item to right" (mirroring LEFT/RIGHT arrow-key
+navigation specifically, hoping for same-track-only stepping), then
+**reverted after confirming on hardware that those two do nothing at
+all**, even with a clip already selected - same non-functional pattern
+already seen with `select_item_at_cursor` and `Select item above`/`Select
+item below` (all real, named Bitwig actions that appear to do nothing
+when invoked via the Controller API, regardless of exact wording).
+"Select next item"/"Select previous item" is the only action in this
+whole family confirmed to actually change the selection this way, so
+it's back in place despite its own quirk - a working action with an
+occasional side effect beats a "correct" one that does nothing.
 
 Note this is a different thing from CHANNEL PREV/NEXT (notes 48/49) + CTRL,
 which still independently nudges
