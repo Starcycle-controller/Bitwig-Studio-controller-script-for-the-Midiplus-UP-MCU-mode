@@ -1695,19 +1695,33 @@ SHIFT isn't also held. Not yet tested on hardware.
 
 **SHIFT+CTRL + Jog Wheel Press** was tried as a "select whichever clip is
 closest to the playhead" gesture, reusing the same `select_item_at_cursor`
-action as ALT + Jog Wheel Press above - was previously **"confirmed on
-hardware NOT to do that"**, concluding "cursor" in that action's name
-must mean generic UI keyboard-focus rather than the arranger edit
-cursor/playhead. **That conclusion is now suspect** - see "Jog-wheel
-'mode' buttons" above: this combo was bound to note 101, which used to
-be intercepted and swallowed by a since-removed handler before ever
-reaching this code, so the original test's press event likely never
-actually invoked `select_item_at_cursor` at all. Worth re-testing now
-that the interceptor is gone and the binding reaches its handler
-correctly - if it turns out to genuinely select the item at the
-playhead this time, that directly solves the long-standing "need to
-click with the mouse to target a clip for editing" problem, without
-needing any further mouse-free arranger-selection API to be found.
+action as ALT + Jog Wheel Press above - re-tested after fixing the note
+87/101 mixup, and **confirmed for real this time**: it does NOT select
+the item at the playhead on whatever track is currently active. Test
+performed: created a clip on one track, switched to a different track
+(also containing a clip), then pressed ALT+wheel and SHIFT+CTRL+wheel -
+neither changed the selection at all; the original clip (on the track
+switched away from) stayed selected. So "cursor" in that action's name
+really is a generic UI keyboard-focus position, not the arranger edit
+cursor/playhead - `select_item_at_cursor` cannot do what was hoped here.
+
+**EXPERIMENTAL replacement, not yet confirmed**: SHIFT+CTRL + press now
+calls the real `Select item below` action instead, and a new OPTION +
+press calls `Select item above` (both confirmed real action ids from
+`bitwig-actions-reference.txt`'s Selection category). In Bitwig's own
+Arranger, arrow-key UP/DOWN moves the selected item to the adjacent
+track at the same horizontal position - the hope is that these two
+actions do the same thing via a controller-invoked action, letting clip
+selection "follow" a track switch (SELECT button/BANK/CHANNEL) without
+ever touching the mouse. Test procedure: switch to a track with a clip
+on it, then press SHIFT+CTRL+wheel (below) or OPTION+wheel (above) and
+see whether that track's clip actually gets selected. If either
+direction works, that directly solves the long-standing "need to click
+with the mouse to target a clip for editing" problem; if neither does,
+this is likely another case of the Controller API's Arranger-clip
+ceiling (no direct clip object model - see "Bank scrolling selects a
+track" and the hidden-track/Show-Hide-Chains dead ends elsewhere in this
+document for the same underlying limitation).
 
 ### Jog-wheel "mode" buttons (CURSOR / SCROLL / ZOOM / MASTER / MARKER /
 NUDGE / BANK / CHANNEL, per the manual's "Multi-Purpose Jog Wheel Section")
@@ -1748,13 +1762,13 @@ dead code (nothing on this hardware can set it - the real SCROLL/SCRUB
 button sends no MIDI at all) but left in place rather than ripped out,
 in case a real trigger for it turns up later.
 
-**Re-open**: the "SHIFT+CTRL + Jog Wheel Press ... confirmed on hardware
-NOT to [select the item at the playhead]" conclusion further below was
-reached while this same bug was still active - that test's press event
-would have been swallowed by the note-101 interceptor before ever
-reaching `select_item_at_cursor`, the same way ALT+press and Scene-mode
-launch were. That "confirmed" result is therefore unreliable and worth
-re-testing now that the binding is on the correct note.
+**Re-tested**: the original "SHIFT+CTRL + Jog Wheel Press ... confirmed
+on hardware NOT to [select the item at the playhead]" conclusion further
+below was reached while this same bug was still active, so it was
+worth re-testing once the binding reached its handler correctly. Result:
+**re-confirmed negative** - see that section for the actual test
+performed and the experimental `Select item below`/`Select item above`
+replacement now in place instead.
 
 ## Open items for next session
 

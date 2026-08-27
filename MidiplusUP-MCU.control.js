@@ -4049,22 +4049,36 @@ function onMidi(status, data1, data2) {
             }
             safeInvokeAction("select_item_at_cursor", "Select item at cursor");
          } else if (isPressed && isControlPressed && isShiftPressed) {
-            // SHIFT+CTRL + press: select whichever clip/item is closest to
-            // the playhead - requested as a one-shot "jump to it" gesture
-            // (unlike CTRL alone's step-through-sequentially turn combo
-            // above), so bound to the press, not the turn. Reuses the same
-            // real "select_item_at_cursor" action as the ALT combo above -
-            // NOT confirmed whether "cursor" here means the arranger edit
-            // cursor/playhead (what's wanted) or a generic UI focus
-            // position (what it's used for above, activating whatever
-            // element currently has keyboard focus) - both readings are
-            // plausible from the action's name alone; needs a hardware
-            // test to know which. If it turns out to just repeat the
-            // ALT-press behavior rather than actually jumping to the
-            // playhead, that's the answer.
+            // SHIFT+CTRL + press - EXPERIMENTAL, testing whether clip
+            // selection can "follow" a track switch without a mouse.
+            // Previously called select_item_at_cursor here too, same as
+            // the ALT combo above - confirmed on hardware (after fixing
+            // the note 87/101 mixup) that it does NOT select the item at
+            // the playhead on whatever track is now current; it just
+            // repeats whatever was already selected before, regardless of
+            // which track you'd switched to. So "cursor" in that action's
+            // name is a generic UI focus position, not the arranger edit
+            // cursor/playhead - that avenue is closed. Testing "Select
+            // item below" here instead (real Bitwig action, confirmed
+            // from bitwig-actions-reference.txt's Selection category) -
+            // in Bitwig's own Arranger, arrow-key UP/DOWN moves the
+            // selected item to the adjacent track at the same horizontal
+            // position, so this might do the same via a controller
+            // action: switch tracks (SELECT button/BANK/CHANNEL), then
+            // press this to see if the new track's clip gets selected.
+            // OPTION+press below tests the opposite direction
+            // ("Select item above") the same way. Not yet confirmed
+            // which direction (if either) actually follows a track
+            // switch correctly - report back after testing both.
             ctrlUsedForCombo = true;
             shiftUsedForCombo = true;
-            safeInvokeAction("select_item_at_cursor", "Select item at cursor");
+            safeInvokeAction("Select item below", "Select item below");
+         } else if (isPressed && isOptionPressed) {
+            // OPTION + press - EXPERIMENTAL, see the SHIFT+CTRL branch
+            // above for context. Tests the opposite direction ("Select
+            // item above").
+            optionUsedForCombo = true;
+            safeInvokeAction("Select item above", "Select item above");
          } else if (isPressed && currentMode === MODE_SCENE) {
             sceneBank.getScene(sceneCursorIndex).launch();
             host.showPopupNotification("Launch Scene " + (sceneCursorIndex + 1));
