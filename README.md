@@ -1555,22 +1555,36 @@ request and covers a different gesture) - only the three CTRL-combo
 settings. Not yet tested on hardware.
 
 **CTRL + Jog Wheel** (outside `MODE_DEVICE`, where it still steps devices
-as before) now selects the next/previous arranger clip/item instead of
-its previous job, nudging the project tempo - via Bitwig's real "Select
-Next Item"/"Select Previous Item" actions (ids `"Select next item"`/
-`"Select previous item"`, confirmed from `bitwig-actions-reference.txt`),
-throttled once every **CTRL+Wheel: Ticks to Move to Next/Prev Clip or
-Track** (default 4) wheel messages - its own dedicated setting, no longer shared with
+as before) selects the next/previous arranger clip/item **on the same
+track** instead of its original job, nudging the project tempo - via
+Bitwig's real "Select item to left"/"Select item to right" actions
+(confirmed ids from `bitwig-actions-reference.txt`), throttled once
+every **CTRL+Wheel: Ticks to Move to Next/Prev Clip or Track** (default
+4) wheel messages - its own dedicated setting, no longer shared with
 device-stepping's `PLUGIN_DEVICE_STEP_MESSAGES`. Repurposed per request -
 **tempo nudging no longer has a jog-wheel binding** (CTRL+ALT no longer
 means "fine tempo nudge" either, since there's no longer a continuous
 nudge to make fine - CTRL+ALT+wheel is now its own separate combo, see
-above, no longer swallowed into plain CTRL's behavior). **Confirmed
-working on hardware** - steps between arranger clips
-when one is selected; falls back to stepping between tracks (above/
-below) when nothing's selected, which is real Bitwig behavior from the
-same action, not something this script special-cases, and confirmed to
-be a liked side effect ("gives freedom to move around the arrangement").
+above, no longer swallowed into plain CTRL's behavior).
+
+Originally used "Select next item"/"Select previous item" instead -
+**confirmed working on hardware** at the time, stepping between arranger
+clips when one was selected, and falling back to stepping between
+tracks (above/below) once you ran out of items in that direction, which
+was reported back then as a liked side effect ("gives freedom to move
+around the arrangement"). Revisited after the `selectInEditor()` fix
+(see "Likely root cause found and fixed" above) gave the Arranger a
+genuine, persistent selection anchor for the first time - with that
+anchor now reliably in place, the track-crossing fallback started firing
+far more often than before (previously it mostly only showed up when
+nothing was selected at all) and was reported as actively breaking the
+expected "just step along the current track" gesture rather than a
+welcome occasional side effect. "Select item to left"/"Select item to
+right" mirror the LEFT/RIGHT arrow-key behavior specifically, which
+should be same-track only, unlike "Select next/previous item"'s more
+generic list-style stepping - not yet re-confirmed on hardware whether
+they stay confined to the current track the way hoped.
+
 Note this is a different thing from CHANNEL PREV/NEXT (notes 48/49) + CTRL,
 which still independently nudges
 tempo when this hardware's own CHANNEL wheel-assignment mode is active
@@ -1765,6 +1779,20 @@ yet confirmed on hardware whether this actually produces the white
 circle or unblocks the wheel-press clip-navigation experiments above -
 if it does, that's the whole "need to click with the mouse to target a
 clip" problem solved in one line per call site.
+
+**Partial result so far**: SHIFT+CTRL + press (`Select item below`) does
+visibly fire - its popup shows - but doesn't change the actual selection
+at all. Whether the white circle itself now appears wasn't separately
+confirmed yet. Meanwhile the plain CTRL+wheel *turn* combo (see "CTRL +
+Jog Wheel" below) reacted very differently to the same `selectInEditor()`
+change - it started reliably jumping to the track above/below once it
+ran out of items on the current track, which was unwanted there and got
+switched to "Select item to left/right" instead. So the two press
+actions (`above`/`below`) and the turn actions ( `to left`/`to right`)
+don't seem to behave symmetrically - worth re-testing `Select item
+above`/`Select item below` again now that CTRL+wheel's own combo has
+changed, in case there's a similar same-track-vs-cross-track distinction
+at play for the vertical actions too.
 
 ### Jog-wheel "mode" buttons (CURSOR / SCROLL / ZOOM / MASTER / MARKER /
 NUDGE / BANK / CHANNEL, per the manual's "Multi-Purpose Jog Wheel Section")

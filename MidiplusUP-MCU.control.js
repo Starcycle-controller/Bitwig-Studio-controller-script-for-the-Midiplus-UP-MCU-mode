@@ -3806,19 +3806,29 @@ function onMidi(status, data1, data2) {
          }
 
          // CTRL + Jog Wheel (outside Device mode): select the next/
-         // previous arranger clip/item, via Bitwig's real "Select Next
-         // Item"/"Select Previous Item" actions (ids "Select next item"/
-         // "Select previous item", confirmed from
-         // bitwig-actions-reference.txt) - once every
+         // previous arranger clip/item on the SAME track, via Bitwig's
+         // real "Select item to left"/"Select item to right" actions
+         // (confirmed ids from bitwig-actions-reference.txt) - once every
          // CLIP_SELECT_STEP_MESSAGES messages (its own dedicated,
-         // independently configurable threshold - see above). Replaces
-         // the previous tempo-nudge behavior per request; use SHIFT+ALT +
-         // Jog Wheel Press/Turn (see below) to select and then move a
-         // clip instead.
+         // independently configurable threshold - see above). Moved here
+         // from "Select next item"/"Select previous item" - reported on
+         // hardware (after the selectInEditor() fix gave those a genuine
+         // Arranger anchor to work from for the first time) that they
+         // don't stay confined to the current track: once there's no
+         // further item in one direction on the current track, they jump
+         // to the next/previous track's item instead of stopping, showing
+         // up as "CTRL+wheel selects the track above/below" - unwanted for
+         // this gesture. "Select item to left/right" mirrors the LEFT/
+         // RIGHT arrow-key behavior specifically, which should be
+         // same-track only, unlike "Select next/previous item"'s more
+         // generic (and apparently track-crossing) list-style stepping.
+         // Replaces the previous tempo-nudge behavior per request; use
+         // SHIFT+ALT + Jog Wheel Press/Turn (see below) to select and then
+         // move a clip instead.
          clipSelectStepAccumulator++;
          if (clipSelectStepAccumulator >= CLIP_SELECT_STEP_MESSAGES) {
             clipSelectStepAccumulator = 0;
-            safeInvokeAction(backwards ? "Select previous item" : "Select next item", null);
+            safeInvokeAction(backwards ? "Select item to left" : "Select item to right", null);
          }
          return;
       }
