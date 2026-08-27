@@ -143,11 +143,17 @@ function wasUsedForCombo(note) {
 // long press, whether that also opens the plugin window (jumping into
 // Device mode from anywhere, not just toggling the view while already
 // there), and which modifier button cycles the selected device's macro
-// bank. -1 means "None" (disabled). Defaults: CTRL long-press for
-// expanded view (also opening the plugin window), ALT tap for macro
-// bank.
+// bank. -1 means "None" (disabled). Defaults: Expanded Device View off
+// (requested directly - CTRL is the most ergonomic modifier and is
+// already heavily used for wheel combos; a long-press mode-switch/window
+// -open living on the same button was reported as confusing and prone
+// to firing unintentionally while just trying to use CTRL+wheel. F1-F8
+// already covers device select + open-window, so nothing is lost by
+// disabling this by default - still available on any modifier via the
+// "Expanded Device View Button" dropdown for anyone who wants it), ALT
+// tap for macro bank.
 var MODIFIER_NAME_TO_NOTE = { "SHIFT": 70, "OPTION": 71, "CTRL": 72, "ALT": 73, "None": -1 };
-var EXPANDED_VIEW_BUTTON = 72;
+var EXPANDED_VIEW_BUTTON = -1;
 var EXPANDED_VIEW_INSTANT = false; // false = long press, true = instant tap
 // Whether the Expanded Device View action also opens (and, on the next
 // press, closes) the plugin window - so the button both expands AND shows
@@ -2312,10 +2318,11 @@ function init() {
    // observers fire immediately with the initial value and again any time
    // the user edits it live, so the corresponding globals (see
    // EXPANDED_VIEW_BUTTON etc. above) always reflect the current setting
-   // without needing a restart. Defaults match this session's original
-   // hardcoded behavior.
+   // without needing a restart. Default is now "None" (off) - see
+   // EXPANDED_VIEW_BUTTON's comment above for why; still fully available
+   // by picking any modifier here.
    var expandedViewButtonSetting = host.getPreferences().getEnumSetting(
-      "Expanded Device View Button", "Plugin Mode", ["CTRL", "ALT", "OPTION", "SHIFT", "None"], "CTRL");
+      "Expanded Device View Button", "Plugin Mode", ["CTRL", "ALT", "OPTION", "SHIFT", "None"], "None");
    expandedViewButtonSetting.markInterested();
    expandedViewButtonSetting.addValueObserver(function (value) {
       EXPANDED_VIEW_BUTTON = MODIFIER_NAME_TO_NOTE[value];
@@ -4008,9 +4015,14 @@ function onMidi(status, data1, data2) {
 
       // CTRL Button (Note 72) - held modifier for other combos (tempo
       // nudge, CTRL+PUNCH IN/OUT, CTRL+jog device navigation); standalone
-      // tap can be assigned to a Plugin Mode action - see
-      // handleModifierTap(). Defaults to toggling the expanded device
-      // view on a long press, per the Plugin Mode settings in init().
+      // tap can optionally be assigned to a Plugin Mode action (expanded
+      // device view) via the "Expanded Device View Button" Controller
+      // Preferences dropdown - see handleModifierTap(). Off by default
+      // now (requested directly - CTRL is the most ergonomic modifier and
+      // already heavily used for wheel combos; F1-F8 already covers
+      // device select + open-window, so a long-press mode-switch on the
+      // same button was reported as confusing and prone to firing
+      // unintentionally while just trying to use CTRL+wheel).
       if (data1 === 72) {
          isControlPressed = isPressed;
          midiOut.sendMidi(0x90, 72, isControlPressed ? 127 : 0);

@@ -136,7 +136,14 @@ control each button's *standalone tap* action, i.e. what happens if you
 press and release one without using it to modify anything else:
 
 - **Expanded Device View Button** (CTRL / ALT / OPTION / SHIFT / None,
-  default CTRL) - which button's tap toggles `cursorDevice.isExpanded()`.
+  default **None** - was CTRL, changed per direct feedback) - which
+  button's tap toggles `cursorDevice.isExpanded()`. Reported as confusing
+  on CTRL specifically: CTRL is the most ergonomic modifier and already
+  heavily used for jog-wheel combos, so a long-press mode-switch/window-
+  open living on the same button could fire unintentionally while just
+  trying to use CTRL+wheel, and F1-F8 (direct device select + open
+  window) already covers the same need without that risk. Off by
+  default now; still fully available by picking any modifier here.
 - **Expanded Device View Trigger** (Long Press / Instant Tap, default Long
   Press) - whether that tap needs to be held for the duration below, or
   fires immediately on release.
