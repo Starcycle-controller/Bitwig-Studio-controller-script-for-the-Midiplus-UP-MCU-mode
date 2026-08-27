@@ -1577,6 +1577,18 @@ tempo when this hardware's own CHANNEL wheel-assignment mode is active
 (see case 48/49) - untouched, since that's a separate firmware-level
 input path, not the plain jog wheel.
 
+**OPTION + Jog Wheel** halves (turn left) or doubles (turn right) the
+arranger loop length, accumulated across messages via
+`loopScaleAccumulator`/**OPTION+Wheel: Ticks to Halve/Double Loop
+Length** (see settings above) so it doesn't fire on every raw wheel
+message. Capped at 256 bars on the doubling side so repeated doubling
+can't run away forever; floored at **1 whole bar** (not a fixed tiny
+note value like a 64th note, which is what it used to floor at) on the
+halving side - found and fixed directly: starting from a non-power-of-2
+loop length (e.g. 3 bars) used to keep halving straight past whole-bar
+lengths into awkward fractional-bar ones instead of stopping cleanly at
+1 bar.
+
 **ALT + Jog Wheel** adjusts whatever parameter was last clicked in
 Bitwig's own GUI - click any knob/slider/fader once in Bitwig
 (`host.createLastClickedParameter()`, `lastClickedParamValue.inc(rawStep,
