@@ -1568,10 +1568,13 @@ longer a continuous nudge to make fine - CTRL+ALT+wheel is now its own
 separate combo, see above, no longer swallowed into plain CTRL's
 behavior).
 
-**Confirmed working on hardware** - steps between arranger clips when one
-is selected; falls back to stepping between tracks (above/below) once
-you run out of items in that direction, which is real Bitwig behavior
-from the same action, not something this script special-cases. Whether
+**Confirmed working on hardware, current behavior (post-revert)** - with
+a clip selected, steps between clips on that track; with nothing
+selected, steps track-to-track (above/below) instead - and that
+track-to-track stepping also walks through any expanded automation
+lanes on the way, not just track rows, since it's real Bitwig Arranger
+navigation from the same action, not something this script special-cases
+or filters. Whether
 that fallback is welcome has flipped over the course of this session:
 originally reported as a liked side effect ("gives freedom to move
 around the arrangement") when it mostly only showed up with nothing
