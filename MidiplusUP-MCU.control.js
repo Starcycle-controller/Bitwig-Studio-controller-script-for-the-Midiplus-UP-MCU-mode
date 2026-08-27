@@ -114,6 +114,16 @@ var isAltPressed = false;     // Note 73
 var lastClickedParam = null;
 var lastClickedParamValue = null;
 
+// OPTION + Jog Wheel Push (note 101) toggles this: LastClickedParameter's
+// own smartToggleLock() locks ALT+wheel onto whatever parameter the mouse
+// is currently hovering, without needing an exact click - and if already
+// locked and the mouse has moved to a different parameter, re-locks to
+// that one instead of unlocking (Bitwig's own "smart" behavior, see its
+// Javadoc). isLocked() mirrors that locked/unlocked state so the popup
+// notification below can report it. See the wheel-push handler in
+// onMidi() and its init() setup.
+var lastClickedParamLocked = null;
+
 // Each of the 4 modifier buttons above also tracks whether it was "used"
 // to modify another action (a jog-wheel combo, mostly) while held - see
 // setUsedForCombo()/wasUsedForCombo() below. This gates the *standalone
@@ -2883,6 +2893,11 @@ function init() {
    lastClickedParam = host.createLastClickedParameter("lastClickedParam", "Mouseover Parameter");
    lastClickedParamValue = lastClickedParam.parameter();
    lastClickedParamValue.name().markInterested();
+   lastClickedParamLocked = lastClickedParam.isLocked();
+   lastClickedParamLocked.markInterested();
+   lastClickedParamLocked.addValueObserver(function (locked) {
+      host.showPopupNotification((locked ? "Locked to: " : "Unlocked: ") + lastClickedParamValue.name().get());
+   });
 
    // Transport & Application Controls
    transport = host.createTransport();
@@ -3732,7 +3747,7 @@ function onMidi(status, data1, data2) {
          // cursor within the 8-scene bank window (see sceneCursorIndex
          // above) - takes priority over every other modifier combo below,
          // since none of them make sense while browsing scenes. Launching
-         // is done separately by note 87's press handler.
+         // is done separately by note 101's press handler.
          sceneStepAccumulator += Math.abs(rawStep);
          if (sceneStepAccumulator >= SCENE_STEP_MESSAGES) {
             sceneStepAccumulator -= SCENE_STEP_MESSAGES;
@@ -3874,7 +3889,7 @@ function onMidi(status, data1, data2) {
          // ALT's old role of halving the default scrub step (see the
          // default branch below, which no longer checks ALT) - was
          // originally SHIFT+OPTION, moved to plain ALT per request. See
-         // also note 87's press handler for ALT+wheel-press ("Select item
+         // also note 101's press handler for ALT+wheel-press ("Select item
          // at cursor").
          altUsedForCombo = true;
          lastClickedParamValue.inc(rawStep, 128);
@@ -4101,37 +4116,23 @@ function onMidi(status, data1, data2) {
                shiftUsedForCombo = true;
             }
             safeInvokeAction("select_item_at_cursor", "Select item at cursor");
-         } else if (isPressed && isControlPressed && isShiftPressed) {
-            // SHIFT+CTRL + press - EXPERIMENTAL, testing whether clip
-            // selection can "follow" a track switch without a mouse.
-            // Previously called select_item_at_cursor here too, same as
-            // the ALT combo above - confirmed on hardware (after fixing
-            // the note 87/101 mixup) that it does NOT select the item at
-            // the playhead on whatever track is now current; it just
-            // repeats whatever was already selected before, regardless of
-            // which track you'd switched to. So "cursor" in that action's
-            // name is a generic UI focus position, not the arranger edit
-            // cursor/playhead - that avenue is closed. Testing "Select
-            // item below" here instead (real Bitwig action, confirmed
-            // from bitwig-actions-reference.txt's Selection category) -
-            // in Bitwig's own Arranger, arrow-key UP/DOWN moves the
-            // selected item to the adjacent track at the same horizontal
-            // position, so this might do the same via a controller
-            // action: switch tracks (SELECT button/BANK/CHANNEL), then
-            // press this to see if the new track's clip gets selected.
-            // OPTION+press below tests the opposite direction
-            // ("Select item above") the same way. Not yet confirmed
-            // which direction (if either) actually follows a track
-            // switch correctly - report back after testing both.
-            ctrlUsedForCombo = true;
-            shiftUsedForCombo = true;
-            safeInvokeAction("Select item below", "Select item below");
          } else if (isPressed && isOptionPressed) {
-            // OPTION + press - EXPERIMENTAL, see the SHIFT+CTRL branch
-            // above for context. Tests the opposite direction ("Select
-            // item above").
+            // OPTION + press: toggle the ALT+wheel "lock" via
+            // LastClickedParameter.smartToggleLock() (see
+            // lastClickedParamLocked above) - locks ALT+wheel onto
+            // whatever parameter the mouse is currently hovering, no
+            // exact click required, and if already locked and the mouse
+            // has since moved to a different parameter, re-locks to that
+            // one instead of unlocking (Bitwig's own "smart" behavior).
+            // Replaces an earlier SHIFT+CTRL/OPTION experiment that tried
+            // "Select item below"/"Select item above" here to make clip
+            // selection follow a track switch - confirmed on hardware
+            // that neither of those two actions does anything at all
+            // (same dead end as select_item_at_cursor and "Select item
+            // to left/right" - see CTRL+wheel above), so both bindings
+            // were retired in favor of this.
             optionUsedForCombo = true;
-            safeInvokeAction("Select item above", "Select item above");
+            lastClickedParam.smartToggleLock();
          } else if (isPressed && currentMode === MODE_SCENE) {
             sceneBank.getScene(sceneCursorIndex).launch();
             host.showPopupNotification("Launch Scene " + (sceneCursorIndex + 1));

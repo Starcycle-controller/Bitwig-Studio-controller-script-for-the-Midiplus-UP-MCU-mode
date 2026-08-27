@@ -1751,23 +1751,40 @@ switched away from) stayed selected. So "cursor" in that action's name
 really is a generic UI keyboard-focus position, not the arranger edit
 cursor/playhead - `select_item_at_cursor` cannot do what was hoped here.
 
-**EXPERIMENTAL replacement, not yet confirmed**: SHIFT+CTRL + press now
-calls the real `Select item below` action instead, and a new OPTION +
-press calls `Select item above` (both confirmed real action ids from
-`bitwig-actions-reference.txt`'s Selection category). In Bitwig's own
-Arranger, arrow-key UP/DOWN moves the selected item to the adjacent
-track at the same horizontal position - the hope is that these two
-actions do the same thing via a controller-invoked action, letting clip
-selection "follow" a track switch (SELECT button/BANK/CHANNEL) without
-ever touching the mouse. Test procedure: switch to a track with a clip
-on it, then press SHIFT+CTRL+wheel (below) or OPTION+wheel (above) and
-see whether that track's clip actually gets selected. If either
-direction works, that directly solves the long-standing "need to click
-with the mouse to target a clip for editing" problem; if neither does,
-this is likely another case of the Controller API's Arranger-clip
-ceiling (no direct clip object model - see "Bank scrolling selects a
-track" and the hidden-track/Show-Hide-Chains dead ends elsewhere in this
-document for the same underlying limitation).
+**Follow-up experiment, now also confirmed non-functional and retired**:
+SHIFT+CTRL + press briefly called `Select item below`, and OPTION + press
+called `Select item above` (both real action ids from
+`bitwig-actions-reference.txt`'s Selection category), hoping to mirror
+arrow-key UP/DOWN's "move selection to the adjacent track" behavior and
+let clip selection follow a track switch without touching the mouse.
+Confirmed on hardware: the popup fires for both, but neither actually
+changes the selection - same dead end as `select_item_at_cursor` and
+"Select item to left/right" (see "CTRL + Jog Wheel" above). Both bindings
+have been removed; the "need to click with the mouse to target a clip"
+problem itself remains unsolved (the Controller API's Selection-category
+actions are largely non-functional here - only "Select next/previous
+item", used by plain CTRL+wheel, genuinely works) - see "Bank scrolling
+selects a track" and the hidden-track/Show-Hide-Chains dead ends
+elsewhere in this document for the same underlying Controller API
+ceiling.
+
+**OPTION + Jog Wheel Press now does something different and unrelated**:
+it toggles `LastClickedParameter.smartToggleLock()` (see "ALT + Jog
+Wheel" above) - locks the ALT+wheel parameter-adjust combo onto whatever
+parameter the mouse is currently hovering over, without needing an exact
+click first, and if already locked and the mouse has since moved
+elsewhere, re-locks to the new parameter instead of unlocking (Bitwig's
+own "smart" behavior, straight from its Javadoc: "Toggle locked status,
+but if we are already locked and the mouse points at a different
+parameter now, lock to the new parameter instead."). Requested directly
+after the plain click-then-ALT+wheel workflow was reported as "a bit too
+fiddly" - this is worth playing around with as a hover-based alternative,
+especially for small Inspector fields (e.g. clip Gain) that are easy to
+mis-click. A popup notification ("Locked to: <name>" / "Unlocked:
+<name>") fires on every lock-state change via an `isLocked()` value
+observer, rather than reading the value back immediately after invoking
+the toggle (which risks reading a stale, not-yet-updated cached value on
+the same tick). **Not yet tested on hardware.**
 
 **Likely root cause found and fixed**: reported that clicking a track's
 header with the mouse produces a visible "white circle" indicator around
@@ -1790,19 +1807,18 @@ circle or unblocks the wheel-press clip-navigation experiments above -
 if it does, that's the whole "need to click with the mouse to target a
 clip" problem solved in one line per call site.
 
-**Partial result so far**: SHIFT+CTRL + press (`Select item below`) does
-visibly fire - its popup shows - but doesn't change the actual selection
-at all. Whether the white circle itself now appears wasn't separately
-confirmed yet. Meanwhile the plain CTRL+wheel *turn* combo (see "CTRL +
-Jog Wheel" below) reacted very differently to the same `selectInEditor()`
-change - it started reliably jumping to the track above/below once it
-ran out of items on the current track, which was unwanted there and got
-switched to "Select item to left/right" instead. So the two press
-actions (`above`/`below`) and the turn actions ( `to left`/`to right`)
-don't seem to behave symmetrically - worth re-testing `Select item
-above`/`Select item below` again now that CTRL+wheel's own combo has
-changed, in case there's a similar same-track-vs-cross-track distinction
-at play for the vertical actions too.
+**Final result**: SHIFT+CTRL + press (`Select item below`) and OPTION +
+press (`Select item above`) both visibly fired - their popups showed -
+but neither ever changed the actual selection, confirmed on hardware.
+Whether the white circle itself now appears from `selectInEditor()`
+wasn't separately confirmed, but it no longer matters for this specific
+gesture since both bindings were retired (see "Follow-up experiment, now
+also confirmed non-functional and retired" above) - the vertical
+(`above`/`below`) and horizontal (`to left`/`to right`) Selection-category
+actions all turned out equally non-functional via the Controller API, so
+there wasn't a same-track-vs-cross-track distinction to find after all.
+OPTION + press now drives an unrelated feature instead (the
+`smartToggleLock()` hover-lock combo, see above).
 
 ### Jog-wheel "mode" buttons (CURSOR / SCROLL / ZOOM / MASTER / MARKER /
 NUDGE / BANK / CHANNEL, per the manual's "Multi-Purpose Jog Wheel Section")
