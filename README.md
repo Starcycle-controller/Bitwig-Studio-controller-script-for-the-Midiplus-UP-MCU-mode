@@ -1423,7 +1423,7 @@ was still in Live mode, is confirmed still correct.
 | 84 | - | Jump to previous cue marker |
 | 85 | - | Jump to next cue marker |
 | 86 | (Live label: LOOP) | Toggle arranger loop |
-| 87 | Jog wheel push | Momentary "Pan Mode" hold; launches selected scene in `MODE_SCENE` |
+| 87 | Unconfirmed - previously (wrongly) assumed to be Jog Wheel Push | Unbound - needs testing |
 | 88 | (Live label: PUNCH OUT) | Toggle punch-out (CTRL = set loop end from playhead) |
 | 89 | (Live label: HOME), SHIFT = add "Bar N" cue marker | Jump playhead to project start; SHIFT+HOME adds a cue marker at the current position, auto-named for its bar number - see Cue Marker Naming below |
 | 90 | (Live label: END) | Jump playhead to loop start |
@@ -1433,7 +1433,7 @@ was still in Live mode, is confirmed still correct.
 | 98 | Cursor LEFT | Arrow key left, device select previous in `MODE_DEVICE`, or zoom out timeline (while ZOOM toggled) - see Zoom below |
 | 99 | Cursor RIGHT | Arrow key right, device select next in `MODE_DEVICE`, or zoom in timeline (while ZOOM toggled) - see Zoom below |
 | 100 | ZOOM | Toggle zoom mode for cursor arrows |
-| 101 | SCRUB | Toggle fine-scrub mode for jog wheel |
+| 101 | Jog wheel push - moved here from note 87 (confirmed via console log: the wheel's own click always sends 101, never 87 - see "Wheel-assignment button investigation" below) | Momentary "Pan Mode" hold; ALT+press = select item at playhead; SHIFT+CTRL+press = same, one-shot; launches selected scene in `MODE_SCENE` |
 | 104-111 | Fader touch 1-8 | Optionally selects that channel's track, see Mixer settings below |
 | 112 | Fader touch (Master) | Optionally selects the master track, see Mixer settings below |
 | CC 16-23 | Rotary encoders 1-8 | Mode-dependent (pan/send/macro); SHIFT = stepped or fine adjust, see Encoders settings above |
@@ -1450,9 +1450,11 @@ next/previous arranger clip/item, see below) > **SHIFT+ALT** (nudge the
 selected arranger item, see below) > **ALT alone** (adjust the
 last-clicked GUI parameter, see below) > PLUG-INS held (step devices) >
 BANK held (page remote-control pages) > OPTION alone (halve/double loop
-length) > SHIFT alone (shift loop by a bar) > SCRUB toggle or wheel press
-(jump by a bar, or select-at-cursor with ALT or SHIFT+CTRL held, see
-below) > default (scrub, **Wheel (No Modifier): Playhead Jump per Tick
+length) > SHIFT alone (shift loop by a bar) > wheel held down (note 101 -
+see "Wheel-assignment button investigation" below; `isScrubToggled` is
+currently dead, no known hardware note sets it) (jump by a bar, or
+select-at-cursor with ALT or SHIFT+CTRL held, see below) > default
+(scrub, **Wheel (No Modifier): Playhead Jump per Tick
 (bars)** per **Wheel (No Modifier): Ticks per Bar** accumulated raw
 ticks - default 1 bar per 8 ticks, configurable, see below - no longer
 ALT-modified).
@@ -1661,16 +1663,18 @@ it falls directly out of dividing by the live zoom value and rounding.
 Off by default - an opt-in alternative to the fixed bar count above, not
 a replacement, until confirmed on hardware.
 
-**ALT + Jog Wheel Press** (push the wheel down while holding ALT) runs
-Bitwig's real `select_item_at_cursor` action ("Select item at cursor" -
-same one the Function Keys dropdowns offer, see `FKEY_FUNCTIONS`) - the
-wheel press itself acts as the "click", so nothing needs an actual mouse
-click first. The check only tests `isAltPressed` (not caring whether
-SHIFT is also held), so it doubles as the first step of the SHIFT+ALT
-clip-drag gesture below - the same press works whether you're holding
-just ALT or SHIFT+ALT. Takes priority over the wheel-press's other use
-(launching the selected scene in `MODE_SCENE`) when ALT is held. Not yet
-tested on hardware.
+**ALT + Jog Wheel Press** (push the wheel down while holding ALT - note
+101, not 87, see "Jog-wheel 'mode' buttons" above) runs Bitwig's real
+`select_item_at_cursor` action ("Select item at cursor" - same one the
+Function Keys dropdowns offer, see `FKEY_FUNCTIONS`) - the wheel press
+itself acts as the "click", so nothing needs an actual mouse click
+first. The check only tests `isAltPressed` (not caring whether SHIFT is
+also held), so it doubles as the first step of the SHIFT+ALT clip-drag
+gesture below - the same press works whether you're holding just ALT or
+SHIFT+ALT. Takes priority over the wheel-press's other use (launching
+the selected scene in `MODE_SCENE`) when ALT is held. Not yet tested on
+hardware since the note-87/101 fix - this combo had never actually
+fired before that (see above), so this is effectively untested.
 
 **SHIFT+ALT + Jog Wheel** nudges whatever's currently selected in the
 arranger (a clip, automation point, etc.) left/right by one grid step per
@@ -1691,14 +1695,19 @@ SHIFT isn't also held. Not yet tested on hardware.
 
 **SHIFT+CTRL + Jog Wheel Press** was tried as a "select whichever clip is
 closest to the playhead" gesture, reusing the same `select_item_at_cursor`
-action as ALT + Jog Wheel Press above - **confirmed on hardware NOT to do
-that**. So "cursor" in that action's name is the generic UI keyboard-focus
-reading, not the arranger edit cursor/playhead - it just repeats the
-ALT-press behavior. Left bound for now (harmless, if redundant with
-ALT+press) since nothing better has replaced it yet; the SHIFT+CTRL
-*turn* combo above (jump to first/last item) covers a related but
-different need instead. If jump-to-playhead-clip is still wanted, it
-needs a different real action or approach - not yet found one.
+action as ALT + Jog Wheel Press above - was previously **"confirmed on
+hardware NOT to do that"**, concluding "cursor" in that action's name
+must mean generic UI keyboard-focus rather than the arranger edit
+cursor/playhead. **That conclusion is now suspect** - see "Jog-wheel
+'mode' buttons" above: this combo was bound to note 101, which used to
+be intercepted and swallowed by a since-removed handler before ever
+reaching this code, so the original test's press event likely never
+actually invoked `select_item_at_cursor` at all. Worth re-testing now
+that the interceptor is gone and the binding reaches its handler
+correctly - if it turns out to genuinely select the item at the
+playhead this time, that directly solves the long-standing "need to
+click with the mouse to target a clip for editing" problem, without
+needing any further mouse-free arranger-selection API to be found.
 
 ### Jog-wheel "mode" buttons (CURSOR / SCROLL / ZOOM / MASTER / MARKER /
 NUDGE / BANK / CHANNEL, per the manual's "Multi-Purpose Jog Wheel Section")
@@ -1709,6 +1718,43 @@ wheel itself sends when subsequently turned (e.g. the already-documented
 BANK/CHANNEL quirk: while lit, turning the wheel sends repeated Note-On
 46/47/48/49 instead of CC 60). ZOOM is the one confirmed exception - it
 sends note 100 directly, same as the note 100 already bound above.
+
+**Full systematic sweep, this session**: tested the wheel's own click
+under every mode reachable so far (SCROLL/base, ZOOM, MARKER, BANK,
+CHANNEL - CURSOR, MASTER, and NUDGE not yet tested):
+
+| Mode | Mode button itself | Wheel click | Wheel turn |
+|------|---------------------|-------------|------------|
+| SCROLL (base/default - this script previously called it "SCRUB", the manual calls it SCROLL) | No MIDI at all | **Note 101** | CC 60 (normal scrub) |
+| ZOOM | Note 100 (toggle) | Nothing | Note-On 96/97 (up/down) or 98/99 (left/right) - see Zoom below |
+| MARKER | No MIDI at all | Nothing | Note-On 84/85 - already bound above to jump to previous/next cue marker, so this already works with no extra code |
+| BANK | Note 46/47 (also its own PREV/NEXT press action) | Nothing | Note-On 46/47 - already documented above |
+| CHANNEL | Note 48/49 (also its own PREV/NEXT press action) | Nothing | Note-On 48/49 - already documented above |
+
+**Corrected a real bug from this sweep**: the wheel's own click was
+previously assumed to be note 87, and note 101 was previously assumed to
+be a dedicated "SCRUB Button" toggling `isScrubToggled`. Both were wrong.
+The click is always note 101, but only in the SCROLL/base mode - never
+87, under any mode tested. Since the note-101 handler used to intercept
+and `return` immediately (toggling a fine-scrub flag on every press), it
+was silently swallowing every wheel click before it could ever reach the
+Jog Wheel Push logic (bound to the nonexistent note 87) - meaning Pan
+Mode, ALT+press "select item at cursor", the SHIFT+ALT clip-drag
+gesture's click step, and Scene-mode launch-by-press had never actually
+fired on this hardware. Fixed: Jog Wheel Push is now on note 101 (see
+button-map table above), the old note-101 interceptor is removed, and
+note 87 is left as an unconfirmed placeholder. `isScrubToggled` is now
+dead code (nothing on this hardware can set it - the real SCROLL/SCRUB
+button sends no MIDI at all) but left in place rather than ripped out,
+in case a real trigger for it turns up later.
+
+**Re-open**: the "SHIFT+CTRL + Jog Wheel Press ... confirmed on hardware
+NOT to [select the item at the playhead]" conclusion further below was
+reached while this same bug was still active - that test's press event
+would have been swallowed by the note-101 interceptor before ever
+reaching `select_item_at_cursor`, the same way ALT+press and Scene-mode
+launch were. That "confirmed" result is therefore unreliable and worth
+re-testing now that the binding is on the correct note.
 
 ## Open items for next session
 

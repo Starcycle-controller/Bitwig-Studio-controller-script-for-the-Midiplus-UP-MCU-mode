@@ -1353,9 +1353,19 @@ var isBankHeld = false;
 var bankPageStepAccumulator = 0;
 var BANK_PAGE_STEP_MESSAGES = 4;
 
-// ZOOM (100) and SCRUB (101) are TOGGLE buttons in the real protocol (press
-// to flip state, not held-while-down like SHIFT/OPTION/CTRL/ALT).
+// ZOOM (100) is a TOGGLE button in the real protocol (press to flip
+// state, not held-while-down like SHIFT/OPTION/CTRL/ALT).
 var isZoomToggled = false;
+
+// Currently dead/unreachable: note 101 (originally assumed to be a
+// dedicated "SCRUB Button" toggling this) turned out to actually be the
+// Jog Wheel's own click note instead - confirmed via systematic testing
+// of every wheel-assignment button, see the Jog Wheel Push handler and
+// README. The real SCRUB control sends no MIDI at all when pressed, so
+// there's currently no known way to set this to true. Left in place
+// (rather than removed) since the Pan Mode branch below still checks it
+// alongside isWheelPressed, and it's harmless as a permanently-false
+// value - ready to wire up again if a real SCRUB note is ever found.
 var isScrubToggled = false;
 
 // ZOOM+LEFT/RIGHT (case 98/99 - LEFT/RIGHT send notes 98/99 on this
@@ -3677,10 +3687,13 @@ function onMidi(status, data1, data2) {
    // CTRL held = select next/previous arranger clip/item instead (device
    // stepping in MODE_DEVICE); SHIFT+ALT = nudge the selected item left/
    // right; ALT alone = adjust the last-clicked GUI parameter; SHIFT held
-   // = shift the arranger loop by whole bars; SCRUB toggle (note 101) =
-   // jump the playhead by whole bars instead of scrubbing smoothly. See
-   // the full priority-ordered writeup in README.md's "Jog wheel modifier
-   // combos" section.
+   // = shift the arranger loop by whole bars; holding the wheel down
+   // (isWheelPressed, note 101 - see the Jog Wheel Push handler above) =
+   // jump the playhead by whole bars instead of scrubbing smoothly.
+   // isScrubToggled is currently dead (see its declaration above) - no
+   // known hardware SCRUB note exists to set it. See the full
+   // priority-ordered writeup in README.md's "Jog wheel modifier combos"
+   // section.
    if (msgType === 0xB0 && data1 === 60) {
       // Same sign-magnitude fix as the encoders above
       var backwards = data2 >= 64;
@@ -4000,16 +4013,28 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // Jog Wheel Push / Pan Mode (Note 87 - see isWheelPressed above).
-      // ALT held + press runs Bitwig's real "Select item at cursor" action
-      // (same one the F-key function list offers, see FKEY_FUNCTIONS) -
-      // takes priority over the MODE_SCENE scene-launch behavior below,
-      // since holding ALT is a deliberate, distinct gesture. Without ALT,
-      // in MODE_SCENE a press launches the currently selected scene
-      // instead - Pan Mode's bar-jump branch is unreachable in that mode
-      // anyway (the wheel handler's MODE_SCENE branch takes priority), so
-      // there's no conflict between the two (non-ALT) uses of this note.
-      if (data1 === 87) {
+      // Jog Wheel Push / Pan Mode (Note 101, not 87 - see isWheelPressed
+      // above). Moved here after systematically testing every wheel-
+      // assignment button (ZOOM/SCRUB/MARKER/BANK/CHANNEL) with the wheel
+      // click: confirmed the click is always note 101, but ONLY fires in
+      // the base/idle assignment state - it's silent under ZOOM, MARKER,
+      // BANK, and CHANNEL. Note 87 never actually fires at all; wherever
+      // that assumption came from, it was wrong from the start. Note 101
+      // was ALSO wrongly assumed to be a dedicated "SCRUB Button" (see the
+      // removed toggle handler that used to intercept it, below where the
+      // BANK/ZOOM toggle handlers still live) - confirmed the real SCRUB
+      // control sends no MIDI at all when pressed, so that handler was
+      // actually hijacking every wheel click into a spurious fine-scrub
+      // toggle instead of ever reaching this code. ALT held + press runs
+      // Bitwig's real "Select item at cursor" action (same one the F-key
+      // function list offers, see FKEY_FUNCTIONS) - takes priority over
+      // the MODE_SCENE scene-launch behavior below, since holding ALT is
+      // a deliberate, distinct gesture. Without ALT, in MODE_SCENE a press
+      // launches the currently selected scene instead - Pan Mode's
+      // bar-jump branch is unreachable in that mode anyway (the wheel
+      // handler's MODE_SCENE branch takes priority), so there's no
+      // conflict between the two (non-ALT) uses of this note.
+      if (data1 === 101) {
          isWheelPressed = isPressed;
          if (isPressed && isAltPressed) {
             // Fires on ALT+press regardless of SHIFT, so this doubles as
@@ -4080,15 +4105,23 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // SCRUB Button (Note 101) - toggles fine-scrub mode for the Jog Wheel;
-      // also not a held modifier.
-      if (data1 === 101) {
-         if (isPressed) {
-            isScrubToggled = !isScrubToggled;
-            midiOut.sendMidi(0x90, 101, isScrubToggled ? 127 : 0);
-         }
-         return;
-      }
+      // Note 87 - previously (wrongly) assumed to be Jog Wheel Push/Pan
+      // Mode; that binding is now at note 101 above, after systematically
+      // testing every wheel-assignment button with the wheel click and
+      // confirming it's always 101, never 87. Deliberately left unbound
+      // until it's confirmed what, if anything, this note actually is -
+      // press it (or whatever key/gesture used to send it) and check the
+      // console for "RAW Note-On received".
+      //
+      // Note 101 was ALSO wrongly assumed to be a dedicated "SCRUB
+      // Button" here (there used to be a toggle handler on this exact
+      // note, hijacking every wheel click into a spurious fine-scrub
+      // toggle instead of ever letting it reach the Jog Wheel Push
+      // handler above) - confirmed the real SCRUB control sends no MIDI
+      // at all when pressed, so there's nothing to rebind it to; the
+      // "fine-scrub mode" toggle (isScrubToggled) has no known trigger
+      // on this hardware anymore. See README for the full wheel-
+      // assignment button investigation (ZOOM/SCRUB/MARKER/BANK/CHANNEL).
 
       // Fader Touch (Notes 104-111 = channels 1-8, 112 = Master) - the
       // motorized faders send a separate Note-On/Off for touching/
