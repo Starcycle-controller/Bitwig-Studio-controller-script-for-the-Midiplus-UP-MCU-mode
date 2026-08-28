@@ -1236,6 +1236,55 @@ Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
   seems to always be driven directly by the incoming Channel Pressure
   level data regardless of the mode SysEx. Conclusion below.
 
+### Debug settings (Controller Preferences panel)
+
+Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
+-> **Debug** category. Requested directly: this script had several
+`println()` calls sprinkled through it for verifying key presses/wheel
+behavior/modifier state while developing against real hardware, each
+either always-on or manually commented out - no single place to see or
+control all of them. Centralized into `debugLog(category, message)` (see
+the `DEBUG_*` globals near the top of the script) instead, with one
+setting per category:
+
+- **Enable Debug Logging** (default ON) - the master switch. Off silences
+  every category below regardless of its own setting, and also
+  `hide()`s their individual checkboxes from this panel via Bitwig's own
+  `Setting.hide()`/`show()` API - turning this off collapses the whole
+  section down to just itself, previewing what fully retiring debug
+  logging later (once the project is more mature and end users shouldn't
+  see any of this) would look like.
+- **Log Raw MIDI (Controller Input)** (default ON) - every incoming CC not
+  otherwise handled, and every Note-On (the main "what does this physical
+  button/wheel actually send" tool, e.g. the note-87/101 jog-wheel-click
+  mixup earlier in this doc was found this way).
+- **Log Button Dispatch** (default ON) - "Button pressed - Note: N", once
+  a Note-On has passed modifier filtering and actually reached
+  `handleButtonPress()` - lets "the hardware sent something" (raw MIDI,
+  above) be told apart from "the script recognized and dispatched it".
+- **Log Modifier State (SHIFT/OPTION/CTRL/ALT) in Raw MIDI** (default ON)
+  - whether the raw Note-On line above also appends the live
+  `[SHIFT=... OPTION=... CTRL=... ALT=... ZOOM=... SCRUB=...]` state
+  suffix - its own toggle since that's the noisiest part of an already
+  noisy line, only really needed when chasing a modifier-dependent bug.
+- **Log LCD Display SysEx** (default ON) - the exact text sent to each
+  half of the two-row MCU LCD via `sendMCUSysex()`, so a display
+  formatting bug can be read straight from the console instead of
+  eyeballing tiny hardware LCD characters. New this session - there was
+  no LCD-specific debug logging before.
+- **Log Encoder Target Classification** (default ON) - reports a
+  pointed-at parameter's real `discreteValueCount()` whenever it exceeds
+  `MAX_NATIVE_SWITCH_STEPS` and gets treated as continuous instead of
+  stepped - for calibrating that constant against real hardware/device
+  values.
+
+Real error/warning logging (caught exceptions, invalid action ids,
+duplicate F-key assignments, a cue marker that couldn't be found to
+rename, etc.) is deliberately **not** gated by any of this - those always
+print, so a genuine problem can never be accidentally silenced by a
+debug setting. Not yet tested on hardware (the `hide()`/`show()` toggle
+behavior especially).
+
 ### LCD / meters / LEDs
 
 Standard MCU SysEx: `F0 00 00 66 14 12 <offset> <ASCII...> F7` for the two

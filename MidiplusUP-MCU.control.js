@@ -74,6 +74,63 @@ var EQ_DEVICE_SCAN_DEPTH = 32;
 // marker it just created. Raise if a project routinely has more markers
 // than this before the point you're adding new ones.
 var CUE_MARKER_SCAN_DEPTH = 128;
+
+// ---------------------------------------------------------------------
+// DEBUG / Diagnostics hub (Controller Preferences panel -> "Debug"
+// category) - every println() used purely for development/diagnostic
+// logging (not a genuine error) is routed through debugLog() below and
+// gated by one of these flags, instead of being unconditionally on or
+// manually commented out. All default to true for now, matching this
+// project's current maturity - it's still being actively wired up and
+// verified against real hardware, so seeing everything by default makes
+// that easier. DEBUG_ENABLED is the master switch: turning it off in
+// Bitwig's Controller Preferences both silences every category below
+// regardless of its own setting AND hides their individual checkboxes
+// from the panel entirely (via Setting.hide()/show(), see init()) - a
+// preview of fully retiring this section once the project is more
+// mature and end users shouldn't see it at all. Genuine error logging
+// (caught exceptions, invalid action ids, duplicate F-key assignments,
+// etc.) is intentionally NOT gated by any of this - those stay
+// unconditional so real problems are never accidentally silenced by a
+// debug setting.
+var DEBUG_ENABLED = true;
+// Raw incoming MIDI dump straight from the controller - every CC not
+// otherwise handled, and every Note-On (which also carries the current
+// SHIFT/OPTION/CTRL/ALT/ZOOM/SCRUB modifier state, gated separately by
+// DEBUG_MODIFIER_STATE below) - the main "verify what a physical
+// button/wheel actually sends" tool.
+var DEBUG_RAW_MIDI = true;
+// "Button pressed - Note:" - logged once a Note-On has passed modifier
+// filtering and actually reached handleButtonPress(), so it's easy to
+// tell "the hardware sent something" (DEBUG_RAW_MIDI above) apart from
+// "the script recognized and dispatched it" (this one).
+var DEBUG_BUTTON_DISPATCH = true;
+// Whether the RAW Note-On line above includes the live modifier/toggle
+// state suffix ("[SHIFT=... OPTION=... CTRL=... ALT=... ZOOM=...
+// SCRUB=...]"). Its own flag since that suffix is the noisiest part of
+// an already-noisy line - useful when chasing a modifier-dependent bug,
+// unnecessary clutter otherwise.
+var DEBUG_MODIFIER_STATE = true;
+// Text sent to the two-row MCU LCD display via sendMCUSysex() - lets a
+// display formatting bug be read straight from the console instead of
+// having to eyeball tiny hardware LCD characters.
+var DEBUG_LCD = true;
+// Encoder-target classification (applyEncoderStep()) - reports a
+// pointed-at parameter's real discreteValueCount() when it exceeds
+// MAX_NATIVE_SWITCH_STEPS, for calibrating that constant against real
+// hardware/device values.
+var DEBUG_ENCODER = true;
+
+// Central gate for every diagnostic println() in this script - pass one
+// of the category flags above (not a literal true/false) so both the
+// per-category setting AND the DEBUG_ENABLED master switch are honored
+// in one place. Real error logging bypasses this entirely (see above).
+function debugLog(categoryEnabled, message) {
+   if (DEBUG_ENABLED && categoryEnabled) {
+      println(message);
+   }
+}
+
 var currentMode = MODE_MIXER;
 // Tracks currentMode as of the last applyModeChange() call - see there for
 // why this is how leaving MODE_DEVICE closes the plugin window centrally.
@@ -663,11 +720,12 @@ function applyEncoderStep(target, rawDelta, encoderIndex) {
       return;
    }
    if (discreteCount > MAX_NATIVE_SWITCH_STEPS) {
-      // DEBUG: confirms the discreteCount actually reported for whatever
-      // this encoder is currently pointed at - helps verify/calibrate
+      // Confirms the discreteCount actually reported for whatever this
+      // encoder is currently pointed at - helps verify/calibrate
       // MAX_NATIVE_SWITCH_STEPS against real hardware/device values if a
-      // parameter still doesn't land where expected in Stepped mode.
-      println("Encoder target has discreteValueCount() " + discreteCount +
+      // parameter still doesn't land where expected in Stepped mode. See
+      // DEBUG_ENCODER above.
+      debugLog(DEBUG_ENCODER, "Encoder target has discreteValueCount() " + discreteCount +
          " (> " + MAX_NATIVE_SWITCH_STEPS + ") - treated as continuous, native grid ignored");
    }
 
@@ -3008,6 +3066,60 @@ function init() {
       midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, 7, meterTestModeValues[value], 0xF7]);
    });
 
+   // Debug / diagnostics hub (Controller Preferences panel -> "Debug"
+   // category) - see the DEBUG_ENABLED/DEBUG_* globals and debugLog()
+   // near the top of this file for what each category actually gates.
+   // All default to true, matching this project's current maturity.
+   // "Enable Debug Logging" is the master switch: besides silencing
+   // every category below via DEBUG_ENABLED, it also hide()/show()s
+   // their individual checkboxes in this panel - unchecking it collapses
+   // the whole hub down to just itself, a preview of retiring debug
+   // logging altogether once this project is more mature and end users
+   // shouldn't see any of this.
+   var debugEnabledSetting = host.getPreferences().getBooleanSetting(
+      "Enable Debug Logging", "Debug", true);
+   debugEnabledSetting.markInterested();
+
+   var debugRawMidiSetting = host.getPreferences().getBooleanSetting(
+      "Log Raw MIDI (Controller Input)", "Debug", true);
+   debugRawMidiSetting.markInterested();
+   debugRawMidiSetting.addValueObserver(function (value) { DEBUG_RAW_MIDI = value; });
+
+   var debugButtonDispatchSetting = host.getPreferences().getBooleanSetting(
+      "Log Button Dispatch", "Debug", true);
+   debugButtonDispatchSetting.markInterested();
+   debugButtonDispatchSetting.addValueObserver(function (value) { DEBUG_BUTTON_DISPATCH = value; });
+
+   var debugModifierStateSetting = host.getPreferences().getBooleanSetting(
+      "Log Modifier State (SHIFT/OPTION/CTRL/ALT) in Raw MIDI", "Debug", true);
+   debugModifierStateSetting.markInterested();
+   debugModifierStateSetting.addValueObserver(function (value) { DEBUG_MODIFIER_STATE = value; });
+
+   var debugLcdSetting = host.getPreferences().getBooleanSetting(
+      "Log LCD Display SysEx", "Debug", true);
+   debugLcdSetting.markInterested();
+   debugLcdSetting.addValueObserver(function (value) { DEBUG_LCD = value; });
+
+   var debugEncoderSetting = host.getPreferences().getBooleanSetting(
+      "Log Encoder Target Classification", "Debug", true);
+   debugEncoderSetting.markInterested();
+   debugEncoderSetting.addValueObserver(function (value) { DEBUG_ENCODER = value; });
+
+   var debugCategorySettings = [
+      debugRawMidiSetting, debugButtonDispatchSetting,
+      debugModifierStateSetting, debugLcdSetting, debugEncoderSetting
+   ];
+   debugEnabledSetting.addValueObserver(function (value) {
+      DEBUG_ENABLED = value;
+      for (var debugSettingIdx = 0; debugSettingIdx < debugCategorySettings.length; debugSettingIdx++) {
+         if (value) {
+            debugCategorySettings[debugSettingIdx].show();
+         } else {
+            debugCategorySettings[debugSettingIdx].hide();
+         }
+      }
+   });
+
    // Track each bank's per-track TOOL_DEVICE_NAME device, if any (see
    // isToolVolumeMode). mainTrackCursors' own createDeviceBank() calls
    // (inside scanTrackForToolDevice()) automatically follow each cursor
@@ -3675,7 +3787,7 @@ function onMidi(status, data1, data2) {
    // nothing, or sends a CC instead of the expected Note-On. Still actively
    // used for verifying remaining button assignments - leave in for now.
    if (msgType === 0xB0 && data1 !== 60 && !(data1 >= 16 && data1 <= 23)) {
-      println("RAW CC received - CC#: " + data1 + ", Value: " + data2);
+      debugLog(DEBUG_RAW_MIDI, "RAW CC received - CC#: " + data1 + ", Value: " + data2);
    }
 
    // 1. Motorized Pitchbend Faders - handled entirely by the native
@@ -4016,17 +4128,19 @@ function onMidi(status, data1, data2) {
    if (msgType === 0x90 || msgType === 0x80) {
       var isPressed = (msgType === 0x90 && data2 > 0);
       if (isPressed) {
-         // DEBUG: catches modifier buttons too. Includes live modifier/
-         // toggle state so a note that varies by what's currently held
-         // (reported: the jog wheel's own click reportedly sends
-         // different notes depending on modifier state, similar to the
-         // already-documented CHANNEL PREV/NEXT wheel-assignment quirk)
-         // can be fully characterized from one round of testing instead
-         // of many back-and-forth single-note reports.
-         println("RAW Note-On received - Note: " + data1 +
-            " [SHIFT=" + isShiftPressed + " OPTION=" + isOptionPressed +
+         // Catches modifier buttons too. Optionally includes live
+         // modifier/toggle state so a note that varies by what's
+         // currently held (reported: the jog wheel's own click reportedly
+         // sends different notes depending on modifier state, similar to
+         // the already-documented CHANNEL PREV/NEXT wheel-assignment
+         // quirk) can be fully characterized from one round of testing
+         // instead of many back-and-forth single-note reports. See
+         // DEBUG_RAW_MIDI/DEBUG_MODIFIER_STATE above.
+         var debugModifierSuffix = DEBUG_MODIFIER_STATE ?
+            (" [SHIFT=" + isShiftPressed + " OPTION=" + isOptionPressed +
             " CTRL=" + isControlPressed + " ALT=" + isAltPressed +
-            " ZOOM=" + isZoomToggled + " SCRUB=" + isScrubToggled + "]");
+            " ZOOM=" + isZoomToggled + " SCRUB=" + isScrubToggled + "]") : "";
+         debugLog(DEBUG_RAW_MIDI, "RAW Note-On received - Note: " + data1 + debugModifierSuffix);
       }
 
       // SHIFT Button (Note 70) - held modifier for other actions (fine
@@ -4310,7 +4424,7 @@ function handleButtonPress(note) {
 }
 
 function handleButtonPressInner(note) {
-   println("Button pressed - Note: " + note); // DEBUG: remove once all mappings are confirmed
+   debugLog(DEBUG_BUTTON_DISPATCH, "Button pressed - Note: " + note);
    // Track Channel Strip Buttons (0 - 31) - always act on whichever bank
    // (main tracks or returns) is currently active.
    if (note >= 0 && note <= 7) {
@@ -5416,6 +5530,7 @@ function renderLCDDisplays() {
 }
 
 function sendMCUSysex(offset, text) {
+   debugLog(DEBUG_LCD, "LCD SysEx - offset " + offset + ": \"" + text + "\"");
    var header = [0xF0, 0x00, 0x00, 0x66, 0x14, 0x12, offset];
    var sysexBytes = header.slice();
 
