@@ -1969,99 +1969,28 @@ replacement now in place instead.
    index) - worth trying only if track color on this hardware still
    matters enough to keep chasing.
 
-### Mixer Snapshots (SHIFT+F1-F8 store / OPTION+F1-F8 recall)
-
-Follow-up to the abandoned encoder-click volume-to-dB reset below - same
-underlying interest (a quick way to reset/recall a mix balance) but a
-genuinely different feature: save and recall several complete mix
-balances, to compare mix versions, rather than resetting to one fixed
-target value.
-
-SHIFT+F(n) stores the current 8-track bank window's Volume+Pan into slot
-n (1-8, one per F-key); OPTION+F(n) recalls it. Both combos were free to
-use - a plain F-key press ignores modifier state entirely, so SHIFT/
-OPTION held during one previously did nothing extra. `storeMixerSnapshot()`/
-`recallMixerSnapshot()` (near `activeTrackAt()`) serialize each snapshot
-into one of 8 `host.getDocumentState()` string settings - **Document
-State, not Preferences**: settings created this way are saved inside the
-Bitwig project file itself (normally shown in its Studio I/O panel,
-hidden here via `Setting.hide()` since these are raw internal storage,
-not meant for hand-editing), so a snapshot travels with the song and
-survives closing and reopening it. A Preferences setting, by contrast, is
-global to this controller across every project - the wrong scope for
-"different mix versions of this song."
-
-**Bug found and fixed before the first hardware test**: asked directly -
-"why are only the current 8 visible faders stored... wouldn't it be
-better to save all current levels, to have consistency?" - which surfaced
-that the original version was worse than just narrow in scope, it was
-outright unsafe. It keyed each stored entry to a bank-**window** slot
-(0-7) and read/wrote through `activeTrackAt(i)` (whatever track is
-currently scrolled into slot i) both at store and recall time. Store
-while looking at one 8-track window, scroll to a different one, then
-recall, and it silently applied the first window's stored values to
-whatever tracks now sit in slots 0-7 - not a mismatch, a straight-up
-wrong-track write. Fixed for Main tracks (the case this can actually
-happen in - Returns rarely exceeds 8 tracks) by storing each track's
-**absolute** position in the project (`Track.position()`) instead of its
-bank-window slot, then recalling straight through
-`mainTrackScanBank.getItemAt(pos)` - a permanently-unscrolled, 128-deep
-bank this script already maintains elsewhere (see "Deactivated Tracks in
-Bank" below) where slot index === absolute track position by
-construction. Recall now targets the exact same tracks regardless of any
-scrolling, Hide/Show-All toggling, or even which bank is currently on
-screen, in between store and recall. Returns tracks keep the old
-bank-slot-relative behavior - no equivalent unscrolled scan bank exists
-for them, and Returns rarely scrolls in practice, so this is a known,
-unchanged (not regressed) limitation, not a fix that was skipped.
-
-Whole-project scope (every track, not just the visible 8-window) and
-additional captured parameters (Mute/Solo/Sends) were discussed as
-possible next steps but **deliberately not done yet** - this pass only
-fixes the wrong-track bug for the existing 8-track-window scope, so it's
-safe to test before deciding whether to widen it further.
-
-Deliberately scoped to just **Volume + Pan** on whichever 8 tracks are
-currently visible in the bank at store time (not the whole project, not
-Mute/Solo/Sends) - the simplest version of "recall a mix balance," easy
-to extend later if that scope turns out to be too narrow. Recalling an
-empty slot shows "Mixer Snapshot N is Empty" instead of silently doing
-nothing.
-
-**Feedback, requested directly**: both actions show a corner popup
-(`host.showPopupNotification()`, e.g. "Mixer Snapshot 3 Stored") AND
-briefly flash across all 8 channels' bottom LCD row via the existing
-`showModePopup()` (the same mechanism the PLUGIN/SENDS/RETURNS/MIXER
-mode-change announcements already use) - "STORE 3" on save, "RECALL3" on
-recall, "EMPTY 3" if you try to recall a slot that's never been stored.
-
-**Real regression found on first hardware test, now fixed**: reported as
-"the fader moves but the volume doesn't update" - console logs showed the
-volume value genuinely changing, but on a group's first CHILD track, the
-hardware fader was actually reading/writing the GROUP's own volume
-instead of the child's, despite the LCD correctly showing the child's
-name. Traced to the wrong-track bug fix above: it originally also called
-`markInterested()` on `volume()`/`pan()` for all 128 slots of
-`mainTrackScanBank` (up from just `exists()`/`isActivated()`/`name()`),
-so recall could reliably `.set()` through it. That's ~256 additional
-live-tracked values spanning a bank that crosses group boundaries, and
-is the suspected cause of Bitwig's own parameter resolution getting
-confused around those boundaries specifically. Fixed by leaving those
-`markInterested()` calls out entirely - confirmed via the API's own
-`Value.markInterested()` Javadoc that only `.get()` requires it ("an
-error will be reported if the driver attempts to get the current value"
-if not interested; `.set()` isn't mentioned), and this code path only
-ever `.set()`s through `mainTrackScanBank`, never `.get()`s. **Not yet
-re-tested on hardware since this fix - please re-verify both the
-group-child-track case and normal (non-group) recall/store still work.**
-
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 
 - **Encoder-click volume-to-dB reset** (three different implementation
   strategies, each broke something different on real hardware - wrong
   target value, broken automation recording, script freeze). Encoder click
-  is pan-reset only now, deliberately. See "Mixer Snapshots" above for the
-  follow-up feature this idea evolved into instead.
+  is pan-reset only now, deliberately.
 - **Live fader-follow via manual `sendMidi()` from a value observer /
   `scheduleTask`** - never worked; superseded entirely by the `flush()`-
   polling approach described above, which does work.
+- **Mixer Snapshots** (SHIFT+F1-F8 store / OPTION+F1-F8 recall a
+  Volume+Pan mix balance) - fully reverted after its first real hardware
+  test broke the core fader-input path itself: moving a physical fader
+  stopped updating Bitwig's volume at all, on every channel, including
+  plain non-group tracks (first reported as group-track-specific, but
+  confirmed broader once tested further). Two rounds of targeted fixes
+  (removing `mainTrackScanBank`'s new `volume()`/`pan()` interest, then
+  investigating the `mainTrackCursors`' new `position()` interest) failed
+  to resolve it, so rather than keep guessing against live hardware with
+  the core fader path down, the whole feature was reverted back to
+  before it existed (`git revert` of all 3 commits, keeping the unrelated
+  Debug-category reorganization from the same session). Worth
+  re-approaching from scratch with a different, less invasive identity
+  mechanism if revisited - `Track.position()`/extra `markInterested()`
+  calls on shared or heavily-scanned track objects appear to be risky
+  territory on this hardware/API combination.
