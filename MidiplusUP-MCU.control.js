@@ -61,9 +61,13 @@ var MAX_SENDS = 16;
 // exact - rename your Tool device instances to this if you change it.
 var TOOL_DEVICE_NAME = "TRLVL";
 // How many devices deep into each track's chain to search for a device
-// named TOOL_DEVICE_NAME. Raise if you nest it deeper than this in your
-// chains.
-var TOOL_DEVICE_SCAN_DEPTH = 4;
+// named TOOL_DEVICE_NAME. Was 4, raised to match EQ_DEVICE_SCAN_DEPTH's
+// 32 (per request) - gain staging (this Tool device) is typically done
+// AFTER EQ and other corrective processing, right before the track's own
+// level, so a gain-staging utility commonly sits deep in the chain, not
+// near the front. Raise further if your chains routinely run deeper
+// than this.
+var TOOL_DEVICE_SCAN_DEPTH = 32;
 // How many devices deep into the SELECTED track's chain "EQ Mode"
 // (SHIFT+PLUG-INS - see findLastEqDeviceIndex()/case 44 below) searches
 // for the LAST device whose name matches EQ_DEVICE_NAME_KEYWORDS. Raise
