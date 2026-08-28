@@ -3189,29 +3189,6 @@ function init() {
       midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, meterStripIdx, 3, 0xF7]);
    }
 
-   // Diagnostics: live-testable meter mode for channel 8 only (the other 7
-   // strips stay on the confirmed mode=3 above) - lets us try each of the
-   // 4 real MCU VU-meter modes (confirmed against Mossgraber's
-   // switchVuMode()/VUMODE_* in MCUControlSurface.java, not guessed) from
-   // the Controller Preferences panel and see the result on hardware
-   // immediately, no redeploy needed, while investigating what channel 8's
-   // LCD bar graph actually shows and whether it can be repurposed to
-   // display track color instead of level.
-   var meterTestModeValues = {
-      "LED + LCD (default, mode 3)": 3,
-      "Off (mode 0)": 0,
-      "LED Only (mode 1)": 1,
-      "LCD Only (mode 6)": 6
-   };
-   var meterTestModeSetting = host.getPreferences().getEnumSetting(
-      "Channel 8 Meter Test Mode", "Diagnostics",
-      ["LED + LCD (default, mode 3)", "Off (mode 0)", "LED Only (mode 1)", "LCD Only (mode 6)"],
-      "LED + LCD (default, mode 3)");
-   meterTestModeSetting.markInterested();
-   meterTestModeSetting.addValueObserver(function (value) {
-      midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, 7, meterTestModeValues[value], 0xF7]);
-   });
-
    // Debug / diagnostics hub (Controller Preferences panel -> "Debug"
    // category) - see the DEBUG_ENABLED/DEBUG_* globals and debugLog()
    // near the top of this file for what each category actually gates.
@@ -3251,9 +3228,40 @@ function init() {
    debugEncoderSetting.markInterested();
    debugEncoderSetting.addValueObserver(function (value) { DEBUG_ENCODER = value; });
 
+   // Moved here from its own former "Diagnostics" category, per request,
+   // for consistency - it's a live hardware-experimentation control same
+   // as everything else in this hub, so it belongs alongside it rather
+   // than off on its own. Live-testable meter mode for channel 8 only
+   // (the other 7 strips stay on the confirmed mode=3 elsewhere) - lets
+   // us try each of the 4 real MCU VU-meter modes (confirmed against
+   // Mossgraber's switchVuMode()/VUMODE_* in MCUControlSurface.java, not
+   // guessed) from the Controller Preferences panel and see the result on
+   // hardware immediately, no redeploy needed. Result so far: every mode
+   // (including "Off") produced the same live level bar on this unit's
+   // LCD, so it doesn't look like this hardware distinguishes between the
+   // mode byte values the way genuine Mackie hardware does - didn't
+   // reveal anything new, but left in as a live knob in case that's worth
+   // revisiting (e.g. after other LCD experiments) rather than concluding
+   // this hardware categorically can't do anything more with it.
+   var meterTestModeValues = {
+      "LED + LCD (default, mode 3)": 3,
+      "Off (mode 0)": 0,
+      "LED Only (mode 1)": 1,
+      "LCD Only (mode 6)": 6
+   };
+   var meterTestModeSetting = host.getPreferences().getEnumSetting(
+      "Channel 8 Meter Test Mode", "Debug",
+      ["LED + LCD (default, mode 3)", "Off (mode 0)", "LED Only (mode 1)", "LCD Only (mode 6)"],
+      "LED + LCD (default, mode 3)");
+   meterTestModeSetting.markInterested();
+   meterTestModeSetting.addValueObserver(function (value) {
+      midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, 7, meterTestModeValues[value], 0xF7]);
+   });
+
    var debugCategorySettings = [
       debugRawMidiSetting, debugButtonDispatchSetting,
-      debugModifierStateSetting, debugLcdSetting, debugEncoderSetting
+      debugModifierStateSetting, debugLcdSetting, debugEncoderSetting,
+      meterTestModeSetting
    ];
    debugEnabledSetting.addValueObserver(function (value) {
       DEBUG_ENABLED = value;

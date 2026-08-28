@@ -1215,27 +1215,6 @@ always bound straight to `masterTrack.volume()` regardless of mode).
 Skipped for a genuine discrete/switch target, which has no continuous
 "close to the bottom" to land on. Not yet tested on hardware.
 
-### Diagnostics settings (Controller Preferences panel)
-
-Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
--> **Diagnostics** category.
-
-- **Channel 8 Meter Test Mode** (default `LED + LCD (default, mode 3)`) -
-  live-switches which of the 4 real MCU VU-meter modes channel 8's strip
-  uses, by re-sending `F0 00 00 66 14 20 07 <mode> F7` with a different
-  mode byte the moment you change the dropdown - no reload needed. The 4
-  values are confirmed against Mossgraber's `switchVuMode()`/`VUMODE_*` in
-  `MCUControlSurface.java` (not guessed): `0` = all off, `1` = LED meter
-  only, `3` = LED + VU-meter on the LCD (what all 8 channels normally use,
-  see below), `6` = VU-meter on the LCD only, no LED. Scoped to channel 8
-  only - the other 7 strips stay on the confirmed-working mode 3
-  regardless of this setting. **Result: on this hardware, the on-screen
-  LCD bar reacted to real level in every one of the 4 modes, including
-  `0`/off** - so this unit doesn't appear to distinguish between the mode
-  byte values the way genuine Mackie hardware does; the LCD meter bar
-  seems to always be driven directly by the incoming Channel Pressure
-  level data regardless of the mode SysEx. Conclusion below.
-
 ### Debug settings (Controller Preferences panel)
 
 Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
@@ -1277,6 +1256,28 @@ setting per category:
   `MAX_NATIVE_SWITCH_STEPS` and gets treated as continuous instead of
   stepped - for calibrating that constant against real hardware/device
   values.
+- **Channel 8 Meter Test Mode** (default `LED + LCD (default, mode 3)`) -
+  moved here from its own former "Diagnostics" category, per request, for
+  consistency - it's a live hardware-experimentation control like
+  everything else in this hub, so it belongs alongside it. Live-switches
+  which of the 4 real MCU VU-meter modes channel 8's strip uses, by
+  re-sending `F0 00 00 66 14 20 07 <mode> F7` with a different mode byte
+  the moment you change the dropdown - no reload needed. The 4 values are
+  confirmed against Mossgraber's `switchVuMode()`/`VUMODE_*` in
+  `MCUControlSurface.java` (not guessed): `0` = all off, `1` = LED meter
+  only, `3` = LED + VU-meter on the LCD (what all 8 channels normally use,
+  see below), `6` = VU-meter on the LCD only, no LED. Scoped to channel 8
+  only - the other 7 strips stay on the confirmed-working mode 3
+  regardless of this setting. **Result so far: on this hardware, the
+  on-screen LCD bar reacted to real level in every one of the 4 modes,
+  including `0`/off** - so this unit doesn't appear to distinguish
+  between the mode byte values the way genuine Mackie hardware does; the
+  LCD meter bar seems to always be driven directly by the incoming
+  Channel Pressure level data regardless of the mode SysEx. Didn't reveal
+  anything new yet, but left in as a live knob in case there's still more
+  to get out of the LCD worth revisiting later, rather than concluding
+  this hardware categorically can't do anything more with it. Conclusion
+  below.
 
 Real error/warning logging (caught exceptions, invalid action ids,
 duplicate F-key assignments, a cue marker that couldn't be found to
@@ -1301,7 +1302,7 @@ Channel Pressure level fluctuated correctly (2-6, tracking real playback)
 while the on-screen bar visibly moved in sync, on all 8 channels,
 including channel 8 (the earlier "channel 8 not updating" report turned
 out to be no audio actually routed to that track yet, not a script bug).
-The Channel 8 Meter Test Mode experiment (see Diagnostics above) then
+The Channel 8 Meter Test Mode experiment (see Debug settings above) then
 showed the bar reacting to level in every one of the 4 documented VU
 modes, including notionally "off" - meaning this bar isn't a separate
 paintable display region gated by that mode byte, it's a genuine VU meter
