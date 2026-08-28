@@ -1968,12 +1968,44 @@ replacement now in place instead.
    index) - worth trying only if track color on this hardware still
    matters enough to keep chasing.
 
+### Mixer Snapshots (SHIFT+F1-F8 store / OPTION+F1-F8 recall)
+
+Follow-up to the abandoned encoder-click volume-to-dB reset below - same
+underlying interest (a quick way to reset/recall a mix balance) but a
+genuinely different feature: save and recall several complete mix
+balances, to compare mix versions, rather than resetting to one fixed
+target value.
+
+SHIFT+F(n) stores the current 8-track bank window's Volume+Pan into slot
+n (1-8, one per F-key); OPTION+F(n) recalls it. Both combos were free to
+use - a plain F-key press ignores modifier state entirely, so SHIFT/
+OPTION held during one previously did nothing extra. `storeMixerSnapshot()`/
+`recallMixerSnapshot()` (near `activeTrackAt()`) serialize each snapshot as
+plain delimited text (`"vol,pan|vol,pan|..."`, one pair per bank slot,
+`"-"` for a slot with no track in it at capture time) into one of 8
+`host.getDocumentState()` string settings - **Document State, not
+Preferences**: settings created this way are saved inside the Bitwig
+project file itself (normally shown in its Studio I/O panel, hidden here
+via `Setting.hide()` since these are raw internal storage, not meant for
+hand-editing), so a snapshot travels with the song and survives closing
+and reopening it. A Preferences setting, by contrast, is global to this
+controller across every project - the wrong scope for "different mix
+versions of this song."
+
+Deliberately scoped to just **Volume + Pan** on whichever 8 tracks are
+currently visible in the bank right now (not the whole project, not
+Mute/Solo/Sends) - the simplest version of "recall a mix balance," easy
+to extend later if that scope turns out to be too narrow. Recalling an
+empty slot shows "Mixer Snapshot N is Empty" instead of silently doing
+nothing. **Not yet tested on hardware.**
+
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 
 - **Encoder-click volume-to-dB reset** (three different implementation
   strategies, each broke something different on real hardware - wrong
   target value, broken automation recording, script freeze). Encoder click
-  is pan-reset only now, deliberately.
+  is pan-reset only now, deliberately. See "Mixer Snapshots" above for the
+  follow-up feature this idea evolved into instead.
 - **Live fader-follow via manual `sendMidi()` from a value observer /
   `scheduleTask`** - never worked; superseded entirely by the `flush()`-
   polling approach described above, which does work.

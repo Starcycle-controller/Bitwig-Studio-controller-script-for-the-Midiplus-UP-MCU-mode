@@ -79,6 +79,27 @@ var EQ_DEVICE_SCAN_DEPTH = 32;
 // than this before the point you're adding new ones.
 var CUE_MARKER_SCAN_DEPTH = 128;
 
+// Mixer Snapshots - SHIFT+F1-F8 stores the current 8-track bank window's
+// volume+pan into slot N, OPTION+F1-F8 recalls it back (see
+// storeMixerSnapshot()/recallMixerSnapshot() near activeTrackAt() below,
+// and the note 62-69 handler in onMidi()). Requested directly, as a
+// follow-up to the abandoned encoder-click volume-to-dB reset (see git
+// history/README) - this is a genuinely different feature (save/recall
+// multiple full mix balances to compare mix versions), not a fixed reset
+// target. Persisted via host.getDocumentState() rather than
+// host.getPreferences() - Document State settings are saved INSIDE the
+// Bitwig project file itself (shown, normally, in its Studio I/O panel -
+// hidden here via Setting.hide() since these are raw serialized data, not
+// meant for hand-editing), so a snapshot travels with the song and
+// survives closing/reopening it, unlike Preferences which are global to
+// this controller across every project. Deliberately scoped to just
+// Volume + Pan on whichever 8 tracks are currently visible in the bank
+// (not the whole project, not mute/solo/sends) - the simplest version of
+// "recall a mix balance", easy to extend later if that scope turns out
+// to be too narrow.
+var MIXER_SNAPSHOT_SLOTS = 8;
+var mixerSnapshotSettings = []; // SettableStringValue per slot, filled in init()
+
 // ---------------------------------------------------------------------
 // DEBUG / Diagnostics hub (Controller Preferences panel -> "Debug"
 // category) - every println() used purely for development/diagnostic
@@ -1940,6 +1961,53 @@ function activeBankItemCount() {
    return hideDeactivatedTracksEnabled ? activeTrackRawIndices.length : trackBank.itemCount().get();
 }
 
+// Mixer Snapshots - see MIXER_SNAPSHOT_SLOTS/mixerSnapshotSettings above.
+// One slot's serialized text is "<vol>,<pan>|<vol>,<pan>|..." (one
+// "vol,pan" pair per bank slot 0-7, 4 decimal places, normalized 0..1 -
+// the same range track.volume()/pan() already use everywhere else in
+// this file, e.g. the abandoned setVolumeToDb() attempt and every
+// .pan().reset() call), or "-" for a slot that had no track in it at
+// capture time (isMainSlotEmpty()). Deliberately plain delimited text,
+// not JSON - Bitwig's Controller API has no JSON parser built in and
+// this format is trivial to split by hand.
+function storeMixerSnapshot(slotIndex) {
+   var parts = [];
+   for (var i = 0; i < 8; i++) {
+      if (isMainSlotEmpty(i)) {
+         parts.push("-");
+         continue;
+      }
+      var snapshotTrack = activeTrackAt(i);
+      parts.push(snapshotTrack.volume().get().toFixed(4) + "," + snapshotTrack.pan().get().toFixed(4));
+   }
+   mixerSnapshotSettings[slotIndex].set(parts.join("|"));
+   host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Stored");
+}
+
+function recallMixerSnapshot(slotIndex) {
+   var serialized = mixerSnapshotSettings[slotIndex].get();
+   if (!serialized) {
+      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " is Empty");
+      return;
+   }
+   var parts = serialized.split("|");
+   for (var i = 0; i < 8 && i < parts.length; i++) {
+      if (parts[i] === "-" || isMainSlotEmpty(i)) {
+         continue;
+      }
+      var pair = parts[i].split(",");
+      var vol = parseFloat(pair[0]);
+      var pan = parseFloat(pair[1]);
+      if (isNaN(vol) || isNaN(pan)) {
+         continue;
+      }
+      var recallTrack = activeTrackAt(i);
+      recallTrack.volume().set(vol);
+      recallTrack.pan().set(pan);
+   }
+   host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
+}
+
 // Requested directly: Bitwig's own Arranger/Mixer view didn't follow
 // when scrolling the bank here, so the hardware and Bitwig's own screen
 // could show completely different tracks. Selecting a track in the new
@@ -2467,6 +2535,26 @@ function init() {
             warnIfDuplicateFKeyFunctions();
          });
       })(fkIdx);
+   }
+
+   // Mixer Snapshots (SHIFT+F1-F8 store / OPTION+F1-F8 recall - see
+   // storeMixerSnapshot()/recallMixerSnapshot() above) - persisted via
+   // host.getDocumentState() rather than host.getPreferences(), so each
+   // slot's serialized text is saved inside the Bitwig project itself and
+   // survives closing/reopening it, unlike a Preferences setting (global
+   // to this controller across every project - wrong scope for a
+   // per-song mix version). Hidden immediately via Setting.hide() - these
+   // are raw internal storage, not meant to be seen or hand-edited in
+   // the Studio I/O panel (same hide()/show() capability already used on
+   // the Debug settings above, confirmed available on every Settings-
+   // derived object here despite the Javadoc's per-type method lists not
+   // separately mentioning it).
+   for (var snapshotIdx = 0; snapshotIdx < MIXER_SNAPSHOT_SLOTS; snapshotIdx++) {
+      var snapshotSetting = host.getDocumentState().getStringSetting(
+         "Mixer Snapshot " + (snapshotIdx + 1), "Mixer Snapshots (Internal)", 256, "");
+      snapshotSetting.markInterested();
+      snapshotSetting.hide();
+      mixerSnapshotSettings.push(snapshotSetting);
    }
 
    // What SHIFT+CTRL and ALT+CTRL + Jog Wheel each do - independent
@@ -4398,8 +4486,26 @@ function onMidi(status, data1, data2) {
       // popup; only an actual HOLD (past FKEY_HOLD_THRESHOLD_MS) escalates
       // to revealing every F-key's assignment across all 8 channels, for
       // learning the whole layout without a manual - not on every tap.
+      //
+      // SHIFT+F(n)/OPTION+F(n) are otherwise-unused combos on these same
+      // 8 buttons (a plain press ignores modifier state entirely) - used
+      // here for Mixer Snapshots: SHIFT+F(n) stores the current bank
+      // window's volume+pan into slot n, OPTION+F(n) recalls it (see
+      // storeMixerSnapshot()/recallMixerSnapshot() above). Checked before
+      // the plain-press path so neither modifier's own standalone-tap
+      // action nor the normal F-key function fires at the same time.
       if (data1 >= 62 && data1 <= 69) {
          var fkeyIdx = data1 - 62;
+         if (isPressed && isShiftPressed) {
+            shiftUsedForCombo = true;
+            storeMixerSnapshot(fkeyIdx);
+            return;
+         }
+         if (isPressed && isOptionPressed) {
+            optionUsedForCombo = true;
+            recallMixerSnapshot(fkeyIdx);
+            return;
+         }
          if (isPressed) {
             handleFKeyPress(fkeyIdx);
          } else {
