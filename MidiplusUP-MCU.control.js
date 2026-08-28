@@ -1962,14 +1962,39 @@ function activeBankItemCount() {
 }
 
 // Mixer Snapshots - see MIXER_SNAPSHOT_SLOTS/mixerSnapshotSettings above.
-// One slot's serialized text is "<vol>,<pan>|<vol>,<pan>|..." (one
-// "vol,pan" pair per bank slot 0-7, 4 decimal places, normalized 0..1 -
-// the same range track.volume()/pan() already use everywhere else in
-// this file, e.g. the abandoned setVolumeToDb() attempt and every
-// .pan().reset() call), or "-" for a slot that had no track in it at
-// capture time (isMainSlotEmpty()). Deliberately plain delimited text,
-// not JSON - Bitwig's Controller API has no JSON parser built in and
-// this format is trivial to split by hand.
+//
+// BUG FIX (found before first hardware test): the original version keyed
+// each stored entry to a bank-WINDOW slot (0-7) and read/wrote through
+// activeTrackAt(i) both at store and recall time. Since activeTrackAt(i)
+// means "whatever track is currently scrolled into slot i", storing while
+// looking at one 8-track window and then recalling after scrolling to a
+// different one silently applied the wrong tracks' stored values to
+// whatever now sits in slots 0-7 - not a mismatch, a straight-up wrong-
+// track write. Fixed for Main tracks (the case this can actually happen
+// in - Returns rarely exceeds 8 tracks) by storing each track's ABSOLUTE
+// position in the project via Track.position() instead of its bank-window
+// slot, then recalling straight through mainTrackScanBank.getItemAt(pos) -
+// a permanently-unscrolled, 128-deep bank already used elsewhere in this
+// file (see MAIN_TRACK_SCAN_DEPTH above) where slot index === absolute
+// track position by construction. That makes recall target the exact same
+// tracks regardless of any scrolling, Hide/Show-All toggling, or even
+// which bank (Main/Returns) is currently on screen, in between store and
+// recall. Returns tracks keep the old bank-slot-relative behavior (no
+// equivalent unscrolled scan bank exists for them, and Returns rarely
+// scrolls in practice) - still scroll-position-dependent, a known,
+// unchanged limitation, not a regression.
+//
+// One slot's serialized text is "<entry>|<entry>|...", one entry per bank
+// slot 0-7: "-" for a slot with no track in it at capture time
+// (isMainSlotEmpty()); "R,<vol>,<pan>" for a Returns-context capture
+// (recalled positionally via effectTrackBank, same as before); or
+// "<pos>,<vol>,<pan>" for a Main-context capture, <pos> being the track's
+// absolute Track.position(). vol/pan are 4-decimal, normalized 0..1 - the
+// same range track.volume()/pan() already use everywhere else in this
+// file (e.g. the abandoned setVolumeToDb() attempt and every
+// .pan().reset() call). Deliberately plain delimited text, not JSON -
+// Bitwig's Controller API has no JSON parser built in and this format is
+// trivial to split by hand.
 function storeMixerSnapshot(slotIndex) {
    var parts = [];
    for (var i = 0; i < 8; i++) {
@@ -1978,34 +2003,51 @@ function storeMixerSnapshot(slotIndex) {
          continue;
       }
       var snapshotTrack = activeTrackAt(i);
-      parts.push(snapshotTrack.volume().get().toFixed(4) + "," + snapshotTrack.pan().get().toFixed(4));
+      var volPan = snapshotTrack.volume().get().toFixed(4) + "," + snapshotTrack.pan().get().toFixed(4);
+      if (isViewingReturns) {
+         parts.push("R," + volPan);
+      } else {
+         parts.push(snapshotTrack.position().get() + "," + volPan);
+      }
    }
    mixerSnapshotSettings[slotIndex].set(parts.join("|"));
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Stored");
+   showModePopup("STORE " + (slotIndex + 1));
 }
 
 function recallMixerSnapshot(slotIndex) {
    var serialized = mixerSnapshotSettings[slotIndex].get();
    if (!serialized) {
       host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " is Empty");
+      showModePopup("EMPTY " + (slotIndex + 1));
       return;
    }
    var parts = serialized.split("|");
    for (var i = 0; i < 8 && i < parts.length; i++) {
-      if (parts[i] === "-" || isMainSlotEmpty(i)) {
+      if (parts[i] === "-") {
          continue;
       }
-      var pair = parts[i].split(",");
-      var vol = parseFloat(pair[0]);
-      var pan = parseFloat(pair[1]);
+      var fields = parts[i].split(",");
+      var vol = parseFloat(fields[1]);
+      var pan = parseFloat(fields[2]);
       if (isNaN(vol) || isNaN(pan)) {
          continue;
       }
-      var recallTrack = activeTrackAt(i);
+      var recallTrack;
+      if (fields[0] === "R") {
+         recallTrack = effectTrackBank.getItemAt(i);
+      } else {
+         var pos = parseInt(fields[0], 10);
+         if (isNaN(pos) || pos < 0 || pos >= MAIN_TRACK_SCAN_DEPTH) {
+            continue;
+         }
+         recallTrack = mainTrackScanBank.getItemAt(pos);
+      }
       recallTrack.volume().set(vol);
       recallTrack.pan().set(pan);
    }
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
+   showModePopup("RECALL" + (slotIndex + 1));
 }
 
 // Requested directly: Bitwig's own Arranger/Mixer view didn't follow
@@ -2346,6 +2388,12 @@ function init() {
          // alone wouldn't fire a recompute in that case.
          scanTrack.name().markInterested();
          scanTrack.name().addValueObserver(function () { mainMappingDirty = true; });
+         // Read on-demand (not observed) by recallMixerSnapshot() above,
+         // which addresses tracks by absolute position through this same
+         // scan bank rather than through whichever bank window happens to
+         // be visible - see the Mixer Snapshots bug-fix comment there.
+         scanTrack.volume().markInterested();
+         scanTrack.pan().markInterested();
       })(scanIdx);
    }
 
@@ -2356,8 +2404,14 @@ function init() {
    // launcher features all go through the separate sceneBank/actions
    // instead), so there's nothing to replicate here.
    for (var cursorIdx = 0; cursorIdx < 8; cursorIdx++) {
-      mainTrackCursors.push(host.createCursorTrack(
-         "MIDIPLUS_MAIN_TRACK_" + cursorIdx, "Main Track " + (cursorIdx + 1), MAX_SENDS, 0, false));
+      var mainCursor = host.createCursorTrack(
+         "MIDIPLUS_MAIN_TRACK_" + cursorIdx, "Main Track " + (cursorIdx + 1), MAX_SENDS, 0, false);
+      // Read on-demand by storeMixerSnapshot() above, to capture each
+      // track's ABSOLUTE position (independent of which bank window is
+      // currently scrolled into view) rather than its bank-relative slot
+      // index - see the Mixer Snapshots bug-fix comment there.
+      mainCursor.position().markInterested();
+      mainTrackCursors.push(mainCursor);
    }
 
    // Scene Bank (8 scenes) - MODE_SCENE, entered via BTA. Fixed window, no

@@ -1980,24 +1980,60 @@ SHIFT+F(n) stores the current 8-track bank window's Volume+Pan into slot
 n (1-8, one per F-key); OPTION+F(n) recalls it. Both combos were free to
 use - a plain F-key press ignores modifier state entirely, so SHIFT/
 OPTION held during one previously did nothing extra. `storeMixerSnapshot()`/
-`recallMixerSnapshot()` (near `activeTrackAt()`) serialize each snapshot as
-plain delimited text (`"vol,pan|vol,pan|..."`, one pair per bank slot,
-`"-"` for a slot with no track in it at capture time) into one of 8
-`host.getDocumentState()` string settings - **Document State, not
-Preferences**: settings created this way are saved inside the Bitwig
-project file itself (normally shown in its Studio I/O panel, hidden here
-via `Setting.hide()` since these are raw internal storage, not meant for
-hand-editing), so a snapshot travels with the song and survives closing
-and reopening it. A Preferences setting, by contrast, is global to this
-controller across every project - the wrong scope for "different mix
-versions of this song."
+`recallMixerSnapshot()` (near `activeTrackAt()`) serialize each snapshot
+into one of 8 `host.getDocumentState()` string settings - **Document
+State, not Preferences**: settings created this way are saved inside the
+Bitwig project file itself (normally shown in its Studio I/O panel,
+hidden here via `Setting.hide()` since these are raw internal storage,
+not meant for hand-editing), so a snapshot travels with the song and
+survives closing and reopening it. A Preferences setting, by contrast, is
+global to this controller across every project - the wrong scope for
+"different mix versions of this song."
+
+**Bug found and fixed before the first hardware test**: asked directly -
+"why are only the current 8 visible faders stored... wouldn't it be
+better to save all current levels, to have consistency?" - which surfaced
+that the original version was worse than just narrow in scope, it was
+outright unsafe. It keyed each stored entry to a bank-**window** slot
+(0-7) and read/wrote through `activeTrackAt(i)` (whatever track is
+currently scrolled into slot i) both at store and recall time. Store
+while looking at one 8-track window, scroll to a different one, then
+recall, and it silently applied the first window's stored values to
+whatever tracks now sit in slots 0-7 - not a mismatch, a straight-up
+wrong-track write. Fixed for Main tracks (the case this can actually
+happen in - Returns rarely exceeds 8 tracks) by storing each track's
+**absolute** position in the project (`Track.position()`) instead of its
+bank-window slot, then recalling straight through
+`mainTrackScanBank.getItemAt(pos)` - a permanently-unscrolled, 128-deep
+bank this script already maintains elsewhere (see "Deactivated Tracks in
+Bank" below) where slot index === absolute track position by
+construction. Recall now targets the exact same tracks regardless of any
+scrolling, Hide/Show-All toggling, or even which bank is currently on
+screen, in between store and recall. Returns tracks keep the old
+bank-slot-relative behavior - no equivalent unscrolled scan bank exists
+for them, and Returns rarely scrolls in practice, so this is a known,
+unchanged (not regressed) limitation, not a fix that was skipped.
+
+Whole-project scope (every track, not just the visible 8-window) and
+additional captured parameters (Mute/Solo/Sends) were discussed as
+possible next steps but **deliberately not done yet** - this pass only
+fixes the wrong-track bug for the existing 8-track-window scope, so it's
+safe to test before deciding whether to widen it further.
 
 Deliberately scoped to just **Volume + Pan** on whichever 8 tracks are
-currently visible in the bank right now (not the whole project, not
+currently visible in the bank at store time (not the whole project, not
 Mute/Solo/Sends) - the simplest version of "recall a mix balance," easy
 to extend later if that scope turns out to be too narrow. Recalling an
 empty slot shows "Mixer Snapshot N is Empty" instead of silently doing
-nothing. **Not yet tested on hardware.**
+nothing.
+
+**Feedback, requested directly**: both actions show a corner popup
+(`host.showPopupNotification()`, e.g. "Mixer Snapshot 3 Stored") AND
+briefly flash across all 8 channels' bottom LCD row via the existing
+`showModePopup()` (the same mechanism the PLUGIN/SENDS/RETURNS/MIXER
+mode-change announcements already use) - "STORE 3" on save, "RECALL3" on
+recall, "EMPTY 3" if you try to recall a slot that's never been stored.
+**Not yet tested on hardware.**
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 
