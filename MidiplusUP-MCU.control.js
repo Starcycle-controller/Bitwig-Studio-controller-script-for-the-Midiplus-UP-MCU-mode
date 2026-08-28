@@ -2043,6 +2043,21 @@ function recallMixerSnapshot(slotIndex) {
          }
          recallTrack = mainTrackScanBank.getItemAt(pos);
       }
+      // mainTrackScanBank's volume()/pan() are deliberately never
+      // markInterested() (unlike mainTrackCursors'/effectTrackBank's,
+      // via setupChannelStripObservers()) - write-only .set() calls don't
+      // require it (only .get() does, confirmed via the Value.markInterested()
+      // Javadoc: "an error will be reported if the driver attempts to get
+      // the current value" if not interested - .set() isn't mentioned),
+      // and this code path never reads them. Marking 256 more values
+      // interested across this whole 128-deep bank (added, then reverted,
+      // in an earlier version of this fix) coincided with a real-hardware
+      // regression where a group's first child track's fader silently
+      // started controlling the GROUP's own volume instead of the
+      // child's - suspected cause: that much additional simultaneous
+      // interest on a large bank that spans group boundaries confusing
+      // Bitwig's own parameter resolution around those boundaries. Kept
+      // uninterested here specifically to avoid re-triggering that.
       recallTrack.volume().set(vol);
       recallTrack.pan().set(pan);
    }
@@ -2388,12 +2403,6 @@ function init() {
          // alone wouldn't fire a recompute in that case.
          scanTrack.name().markInterested();
          scanTrack.name().addValueObserver(function () { mainMappingDirty = true; });
-         // Read on-demand (not observed) by recallMixerSnapshot() above,
-         // which addresses tracks by absolute position through this same
-         // scan bank rather than through whichever bank window happens to
-         // be visible - see the Mixer Snapshots bug-fix comment there.
-         scanTrack.volume().markInterested();
-         scanTrack.pan().markInterested();
       })(scanIdx);
    }
 

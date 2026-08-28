@@ -2034,7 +2034,26 @@ briefly flash across all 8 channels' bottom LCD row via the existing
 `showModePopup()` (the same mechanism the PLUGIN/SENDS/RETURNS/MIXER
 mode-change announcements already use) - "STORE 3" on save, "RECALL3" on
 recall, "EMPTY 3" if you try to recall a slot that's never been stored.
-**Not yet tested on hardware.**
+
+**Real regression found on first hardware test, now fixed**: reported as
+"the fader moves but the volume doesn't update" - console logs showed the
+volume value genuinely changing, but on a group's first CHILD track, the
+hardware fader was actually reading/writing the GROUP's own volume
+instead of the child's, despite the LCD correctly showing the child's
+name. Traced to the wrong-track bug fix above: it originally also called
+`markInterested()` on `volume()`/`pan()` for all 128 slots of
+`mainTrackScanBank` (up from just `exists()`/`isActivated()`/`name()`),
+so recall could reliably `.set()` through it. That's ~256 additional
+live-tracked values spanning a bank that crosses group boundaries, and
+is the suspected cause of Bitwig's own parameter resolution getting
+confused around those boundaries specifically. Fixed by leaving those
+`markInterested()` calls out entirely - confirmed via the API's own
+`Value.markInterested()` Javadoc that only `.get()` requires it ("an
+error will be reported if the driver attempts to get the current value"
+if not interested; `.set()` isn't mentioned), and this code path only
+ever `.set()`s through `mainTrackScanBank`, never `.get()`s. **Not yet
+re-tested on hardware since this fix - please re-verify both the
+group-child-track case and normal (non-group) recall/store still work.**
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 
