@@ -2089,45 +2089,52 @@ function recallMixerSnapshot(slotIndex) {
       return;
    }
    var parts = serialized.split("|");
-   // TEMPORARY DIAGNOSTIC EXPERIMENT: the latest hardware test showed
-   // touch(false) called correctly, on the exact right object, with the
-   // exact value recall's own "before" readback later confirmed - yet
-   // the write still silently failed, immediately and 500ms later.
-   // Recall fired within milliseconds of that touch(false) call in that
-   // test (vs. the one clean success, where an unrelated second touch/
-   // release cycle happened in between, giving Bitwig more elapsed time).
-   // Testing whether the .set() calls are racing Bitwig's own internal
-   // processing of the release by delaying the actual writes 300ms after
-   // the button press - a failed .set() doesn't retry itself, so if this
-   // is a genuine race, only delaying the attempt itself (not just
-   // checking back later) can confirm or rule it out.
-   host.scheduleTask(function () {
-      for (var i = 0; i < 8 && i < parts.length; i++) {
-         if (parts[i] === "-" || isMainSlotEmpty(i)) {
-            continue;
-         }
-         var fields = parts[i].split(",");
-         var vol = parseFloat(fields[0]);
-         var pan = parseFloat(fields[1]);
-         if (isNaN(vol) || isNaN(pan)) {
-            continue;
-         }
-         var recallTrack = directTrackAt(i);
-         var beforeVol = recallTrack.volume().get();
-         recallTrack.volume().set(vol);
-         recallTrack.pan().set(pan);
-         var afterVol = recallTrack.volume().get();
-         println("Mixer Snapshot RECALL slot " + i + " - name=\"" + recallTrack.name().get() +
-            "\" target vol=" + vol + " pan=" + pan + " | before=" + beforeVol + " immediate after=" + afterVol +
-            " | faderTouchHeld=" + faderTouchHeld[i]);
-         (function (slotI, slotTrack, targetVol) {
-            host.scheduleTask(function () {
-               println("Mixer Snapshot RECALL slot " + slotI + " - delayed readback (500ms) vol=" +
-                  slotTrack.volume().get() + " (target was " + targetVol + ")");
-            }, 500);
-         })(i, recallTrack, vol);
+   // TEMPORARY DIAGNOSTIC EXPERIMENT: neither touch(false) (confirmed
+   // called correctly, on the exact right object, immediately before
+   // recall) nor a 300ms delay before the write fixed a channel that had
+   // recently received live hardware fader input - ruling out both a
+   // stuck touch state and a settle-time race with Bitwig's own
+   // processing of the release.
+   //
+   // The original "clear hwFaders' bindings before writing, restore
+   // after" experiment (which also looked like it made no difference)
+   // was run BEFORE the touch() fix existed - so it never actually got a
+   // fair test, since Bitwig's internal touch/gesture state (if that's
+   // real) was never being released at all back then regardless of the
+   // binding. Testing the combination now: touch() fixed AND the live
+   // binding cleared for the duration of the write, in case both are
+   // independently necessary - touch() to release Bitwig's per-parameter
+   // gesture state, binding-clearing to stop the still-live hardware
+   // binding from recapturing the parameter as we write it.
+   for (var clearIdx = 0; clearIdx < 8; clearIdx++) {
+      hwFaders[clearIdx].clearBindings();
+   }
+   for (var i = 0; i < 8 && i < parts.length; i++) {
+      if (parts[i] === "-" || isMainSlotEmpty(i)) {
+         continue;
       }
-   }, 300);
+      var fields = parts[i].split(",");
+      var vol = parseFloat(fields[0]);
+      var pan = parseFloat(fields[1]);
+      if (isNaN(vol) || isNaN(pan)) {
+         continue;
+      }
+      var recallTrack = directTrackAt(i);
+      var beforeVol = recallTrack.volume().get();
+      recallTrack.volume().set(vol);
+      recallTrack.pan().set(pan);
+      var afterVol = recallTrack.volume().get();
+      println("Mixer Snapshot RECALL slot " + i + " - name=\"" + recallTrack.name().get() +
+         "\" target vol=" + vol + " pan=" + pan + " | before=" + beforeVol + " immediate after=" + afterVol +
+         " | faderTouchHeld=" + faderTouchHeld[i]);
+      (function (slotI, slotTrack, targetVol) {
+         host.scheduleTask(function () {
+            println("Mixer Snapshot RECALL slot " + slotI + " - delayed readback (500ms) vol=" +
+               slotTrack.volume().get() + " (target was " + targetVol + ")");
+         }, 500);
+      })(i, recallTrack, vol);
+   }
+   rebindFaders();
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
    showModePopup("RECALL" + (slotIndex + 1));
 }
