@@ -2159,161 +2159,166 @@ function directTrackAt(i) {
 
 // Mixer Snapshots - see MIXER_SNAPSHOT_SLOTS/mixerSnapshotSettings above.
 //
-// Back to bank-window-relative, this time for good - see the "Actual root
-// cause" and "mainTrackScanBank is a dead end for writes" paragraphs in
-// the README's "Mixer Snapshots" section for the full story. Short
-// version: `directTrackAt(i)` resolves to the EXACT SAME object
-// `hwFaders[i]`/`hwEncoders` bind to for that index/mode (same call, same
-// index) - so once the fader touch handler calls Parameter.touch()
-// properly on press/release (see faderTouchedTarget above), that's the
-// object being released, and recall's .set() on it works. An absolute-
-// position rebuild through `mainTrackScanBank.getItemAt(pos)` - a
-// DIFFERENT object, never setBinding()-bound to any HardwareControl -
-// was tried to make this scroll-proof, but failed identically to the
-// pre-touch()-fix behavior: touch()/untouch() on the fader-bound object
-// has no effect on that separate object's own write-ability. Confirmed
-// via a controlled A/B on hardware (same touched channels, only the
-// write path changed) - not revisiting this again without new evidence
-// pointing at a genuinely different mechanism.
+// Whole-project, not just the visible 8-track window - captures every
+// existing Main track (any position, via mainTrackScanBank, which
+// already exists for the "Deactivated Tracks in Bank" scan and is never
+// scrolled) and can restore all of them, not just whichever 8 happen to
+// be on screen. Main tracks only - Hide mode and Returns are refused
+// with a popup; see below for why.
 //
-// SCOPE: writes still have to go through directTrackAt(i) - the exact
-// object the fader for that index is bound to (see above) - since
-// writing through any other object (e.g. a separate, unscrolled scan
-// bank) was already confirmed a dead end independent of the touch()
-// fix. That means recall can't silently update a track off-screen; it
-// has to bring the ORIGINAL 8 tracks back into slots 0-7 first. Store
-// captures the active bank's scroll position (trackBank/effectTrackBank
-// scrollPosition(), or mainBankScrollOffset in Hide mode) alongside
-// which of Main-Show-All/Main-Hide/Returns was active, and recall
-// restores that exact scroll position (jumping the visible bank window
-// and physical faders/LCD to it, same as the BANK scroll buttons would)
-// before writing - same mechanism as scrollActiveBankToStart()/
-// scrollActiveBankToEnd() above, just to a stored position instead of an
-// edge. Recalling a snapshot stored in a different bank view (Main vs
-// Returns, or Show All vs Hide) than the one currently active is
-// refused with a popup rather than guessing which tracks were meant,
-// since there's no way to tell Bitwig to also switch views reliably
-// mid-recall without risking the same kind of surprise this feature has
-// already caused once.
+// Writes still have to go through directTrackAt(i) - the exact object
+// the fader for that index is setBinding()-bound to - since writing
+// through any other object (a separate, unscrolled scan bank included)
+// was confirmed a dead end independent of the Parameter.touch() fix (see
+// faderTouchedTarget above and the README's "Mixer Snapshots" section).
+// So a track that isn't currently sitting in one of the 8 fader-bound
+// slots can't be updated in place - recall has to scroll it into slot 0
+// first. Tracks already visible in the CURRENT window update immediately,
+// with no scroll at all, so the fader you're looking at responds right
+// away; every other stored track is handled afterward, one bank window
+// at a time (batching any that land in the same window together) - each
+// one briefly scrolling trackBank there, writing, and moving on - before
+// finally scrolling back to the window you started at. This does mean
+// the bank window/faders/LCD will visibly jump through each affected
+// window in turn for anything off-screen; there is no way to update a
+// track's volume/pan without it briefly becoming the one bound to
+// hardware, given the constraint above.
 //
-// Hide mode: directTrackAt(i) resolves to mainTrackCursors[i] - also the
-// exact object the fader for that index is bound to and gets touch()/
-// untouch() on press/release, so the same reasoning that fixed Show All
-// mode covers Hide mode too. Restoring mainBankScrollOffset then calling
-// refreshMainCursors() re-points those cursors at the stored slots,
-// exactly like the existing Hide-mode scroll helpers already do.
+// Hide mode is refused (rather than silently reinterpreted) because its
+// "slot i" mapping (activeTrackRawIndices, built from live isActivated()
+// state) isn't a stable absolute position the way trackBank.scrollPosition()
+// is - a captured position could mean a different track by recall time
+// if tracks were (de)activated in between. Returns is refused because
+// this whole feature is built on mainTrackScanBank, which only scans
+// Main tracks. Both keep whatever their own single-window scope was
+// before this feature existed - not currently implemented, given the
+// added complexity for a case that hasn't been reported needed.
 //
-// One slot's serialized text is "<bankKind>,<scrollPos>|<entry>|...",
-// one entry per bank slot 0-7 after the header: "-" for a slot with no
-// track in it at capture time (isMainSlotEmpty()), else "<vol>,<pan>"
-// (4-decimal, normalized 0..1 - the same range track.volume()/pan()
-// already use everywhere else in this file). bankKind is "M" (Main, Show
-// All), "H" (Main, Hide), or "R" (Returns). Deliberately plain delimited
-// text, not JSON - Bitwig's Controller API has no JSON parser built in
-// and this format is trivial to split by hand.
-function activeMixerSnapshotBankKind() {
-   if (isViewingReturns) {
-      return "R";
-   }
-   return hideDeactivatedTracksEnabled ? "H" : "M";
+// One slot's serialized text is "<pos>,<vol>,<pan>|<pos>,<vol>,<pan>|..."
+// - one entry per EXISTING track at store time (absolute
+// mainTrackScanBank position, not bank-relative slot), vol/pan 4-decimal
+// normalized 0..1 (the same range track.volume()/pan() already use
+// everywhere else in this file). Deactivated tracks are still captured/
+// restored (matches "revert previous mixer settings" - not everything
+// meant to come back is necessarily active). Deliberately plain
+// delimited text, not JSON - Bitwig's Controller API has no JSON parser
+// built in and this format is trivial to split by hand.
+function isMixerSnapshotBankSupported() {
+   return !isViewingReturns && !hideDeactivatedTracksEnabled;
 }
 
 function storeMixerSnapshot(slotIndex) {
+   if (!isMixerSnapshotBankSupported()) {
+      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + ": switch to Main / Show All view");
+      showModePopup("WRONG VIEW");
+      return;
+   }
    var parts = [];
-   for (var i = 0; i < 8; i++) {
-      if (isMainSlotEmpty(i)) {
-         parts.push("-");
+   for (var i = 0; i < MAIN_TRACK_SCAN_DEPTH; i++) {
+      var scanTrack = mainTrackScanBank.getItemAt(i);
+      if (!scanTrack.exists().get()) {
          continue;
       }
-      var snapshotTrack = directTrackAt(i);
-      parts.push(snapshotTrack.volume().get().toFixed(4) + "," + snapshotTrack.pan().get().toFixed(4));
+      parts.push(i + "," + scanTrack.volume().get().toFixed(4) + "," + scanTrack.pan().get().toFixed(4));
    }
-   var bankKind = activeMixerSnapshotBankKind();
-   var scrollPos;
-   if (bankKind === "R") {
-      scrollPos = effectTrackBank.scrollPosition().get();
-   } else if (bankKind === "H") {
-      scrollPos = mainBankScrollOffset;
-   } else {
-      scrollPos = trackBank.scrollPosition().get();
-   }
-   var header = bankKind + "," + scrollPos;
-   mixerSnapshotSettings[slotIndex].set(header + "|" + parts.join("|"));
+   mixerSnapshotSettings[slotIndex].set(parts.join("|"));
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Stored");
    showModePopup("STORE " + (slotIndex + 1));
-}
-
-// Actually writes the volume/pan values once the correct bank window is
-// confirmed in view - split out from recallMixerSnapshot() below since a
-// scroll restore needs a short delay before the window's tracks are
-// reliably readable/writable (same settle-time reasoning already
-// documented elsewhere in this file for a fresh cursor reposition).
-function applyMixerSnapshotValues(slotIndex, parts) {
-   for (var i = 0; i < 8 && i < parts.length; i++) {
-      if (parts[i] === "-" || isMainSlotEmpty(i)) {
-         continue;
-      }
-      var fields = parts[i].split(",");
-      var vol = parseFloat(fields[0]);
-      var pan = parseFloat(fields[1]);
-      if (isNaN(vol) || isNaN(pan)) {
-         continue;
-      }
-      var recallTrack = directTrackAt(i);
-      recallTrack.volume().set(vol);
-      recallTrack.pan().set(pan);
-   }
-   host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
-   showModePopup("RECALL" + (slotIndex + 1));
 }
 
 var mixerSnapshotRecallGeneration = 0;
 
 function recallMixerSnapshot(slotIndex) {
+   if (!isMixerSnapshotBankSupported()) {
+      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + ": switch to Main / Show All view");
+      showModePopup("WRONG VIEW");
+      return;
+   }
    var serialized = mixerSnapshotSettings[slotIndex].get();
    if (!serialized) {
       host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " is Empty");
       showModePopup("EMPTY " + (slotIndex + 1));
       return;
    }
-   var allParts = serialized.split("|");
-   var header = allParts[0].split(",");
-   var bankKind = header[0];
-   var scrollPos = parseInt(header[1], 10);
-   var parts = allParts.slice(1);
-
-   if (bankKind !== activeMixerSnapshotBankKind()) {
-      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) +
-         ": switch to the view it was stored in");
-      showModePopup("WRONG VIEW");
+   var entries = [];
+   var rawEntries = serialized.split("|");
+   for (var e = 0; e < rawEntries.length; e++) {
+      var fields = rawEntries[e].split(",");
+      var pos = parseInt(fields[0], 10);
+      var vol = parseFloat(fields[1]);
+      var pan = parseFloat(fields[2]);
+      if (isNaN(pos) || isNaN(vol) || isNaN(pan)) {
+         continue;
+      }
+      entries.push({ pos: pos, vol: vol, pan: pan });
+   }
+   if (entries.length === 0) {
+      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " is Empty");
+      showModePopup("EMPTY " + (slotIndex + 1));
       return;
    }
 
-   var needsScroll = false;
-   if (bankKind === "R" && effectTrackBank.scrollPosition().get() !== scrollPos) {
-      effectTrackBank.scrollPosition().set(scrollPos);
-      needsScroll = true;
-   } else if (bankKind === "H" && mainBankScrollOffset !== scrollPos) {
-      mainBankScrollOffset = scrollPos;
-      refreshMainCursors();
-      needsScroll = true;
-   } else if (bankKind === "M" && trackBank.scrollPosition().get() !== scrollPos) {
-      trackBank.scrollPosition().set(scrollPos);
-      refreshMainCursors();
-      needsScroll = true;
+   // Split into whatever's already visible (updates right away, live,
+   // with no scroll at all) and everything else (handled afterward -
+   // see applyMixerSnapshotOffscreen() below).
+   var originalScrollPos = trackBank.scrollPosition().get();
+   var offScreen = [];
+   for (var i = 0; i < entries.length; i++) {
+      var slotInWindow = entries[i].pos - originalScrollPos;
+      if (slotInWindow >= 0 && slotInWindow <= 7) {
+         var visTrack = directTrackAt(slotInWindow);
+         visTrack.volume().set(entries[i].vol);
+         visTrack.pan().set(entries[i].pan);
+      } else {
+         offScreen.push(entries[i]);
+      }
    }
+   offScreen.sort(function (a, b) { return a.pos - b.pos; });
 
-   if (!needsScroll) {
-      applyMixerSnapshotValues(slotIndex, parts);
-      return;
-   }
    mixerSnapshotRecallGeneration++;
-   var myGeneration = mixerSnapshotRecallGeneration;
+   applyMixerSnapshotOffscreen(offScreen, 0, originalScrollPos, mixerSnapshotRecallGeneration, slotIndex);
+}
+
+// Walks the off-screen entries (sorted by position) one bank window at a
+// time: scrolls trackBank so the next unhandled entry lands at slot 0,
+// batches every other still-unhandled entry that falls within that same
+// 8-wide window, writes them all after a short settle delay (same
+// reasoning as the fresh-cursor-reposition delay used elsewhere in this
+// file), then moves on. Once everything's applied, scrolls back to
+// wherever the user started (if we ever moved away from it) so they land
+// back on the window they were actually looking at.
+function applyMixerSnapshotOffscreen(offScreen, index, originalScrollPos, myGeneration, slotIndex) {
+   if (myGeneration !== mixerSnapshotRecallGeneration) {
+      return;
+   }
+   if (index >= offScreen.length) {
+      if (trackBank.scrollPosition().get() !== originalScrollPos) {
+         trackBank.scrollPosition().set(originalScrollPos);
+         refreshMainCursors();
+      }
+      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
+      showModePopup("RECALL" + (slotIndex + 1));
+      return;
+   }
+   var windowStart = offScreen[index].pos;
+   var batch = [];
+   var nextIndex = index;
+   while (nextIndex < offScreen.length && offScreen[nextIndex].pos - windowStart <= 7) {
+      batch.push(offScreen[nextIndex]);
+      nextIndex++;
+   }
+   trackBank.scrollPosition().set(windowStart);
+   refreshMainCursors();
    host.scheduleTask(function () {
-      if (mixerSnapshotRecallGeneration !== myGeneration) {
+      if (myGeneration !== mixerSnapshotRecallGeneration) {
          return;
       }
-      applyMixerSnapshotValues(slotIndex, parts);
+      for (var b = 0; b < batch.length; b++) {
+         var track = directTrackAt(batch[b].pos - windowStart);
+         track.volume().set(batch[b].vol);
+         track.pan().set(batch[b].pan);
+      }
+      applyMixerSnapshotOffscreen(offScreen, nextIndex, originalScrollPos, myGeneration, slotIndex);
    }, 100);
 }
 
@@ -2772,6 +2777,11 @@ function init() {
          var scanTrack = mainTrackScanBank.getItemAt(si);
          scanTrack.exists().markInterested();
          scanTrack.isActivated().markInterested();
+         // Read on-demand (not observed) by storeMixerSnapshot() above,
+         // to capture every existing track's level regardless of which
+         // bank window is currently visible.
+         scanTrack.volume().markInterested();
+         scanTrack.pan().markInterested();
          scanTrack.exists().addValueObserver(function () { mainMappingDirty = true; });
          scanTrack.isActivated().addValueObserver(function () { mainMappingDirty = true; });
          // Catches a track at this raw slot being replaced by a different

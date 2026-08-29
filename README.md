@@ -2164,10 +2164,13 @@ replacement now in place instead.
 
 ### Mixer Snapshots
 
-SHIFT+F(n) stores the current 8-track bank window's Volume+Pan into slot
-n; OPTION+F(n) recalls it back. Persisted via `host.getDocumentState()`,
-so a snapshot is saved inside the Bitwig project file itself and travels
-with the song.
+SHIFT+F(n) stores Volume+Pan for every existing Main track in the
+project into slot n (not just the current 8-track bank window);
+OPTION+F(n) recalls it back. Persisted via `host.getDocumentState()`, so
+a snapshot is saved inside the Bitwig project file itself and travels
+with the song. Main tracks in Show All mode only - Hide mode and Returns
+show a `switch to Main / Show All view` popup instead (see below for
+why).
 
 Shelved once already this session after recall reliably failed to write
 a value to any channel whose fader had been touched earlier in the same
@@ -2196,21 +2199,41 @@ a contributing factor in the original recall failures, so worth a clean
 retest now that it's gone. Confirmed working on hardware, including a
 channel whose fader had been touched earlier in the session.
 
-**Scroll-proof.** An earlier version of this feature applied stored
-values to whatever's currently in bank slots 0-7, so recalling after
-scrolling away applied the snapshot to the wrong tracks. Writes still
-have to go through `directTrackAt(i)` specifically - the exact object
-the fader for that index is bound to (see above); writing through any
-other object was already confirmed a dead end independent of the
-`touch()` fix. So instead, store also captures the active bank's scroll
-position (and whether it was Main/Show All, Main/Hide, or Returns), and
-recall restores that exact window - jumping the visible bank, physical
-faders, and LCD to it, same as the bank-scroll buttons would - before
-writing. Recalling a snapshot stored in a different bank view than the
-one currently active is refused with a popup (`switch to the view it was
-stored in`) rather than guessing which tracks were meant. Scope
-otherwise unchanged: Volume + Pan only, on whichever 8 tracks were
-visible in the bank at store time.
+**Whole project, not just one bank window.** Earlier versions of this
+feature only covered whichever 8 tracks were visible in the bank at
+store time - first not scroll-proof at all (recall applied to whatever
+was currently in slots 0-7), then fixed to restore that one stored
+window before writing. Since the actual ask was "change several banks,
+then revert everything, without needing the hardware to jump around" -
+store now captures every existing Main track in the project (via the
+always-unscrolled `mainTrackScanBank`, by absolute position), not just
+the visible window.
+
+Writes still have to go through `directTrackAt(i)` specifically - the
+exact object the fader for that index is bound to; writing through any
+other object (the scan bank included) was already confirmed a dead end
+independent of the `touch()` fix. So a track that isn't currently in one
+of the 8 fader-bound slots can't be updated in place. Recall handles
+this in two passes: whatever's already visible in the CURRENT window
+updates immediately, live, with no scrolling at all (so the fader you're
+looking at responds right away); everything else is applied afterward,
+one bank window at a time (batching anything that lands in the same
+window together) - each briefly scrolling `trackBank` there, writing,
+and moving on - before finally scrolling back to wherever you started.
+The bank window/faders/LCD will visibly jump through each affected
+window in turn for anything off-screen - there's no way around that
+given the write constraint above - but you end up back where you were,
+with everything applied.
+
+Main tracks in Show All mode only. Hide mode is refused rather than
+silently reinterpreted, since its slot mapping
+(`activeTrackRawIndices`, built from live `isActivated()` state) isn't a
+stable absolute position the way `trackBank.scrollPosition()` is - a
+captured position could mean a different track by recall time if tracks
+were (de)activated in between. Returns is refused because this feature
+is built on `mainTrackScanBank`, which only scans Main tracks. Both
+simply aren't implemented for this feature, given the added complexity
+for a case that hasn't been reported needed.
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 
