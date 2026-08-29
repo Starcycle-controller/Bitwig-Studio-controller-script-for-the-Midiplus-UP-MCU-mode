@@ -1198,13 +1198,17 @@ tracks, rather than always snapping back to the window's left edge
 regardless of which way it just moved.
 
 **Bank Scroll Left: Select Track #** / **Bank Scroll Right: Select Track
-#** (Mixer category, range 1-8, default `1`/`8` - the original
+#** (Mixer category, `None`/`1`-`8`, default `1`/`8` - the original
 hardcoded first-slot/last-slot behavior) - requested directly: always
 jumping to the window's extreme edge (track 1 or track 8) can feel
 jarring in Bitwig's own view; a slot nearer the center (e.g. `3` on the
 left, `6` on the right) might land Bitwig's scrolled-into-view result
-somewhere less abrupt. Exposed as a setting rather than a fixed redesign
-specifically to experiment with different values on hardware. Both
+somewhere less abrupt. `None` (requested separately) skips selection on
+that scroll direction entirely - the bank window still scrolls, but
+whatever track was already selected stays selected, for workflows that
+would rather not have scrolling disturb the current selection at all.
+Exposed as a setting rather than a fixed redesign specifically to
+experiment with different values on hardware. Both
 `selectFirstTrackOfBank()`/`selectLastTrackOfBank()` funnel through
 `selectBankSlotNear(index)`, which scans backward from the configured
 slot toward slot 0 if that exact one turns out empty (Hide mode can

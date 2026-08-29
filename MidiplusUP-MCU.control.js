@@ -1914,9 +1914,11 @@ var displayRefreshRetryGeneration = 0;
 
 // 0-based slot indices selectFirstTrackOfBank()/selectLastTrackOfBank()
 // (see below) select after a bank scroll - live from the "Bank Scroll
-// Left/Right: Select Track #" Controller Preferences settings (1-8 in
-// the UI, converted to 0-7 here). Defaults 0/7 match the original
-// hardcoded first-slot/last-slot behavior.
+// Left/Right: Select Track #" Controller Preferences settings ("None" or
+// 1-8 in the UI, converted to -1/0-7 here). -1 ("None") means don't
+// select anything on that scroll direction at all, leaving whatever was
+// already selected untouched. Defaults 0/7 match the original hardcoded
+// first-slot/last-slot behavior.
 var bankScrollLeftSelectIndex = 0;
 var bankScrollRightSelectIndex = 7;
 var masterTrack = null;
@@ -2378,10 +2380,16 @@ function selectBankSlotNear(index) {
 }
 
 function selectFirstTrackOfBank() {
+   if (bankScrollLeftSelectIndex < 0) {
+      return;
+   }
    selectBankSlotNear(bankScrollLeftSelectIndex);
 }
 
 function selectLastTrackOfBank() {
+   if (bankScrollRightSelectIndex < 0) {
+      return;
+   }
    selectBankSlotNear(bankScrollRightSelectIndex);
 }
 
@@ -3470,24 +3478,28 @@ function init() {
    // See bankScrollLeftSelectIndex/bankScrollRightSelectIndex and
    // selectFirstTrackOfBank()/selectLastTrackOfBank() above - which track
    // (1-8) a left/right bank scroll selects, so Bitwig's own view follows
-   // along. Requested directly: the original first-slot/last-slot
+   // along, or "None" to leave whatever was already selected untouched
+   // instead (requested directly - some workflows would rather scroll
+   // the bank without disturbing the current selection at all).
+   // Requested directly, separately: the original first-slot/last-slot
    // (1/8) behavior can feel like it always jumps to the window's
    // extreme edge - a slot nearer the center (e.g. 3 on the left, 6 on
    // the right) might make Bitwig's own scrolled-into-view result feel
    // less jarring. Worth experimenting with on hardware, hence
    // configurable rather than a fixed redesign either way.
-   var bankScrollLeftSelectSetting = host.getPreferences().getNumberSetting(
-      "Bank Scroll Left: Select Track #", "Mixer", 1, 8, 1, "", 1);
+   var BANK_SCROLL_SELECT_OPTIONS = ["None", "1", "2", "3", "4", "5", "6", "7", "8"];
+   var bankScrollLeftSelectSetting = host.getPreferences().getEnumSetting(
+      "Bank Scroll Left: Select Track #", "Mixer", BANK_SCROLL_SELECT_OPTIONS, "1");
    bankScrollLeftSelectSetting.markInterested();
-   bankScrollLeftSelectSetting.addRawValueObserver(function (value) {
-      bankScrollLeftSelectIndex = value - 1;
+   bankScrollLeftSelectSetting.addValueObserver(function (value) {
+      bankScrollLeftSelectIndex = value === "None" ? -1 : (parseInt(value, 10) - 1);
    });
 
-   var bankScrollRightSelectSetting = host.getPreferences().getNumberSetting(
-      "Bank Scroll Right: Select Track #", "Mixer", 1, 8, 1, "", 8);
+   var bankScrollRightSelectSetting = host.getPreferences().getEnumSetting(
+      "Bank Scroll Right: Select Track #", "Mixer", BANK_SCROLL_SELECT_OPTIONS, "8");
    bankScrollRightSelectSetting.markInterested();
-   bankScrollRightSelectSetting.addRawValueObserver(function (value) {
-      bankScrollRightSelectIndex = value - 1;
+   bankScrollRightSelectSetting.addValueObserver(function (value) {
+      bankScrollRightSelectIndex = value === "None" ? -1 : (parseInt(value, 10) - 1);
    });
 
    // See selectLedVelocityFor()/armedLedBlinkTick() above. Turning this
