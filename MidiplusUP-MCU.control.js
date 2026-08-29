@@ -1211,7 +1211,7 @@ var FADER_SNAP_DB_MARK_RANGE = 0.03;
 var FADER_SNAP_DB_MARK_DELAY_MS = 500;
 var FADER_SNAP_DB_MARKS_MUSICAL = [0, -6, -12, -18, -24, -30, -36];
 var FADER_SNAP_DB_MARKS_HARDWARE = [5, 0, -10, -20, -30, -50, -60];
-var faderSnapDbMarkLayout = "Musical (Standard)";
+var faderSnapDbMarkLayout = "Hardware Scale";
 var FADER_SNAP_DB_CURVE_SLOPE = 60;
 var FADER_SNAP_DB_CURVE_OFFSET = 6.0206;
 
@@ -3119,10 +3119,13 @@ function init() {
 
    // Which set of marks Fader Snap to dB Marks snaps to - see
    // FADER_SNAP_DB_MARKS_MUSICAL/_HARDWARE and activeFaderSnapDbMarks()
-   // above.
+   // above. Defaults to Hardware Scale - matches what's actually printed
+   // on this controller's own fader, so the snap lands where the label
+   // says by default; advanced users who want the standard audio-
+   // engineering halving series instead can switch to Musical.
    var faderSnapDbMarkLayoutSetting = host.getPreferences().getEnumSetting(
       "Fader Snap to dB Marks Layout", "Mixer",
-      ["Musical (Standard)", "Hardware Scale"], "Musical (Standard)");
+      ["Hardware Scale", "Musical (Standard)"], "Hardware Scale");
    faderSnapDbMarkLayoutSetting.markInterested();
    faderSnapDbMarkLayoutSetting.addValueObserver(function(value) {
       faderSnapDbMarkLayout = value;

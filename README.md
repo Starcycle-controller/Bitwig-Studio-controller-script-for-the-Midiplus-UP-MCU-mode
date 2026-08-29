@@ -1370,24 +1370,26 @@ layout's marks arms a check - `scheduleFaderSnapDbMarkCheck()` runs
 100-3000ms); if the fader is still untouched and still in range, it
 snaps to that mark's exact value.
 
-**Fader Snap to dB Marks Layout** (dropdown, default **Musical
-(Standard)**) - which set of marks to snap to, since "the round
-numbers" means different things depending on context:
-- **Musical (Standard)**: `0, -6, -12, -18, -24, -30, -36` dB - the
-  classic halving series (every -6dB is half the amplitude) used across
-  audio engineering generally, requested directly.
-- **Hardware Scale**: `5, 0, -10, -20, -30, -50, -60` dB - matches the
-  marks actually printed on this hardware's own fader scale (read
-  directly off the unit: `10, 5, 0, -10, -20, -30, -50, -60, -Infinity`
-  top to bottom). The printed `+10` is deliberately left out - Bitwig's
-  volume curve tops out around **+6.02dB** at full fader travel (see the
-  curve formula below, evaluated at normalized=1.0), so a literal
-  `+10dB` target is never actually reachable; `dbMarkToNormalized()`
-  clamps to `[0, 1]` defensively regardless, so an unreachable mark
-  would just behave like "snap to the very top" rather than error.
-  `-Infinity` isn't in either list - Fader Snap to Zero above already
-  owns that endpoint, so turn that on too if the hardware scale's bottom
-  mark should also snap.
+**Fader Snap to dB Marks Layout** (dropdown, default **Hardware
+Scale**) - which set of marks to snap to, since "the round numbers"
+means different things depending on context:
+- **Hardware Scale** (default - matches what's actually printed on this
+  controller, so the snap lands where the label says out of the box):
+  `5, 0, -10, -20, -30, -50, -60` dB - the marks actually printed on
+  this hardware's own fader scale (read directly off the unit:
+  `10, 5, 0, -10, -20, -30, -50, -60, -Infinity` top to bottom). The
+  printed `+10` is deliberately left out - Bitwig's volume curve tops
+  out around **+6.02dB** at full fader travel (see the curve formula
+  below, evaluated at normalized=1.0), so a literal `+10dB` target is
+  never actually reachable; `dbMarkToNormalized()` clamps to `[0, 1]`
+  defensively regardless, so an unreachable mark would just behave like
+  "snap to the very top" rather than error. `-Infinity` isn't in either
+  list - Fader Snap to Zero above already owns that endpoint, so turn
+  that on too if the hardware scale's bottom mark should also snap.
+- **Musical (Standard)** - for advanced users who'd rather snap to the
+  standard audio-engineering halving series than the printed labels:
+  `0, -6, -12, -18, -24, -30, -36` dB (every -6dB is half the
+  amplitude), requested directly.
 
 Scoped to plain **Track Volume only** (`isFaderVolumeTarget()`) - not
 Send level or device macros under FLIP, which may use a different curve
