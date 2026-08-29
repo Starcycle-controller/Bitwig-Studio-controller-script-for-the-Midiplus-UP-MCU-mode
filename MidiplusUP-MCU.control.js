@@ -2019,11 +2019,21 @@ var displayNeedsUpdate = true;
 // Replaces every trackBank.getItemAt(i)/activeTrackBank().getItemAt(i)
 // call site - see the Deactivated Tracks in Bank comment above
 // mainTrackScanBank for why. Returns unchanged (effectTrackBank
-// directly); Main always goes through mainTrackCursors, whichever real
-// track each one currently points to (kept in sync by
-// refreshMainCursors() below) regardless of Show All/Hide mode.
+// directly). Main: Show All mode bypasses mainTrackCursors entirely and
+// reads trackBankItems directly - see refreshMainCursors() below and the
+// all-8-columns-collapse investigation there for why calling
+// selectChannel() 8 times per tick turned out to be the actual problem,
+// not just a display-vs-parameter distinction like directTrackAt()'s own
+// earlier group-track fix assumed. Hide mode still needs the cursor
+// indirection, since a plain TrackBank can't skip/shift slots.
 function activeTrackAt(index) {
-   return isViewingReturns ? effectTrackBank.getItemAt(index) : mainTrackCursors[index];
+   if (isViewingReturns) {
+      return effectTrackBank.getItemAt(index);
+   }
+   if (hideDeactivatedTracksEnabled) {
+      return mainTrackCursors[index];
+   }
+   return trackBankItems[index];
 }
 
 // True only for a Main-bank, Hide-mode slot with no activated track left
@@ -2234,13 +2244,19 @@ function scrollActiveBankStepForward() {
 }
 
 // Keeps mainTrackCursors[0-7] pointed at the correct real tracks for
-// whichever Main-bank mode is active - the native trackBank window (Show
-// All) or the filtered activeTrackRawIndices list (Hide, see
-// recomputeActiveTrackIndices() below) - and, Hide mode only, blanks any
-// trailing slot that has no activated track left to show (Show All mode
-// never needs this: a slot beyond the real track count already reads
-// back as Bitwig's own empty-track defaults, same as before this
-// feature existed). Called on every Main-bank scroll operation above,
+// Hide mode's filtered activeTrackRawIndices list (see
+// recomputeActiveTrackIndices() below), and blanks any trailing slot
+// that has no activated track left to show. Show All mode no longer
+// touches mainTrackCursors at all - calling selectChannel() 8 times
+// back-to-back in one synchronous tick turned out to be exactly what
+// caused the all-8-LCD-columns/all-8-SELECT-LEDs collapse bug (confirmed
+// via diagnostic logging: trackBankItems - the plain, never-repointed
+// source array - stayed correct and distinct throughout, while the
+// cursors themselves collapsed), so Show All reads trackBankItems
+// directly via activeTrackAt()/directTrackAt() instead. A slot beyond
+// the real track count already reads back as Bitwig's own empty-track
+// defaults there, same as before the "Deactivated Tracks in Bank"
+// feature existed. Called on every Main-bank scroll operation above,
 // every mapping recompute, and on every Show All/Hide toggle.
 function refreshMainCursors() {
    for (var i = 0; i < 8; i++) {
@@ -2259,31 +2275,12 @@ function refreshMainCursors() {
             mainLedState.select[i] = false;
          }
       } else {
-         // TEMPORARY DIAGNOSTIC - logs the real source track's own name
-         // right before selectChannel(), so we can tell apart "the 8
-         // source tracks in trackBankItems are already collapsed" from
-         // "the source is fine but selectChannel()/CursorTrack loses it".
-         println("refreshMainCursors source - index=" + i + " trackBankItems name=\"" +
-            trackBankItems[i].name().get() + "\"");
-         mainTrackCursors[i].selectChannel(trackBankItems[i]);
          mainCursorHasTrack[i] = true;
       }
    }
    if (!isViewingReturns) {
       displayNeedsUpdate = true;
       refreshChannelStripLEDs();
-   }
-   // TEMPORARY DIAGNOSTIC - tracking down the identical-LCD-columns bug.
-   // Logs each cursor's resulting name/volume right after selectChannel(),
-   // to check whether the 8 mainTrackCursors genuinely end up pointing at
-   // 8 different tracks or have somehow collapsed onto one. Remove once
-   // resolved.
-   if (!hideDeactivatedTracksEnabled && !isViewingReturns) {
-      for (var diagIdx = 0; diagIdx < 8; diagIdx++) {
-         println("refreshMainCursors diagnostic - index=" + diagIdx +
-            " name=\"" + mainTrackCursors[diagIdx].name().get() +
-            "\" vol=" + mainTrackCursors[diagIdx].volume().get());
-      }
    }
 }
 
@@ -3459,6 +3456,12 @@ function init() {
    // (inside scanTrackForToolDevice()) automatically follow each cursor
    // as it's re-pointed via selectChannel() - same cursor-relative-bank
    // behavior cursorTrack's own device tracking below already relies on.
+   // Show All mode: track straight off trackBankItems, same reasoning as
+   // setupChannelStripObservers() above (mainTrackCursors is Hide-mode
+   // only now). Both write into the same mainToolSlot/mainToolRemote
+   // arrays, same as mainLedState above - harmless since only one mode's
+   // refreshMainCursors() branch is actually moving its tracks at a time.
+   setupToolDeviceTracking(trackBankItems, mainToolSlot, mainToolRemote);
    setupToolDeviceTracking(mainTrackCursors, mainToolSlot, mainToolRemote);
    setupToolDeviceTracking(effectTrackBankItems, returnsToolSlot, returnsToolRemote);
    cursorToolRemote = scanTrackForToolDevice(
@@ -3657,10 +3660,6 @@ function setupChannelStripObservers(tracks, ledState, isActiveFn) {
          track.pan().name().markInterested();
 
          track.volume().displayedValue().addValueObserver(function (dispVal) {
-            // TEMPORARY DIAGNOSTIC - tracking down why every LCD column
-            // shows the same dB text regardless of which fader moved.
-            // Remove once resolved.
-            println("volume displayedValue observer fired - index=" + index + " dispVal=\"" + dispVal + "\"");
             if (currentMode === MODE_MIXER && !isFlipped && isActiveFn(index) &&
                 !isShowingPanTemporarily[index]) {
                bottomRowText[index] = track.isActivated().get() ? formatString(dispVal, 7) : "       ";
@@ -3729,11 +3728,6 @@ function setupChannelStripObservers(tracks, ledState, isActiveFn) {
          });
 
          track.addIsSelectedInMixerObserver(function (isSelected) {
-            // TEMPORARY DIAGNOSTIC - tracking down all 8 SELECT LEDs
-            // lighting up together even with a single real track
-            // selected. Remove once resolved.
-            println("isSelectedInMixer observer fired - index=" + index + " isSelected=" + isSelected +
-               " name=\"" + track.name().get() + "\"");
             ledState.select[index] = isSelected;
             if (isActiveFn(index)) {
                // Select LED - breathes instead if this track is armed,
