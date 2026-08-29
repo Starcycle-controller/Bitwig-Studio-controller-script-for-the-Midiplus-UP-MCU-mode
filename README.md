@@ -2105,7 +2105,7 @@ replacement now in place instead.
    index) - worth trying only if track color on this hardware still
    matters enough to keep chasing.
 
-### Mixer Snapshots (SHIFT+F1-F8 store / OPTION+F1-F8 recall)
+### Mixer Snapshots (SHIFT+F1-F8 store / OPTION+F1-F8 recall) - UNRESOLVED
 
 Fourth attempt this session - see "Reverted / abandoned" below for the
 first. SHIFT+F(n) stores the current 8-track bank window's Volume+Pan
@@ -2113,74 +2113,76 @@ into slot n (1-8, one per F-key); OPTION+F(n) recalls it. Both combos
 were free to use - a plain F-key press ignores modifier state entirely,
 so SHIFT/OPTION held during one previously did nothing extra.
 
-**Methodological finding, important for reading everything below**: a
-version confirmed working on hardware (`706fd95`) later failed on a
-retest with the identical script, reloaded via Bitwig's normal "reload
-script" - and only started working again after fully closing and
-reopening Bitwig itself, not just reloading the script. This means some
-of the write failures chased through this section's history may not
-be about the script at all - Bitwig appears to retain some internal
-per-track state (a stuck automation/gesture flag, or similar) across a
-script reload that a full application restart clears. Every hardware
-test after the first success this session was run without restarting
-Bitwig first, so several "disproofs" below may have actually been
-testing against already-corrupted Bitwig-side state rather than a
-genuinely non-working fix. Any future retest of a specific hypothesis
-should start from a full Bitwig restart to get a clean baseline.
+**Status: recall reliably fails to write volume for any channel whose
+fader was touched shortly before recall, and every theory tried for it
+this session has been individually disproven on hardware.** Store
+always works (it only reads). Recall's writes succeed trivially for a
+channel that's already at its stored value (nothing to prove), and have
+never once succeeded, under hard diagnostic evidence, for a channel that
+actually needed a different value at recall time.
 
-**Root cause of the original recall failures, found**: this script
-never called Bitwig's `Parameter.touch(isBeingTouched)` on fader
-touch/release (confirmed missing via Mossgraber's DrivenByMoss, a
-reference implementation covering many real MCU-style motorized-fader
-controllers, which calls it on every touch/release). With no
-`touch(false)` ever sent, Bitwig had no signal that a hardware gesture
-had ever ended, so any channel that had recently received live fader
-input stayed permanently "touched" from Bitwig's own point of view and
-silently ignored every later script `.set()` call on it. Two earlier
-theories (a fader-binding echo, a touch/release debounce) were tried,
-both disproven on hardware, before this was found. Fixed by capturing
-the touched target per fader index on press (`faderTouchedTarget[i]`,
-via the same `getFaderSnapZeroTarget()` resolution Fader Snap to Zero
-already used) and calling `.touch(true)`/`.touch(false)` on it at
-press/release - captured rather than re-resolved at release time, so a
-mode change mid-touch still releases the same parameter that got
-touched instead of leaving one stuck forever.
+Ideas tried and disproven, each with a dedicated controlled hardware
+test:
+- **A fader-binding echo** (`hwFaders` staying natively `setBinding()`-
+  bound with `disableTakeOver()`, so the motor's own position echo
+  clobbers the write). Disproven: the failing channel was unchanged by
+  `.set()` even with every fader's binding fully cleared at write time.
+- **A missing `Parameter.touch(isBeingTouched)` call** on fader
+  touch/release (confirmed missing at the time, per Mossgraber's
+  DrivenByMoss reference implementation, which calls it on every
+  touch/release for real MCU-style controllers). Added
+  (`faderTouchedTarget[i]` + `.touch(true)`/`.touch(false)` on
+  press/release, still in place) - looked like a fix on one early
+  report, but that report was never backed by the before/after
+  diagnostic (added later), and every subsequent properly-logged test
+  failed identically with `touch(false)` confirmed called, on the exact
+  right object, with the exact right value, immediately before recall.
+- **A settle-time race** between the write and Bitwig's own internal
+  processing of the touch release. Disproven: delaying the actual write
+  300ms after the button press made no difference.
+- **Stale Bitwig-side state surviving a script reload** (a real,
+  separately-confirmed phenomenon - `706fd95` failed on a plain script
+  reload and only worked again after fully closing and reopening
+  Bitwig). Disproven as *the* explanation here: a fresh Bitwig restart
+  still failed on the very first real test afterward.
+- **"Select Channel on Fader Touch"** (Mixer category default-on
+  setting) interfering via its own delayed `cursorTrack.selectChannel()`
+  call. Disproven: same failure with it turned off.
+- **`hwFaders` binding + `touch()` combined**, clearing the binding for
+  the duration of the write on top of the `touch()` fix. Disproven: same
+  failure. Also suspected of leaving the physical fader out of sync with
+  the LCD dB readout afterward on hardware, so dropped again rather than
+  carried forward.
 
-**`mainTrackScanBank` is a dead end for writes - confirmed a second,
-independent time.** With the `touch()` fix in place, a rebuild was tried
-that stores each track's absolute `Track.position()` and recalls
-through `mainTrackScanBank.getItemAt(pos)` - a permanently-unscrolled,
-128-deep bank used elsewhere in this file, chosen so slot index ===
-absolute position and recall would stay correct across a bank scroll.
-Hypothesis going in: the *first* time this was tried (before the
-`touch()` fix existed) and looked like a silent no-op, that diagnosis
-might have been the same `touch()` bug in disguise rather than anything
-inherent to `mainTrackScanBank`. **Disproven by a controlled test**: the
-same touched channels that now recall correctly through `directTrackAt()`
-still failed identically through `mainTrackScanBank`, with the
-`touch()` fix fully in place and active. Why: `directTrackAt(i)`
-resolves to the *exact same object* the fader for that index is
-`setBinding()`-bound to (same method, same index) - so touching that
-object on press/release is touching the very thing recall later writes
-to. `mainTrackScanBank.getItemAt(pos)` is a *different* object,
-never bound to any `HardwareControl`, so Bitwig's touch/release
-tracking has nothing to do with it - its write problem is real and
-unrelated to `touch()`. Back to the bank-window-relative design for
-good; not revisiting `mainTrackScanBank` writes again without new
-evidence pointing at a genuinely different mechanism.
+**Not yet tested**: whether this is specific to volume (which stays
+natively `setBinding()`-bound to a `HardwareSlider` for real-time fader
+I/O) versus pan (which, in Mixer mode, is driven by an *encoder*
+instead - manual MIDI CC parsing, no `setBinding()` at all). If pan
+reliably updates while volume doesn't on the next test, that would
+point at "a Parameter can't be reliably `.set()` by script while
+natively `setBinding()`-bound to a hardware fader" as the real,
+structural limitation - independent of touch state, and something none
+of the above could have fixed. `recallMixerSnapshot()` now logs pan's
+own before/after readback alongside volume's to test this directly.
+Also unconfirmed: whether the same failure applies to Hide mode
+(`mainTrackCursors[i]`), since every hardware test so far has been in
+Show All mode.
 
-**Trade-off**: storing while looking at one 8-track window, then
-recalling after scrolling to a different one in between, applies the
-stored values to whatever's now in slots 0-7, not the original tracks.
-Store/recall without scrolling in between - the normal way to use this
-- is unaffected.
+**`mainTrackScanBank` is a separate, independent dead end for writes -
+not to be confused with the above.** A scroll-proof rebuild (storing
+each track's absolute `Track.position()`, recalling through
+`mainTrackScanBank.getItemAt(pos)`, a permanently-unscrolled 128-deep
+bank used elsewhere in this file) failed identically to a directly
+comparable `directTrackAt()` test run in the same session under the
+same conditions - proving its problem is real and specific to that bank
+(never `setBinding()`-bound to any `HardwareControl`), not the same
+issue as the above. Not revisiting `mainTrackScanBank` writes again.
 
-**Hide mode**: no longer specially restricted, on the strength of the
-same `directTrackAt()`-is-the-bound-object reasoning above -
-`mainTrackCursors[i]` (what `directTrackAt()` falls back to in Hide
-mode) is also the exact object the fader for that index is bound to, so
-it should get the same working `touch()`/`untouch()` treatment. Not yet
-separately confirmed on hardware.
+**Trade-off, independent of the write bug**: storing while looking at
+one 8-track window, then recalling after scrolling to a different one
+in between, applies the stored values to whatever's now in slots 0-7,
+not the original tracks. Not currently restricted for Hide mode either,
+though that combination is unconfirmed given the open write bug above.
 
 Stored via `host.getDocumentState()` (saved inside the Bitwig project
 file itself, hidden from the Studio I/O panel via `Setting.hide()`) so a
@@ -2189,9 +2191,7 @@ currently visible 8-track window - not the whole project, not
 Mute/Solo/Sends. Both store and recall show a corner popup
 (`host.showPopupNotification()`) and briefly flash across all 8
 channels' bottom LCD row via `showModePopup()` - "STORE n"/"RECALL n"/
-"EMPTY n" (recalling a slot that's never been stored). Before/after
-(immediate and 500ms-delayed) volume readback logging stays in
-`recallMixerSnapshot()` for the Hide-mode confirmation pass.
+"EMPTY n" (recalling a slot that's never been stored).
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 

@@ -2089,26 +2089,26 @@ function recallMixerSnapshot(slotIndex) {
       return;
    }
    var parts = serialized.split("|");
-   // TEMPORARY DIAGNOSTIC EXPERIMENT: neither touch(false) (confirmed
-   // called correctly, on the exact right object, immediately before
-   // recall) nor a 300ms delay before the write fixed a channel that had
-   // recently received live hardware fader input - ruling out both a
-   // stuck touch state and a settle-time race with Bitwig's own
-   // processing of the release.
+   // TEMPORARY DIAGNOSTIC: neither touch(false) (confirmed called
+   // correctly, on the exact right object, immediately before recall),
+   // a 300ms delay before the write, clearing+restoring hwFaders'
+   // bindings around the write, a fresh Bitwig restart, nor disabling
+   // Select Channel on Fader Touch fixed a channel that had recently
+   // received live hardware fader input - every one of those was ruled
+   // out on hardware in turn. The clearBindings()/rebindFaders()
+   // wrapping was dropped again (confirmed not to help, and suspected of
+   // leaving the fader/LCD display out of sync afterward on hardware).
    //
-   // The original "clear hwFaders' bindings before writing, restore
-   // after" experiment (which also looked like it made no difference)
-   // was run BEFORE the touch() fix existed - so it never actually got a
-   // fair test, since Bitwig's internal touch/gesture state (if that's
-   // real) was never being released at all back then regardless of the
-   // binding. Testing the combination now: touch() fixed AND the live
-   // binding cleared for the duration of the write, in case both are
-   // independently necessary - touch() to release Bitwig's per-parameter
-   // gesture state, binding-clearing to stop the still-live hardware
-   // binding from recapturing the parameter as we write it.
-   for (var clearIdx = 0; clearIdx < 8; clearIdx++) {
-      hwFaders[clearIdx].clearBindings();
-   }
+   // Untested until now: whether this is specific to volume, which stays
+   // natively setBinding()-bound to a HardwareSlider for real-time fader
+   // I/O, or affects pan too, which - in Mixer mode - is driven by an
+   // encoder instead (manual MIDI CC parsing, no setBinding() at all).
+   // If pan reliably updates while volume doesn't, that points at "a
+   // Parameter can't be reliably .set() by script while natively
+   // setBinding()-bound to a hardware fader" as the real, structural
+   // limitation - independent of touch state, and not fixable by
+   // anything tried so far. Logging pan's own before/after readback
+   // alongside volume's to test that directly.
    for (var i = 0; i < 8 && i < parts.length; i++) {
       if (parts[i] === "-" || isMainSlotEmpty(i)) {
          continue;
@@ -2121,20 +2121,17 @@ function recallMixerSnapshot(slotIndex) {
       }
       var recallTrack = directTrackAt(i);
       var beforeVol = recallTrack.volume().get();
+      var beforePan = recallTrack.pan().get();
       recallTrack.volume().set(vol);
       recallTrack.pan().set(pan);
       var afterVol = recallTrack.volume().get();
+      var afterPan = recallTrack.pan().get();
       println("Mixer Snapshot RECALL slot " + i + " - name=\"" + recallTrack.name().get() +
-         "\" target vol=" + vol + " pan=" + pan + " | before=" + beforeVol + " immediate after=" + afterVol +
+         "\" target vol=" + vol + " pan=" + pan +
+         " | vol before=" + beforeVol + " after=" + afterVol +
+         " | pan before=" + beforePan + " after=" + afterPan +
          " | faderTouchHeld=" + faderTouchHeld[i]);
-      (function (slotI, slotTrack, targetVol) {
-         host.scheduleTask(function () {
-            println("Mixer Snapshot RECALL slot " + slotI + " - delayed readback (500ms) vol=" +
-               slotTrack.volume().get() + " (target was " + targetVol + ")");
-         }, 500);
-      })(i, recallTrack, vol);
    }
-   rebindFaders();
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
    showModePopup("RECALL" + (slotIndex + 1));
 }
