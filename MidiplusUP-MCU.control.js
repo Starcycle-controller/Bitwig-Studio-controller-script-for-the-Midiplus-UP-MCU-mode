@@ -2069,6 +2069,9 @@ function storeMixerSnapshot(slotIndex) {
          parts.push(snapshotTrack.position().get() + "," + volPan);
       }
    }
+   // TEMPORARY DIAGNOSTIC - investigating "only slot 1 recalls, 2-8
+   // stay untouched" report. Remove once root cause is confirmed/fixed.
+   println("Mixer Snapshot STORE " + (slotIndex + 1) + " raw: " + parts.join("|"));
    mixerSnapshotSettings[slotIndex].set(parts.join("|"));
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Stored");
    showModePopup("STORE " + (slotIndex + 1));
@@ -2081,6 +2084,8 @@ function recallMixerSnapshot(slotIndex) {
       showModePopup("EMPTY " + (slotIndex + 1));
       return;
    }
+   // TEMPORARY DIAGNOSTIC - see the matching one in storeMixerSnapshot().
+   println("Mixer Snapshot RECALL " + (slotIndex + 1) + " raw: " + serialized);
    var parts = serialized.split("|");
    for (var i = 0; i < 8 && i < parts.length; i++) {
       if (parts[i] === "-") {
@@ -2090,6 +2095,7 @@ function recallMixerSnapshot(slotIndex) {
       var vol = parseFloat(fields[1]);
       var pan = parseFloat(fields[2]);
       if (isNaN(vol) || isNaN(pan)) {
+         println("Mixer Snapshot RECALL slot " + i + " skipped - bad vol/pan in \"" + parts[i] + "\"");
          continue;
       }
       var recallTrack;
@@ -2098,6 +2104,7 @@ function recallMixerSnapshot(slotIndex) {
       } else {
          var pos = parseInt(fields[0], 10);
          if (isNaN(pos) || pos < 0 || pos >= MAIN_TRACK_SCAN_DEPTH) {
+            println("Mixer Snapshot RECALL slot " + i + " skipped - bad position in \"" + parts[i] + "\"");
             continue;
          }
          // mainTrackScanBank's volume()/pan() are deliberately never
@@ -2113,6 +2120,8 @@ function recallMixerSnapshot(slotIndex) {
       }
       recallTrack.volume().set(vol);
       recallTrack.pan().set(pan);
+      println("Mixer Snapshot RECALL slot " + i + " applied vol=" + vol + " pan=" + pan +
+         " to " + (fields[0] === "R" ? "Returns[" + i + "]" : "position " + fields[0]));
    }
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
    showModePopup("RECALL" + (slotIndex + 1));
