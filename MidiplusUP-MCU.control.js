@@ -79,6 +79,27 @@ var EQ_DEVICE_SCAN_DEPTH = 32;
 // than this before the point you're adding new ones.
 var CUE_MARKER_SCAN_DEPTH = 128;
 
+// Mixer Snapshots - SHIFT+F1-F8 stores the current 8-track bank window's
+// Volume+Pan into slot N, OPTION+F1-F8 recalls it back (see
+// storeMixerSnapshot()/recallMixerSnapshot() near directTrackAt() below,
+// and the note 62-69 handler in onMidi()). Fourth attempt this session -
+// see the header comment on storeMixerSnapshot() below for the full
+// history and why this settled on bank-relative directTrackAt().
+//
+// Persisted via host.getDocumentState() rather than host.getPreferences()
+// - Document State settings are saved INSIDE the Bitwig project file
+// itself (normally shown in its Studio I/O panel, hidden here via
+// Setting.hide() since these are raw serialized data, not meant for
+// hand-editing), so a snapshot travels with the song and survives
+// closing/reopening it, unlike Preferences which are global to this
+// controller across every project. Deliberately scoped to just
+// Volume + Pan on whichever 8 tracks are currently visible in the bank
+// (not the whole project, not mute/solo/sends) - the simplest version of
+// "recall a mix balance", easy to extend later if that scope turns out
+// to be too narrow.
+var MIXER_SNAPSHOT_SLOTS = 8;
+var mixerSnapshotSettings = []; // SettableStringValue per slot, filled in init()
+
 // ---------------------------------------------------------------------
 // DEBUG / Diagnostics hub (Controller Preferences panel -> "Debug"
 // category) - every println() used purely for development/diagnostic
@@ -1102,6 +1123,24 @@ function scheduleSelectChannelOnTouch(track) {
 // fix is the same either way.
 var faderTouchHeld = [false, false, false, false, false, false, false, false, false];
 
+// Root cause of Mixer Snapshot recall silently failing to write volume/
+// pan on channels that had recently received live hardware fader input
+// (confirmed on hardware - see README "Mixer Snapshots"): we never told
+// Bitwig's Parameter API when a hardware touch gesture starts/ends.
+// Bitwig's own Parameter interface has touch(isBeingTouched) exactly for
+// this (confirmed present via Mossgraber's DrivenByMoss - ParameterImpl.
+// touchValue() calls parameter.touch()) - real MCU-style controller
+// drivers call it on every fader touch/release so Bitwig knows when a
+// hardware gesture owns a parameter vs. when it's free again. We were
+// never calling it at all, so once a fader had sent any live input,
+// Bitwig had no signal that the gesture ever ended and kept ignoring
+// subsequent script .set() calls on that parameter indefinitely - not a
+// binding, touch-debounce, or track-access-path issue as earlier
+// theories assumed. Captured per-index (not re-resolved at release)
+// so a mode change mid-touch still releases the SAME parameter that got
+// touched, never leaving one stuck touched forever.
+var faderTouchedTarget = [null, null, null, null, null, null, null, null, null];
+
 function isFaderTouchLocked(faderTouchIndex) {
    for (var i = 0; i < faderTouchHeld.length; i++) {
       if (i !== faderTouchIndex && faderTouchHeld[i]) {
@@ -2085,6 +2124,128 @@ function directTrackAt(i) {
    return trackBank.getItemAt(i);
 }
 
+// Mixer Snapshots - see MIXER_SNAPSHOT_SLOTS/mixerSnapshotSettings above.
+//
+// REINTRODUCED FOR TESTING (was shelved - see patches/mixer-snapshots.patch
+// and git history around commit 7794069 for the full removal and why).
+// New lead not tried during the original investigation: Bitwig Studio has
+// its own global Takeover Mode preference (Settings -> Controllers, not
+// this script's Controller Preferences panel) - Pick Up / Jump / Value
+// Scaling - separate from this script's own disableTakeOver() call on
+// each HardwareSlider, which may not override it for every code path.
+// Every hardware test during the original investigation happened with
+// this global preference left on Pick Up (Catch) - untested with it set
+// to Jump. If recall still fails the same way with Jump selected, this
+// lead is disproven too and the shelving stands; if it fixes it, revert
+// this comment block back to a proper "confirmed working" writeup.
+//
+// Back to bank-window-relative, this time for good - see the "Actual root
+// cause" and "mainTrackScanBank is a dead end for writes" paragraphs in
+// the README's "Mixer Snapshots" section for the full story. Short
+// version: `directTrackAt(i)` resolves to the EXACT SAME object
+// `hwFaders[i]`/`hwEncoders` bind to for that index/mode (same call, same
+// index) - so once the fader touch handler calls Parameter.touch()
+// properly on press/release (see faderTouchedTarget above), that's the
+// object being released, and recall's .set() on it works. An absolute-
+// position rebuild through `mainTrackScanBank.getItemAt(pos)` - a
+// DIFFERENT object, never setBinding()-bound to any HardwareControl -
+// was tried to make this scroll-proof, but failed identically to the
+// pre-touch()-fix behavior: touch()/untouch() on the fader-bound object
+// has no effect on that separate object's own write-ability. Confirmed
+// via a controlled A/B on hardware (same touched channels, only the
+// write path changed) - not revisiting this again without new evidence
+// pointing at a genuinely different mechanism.
+//
+// SCOPE: storing while looking at one 8-track window, then recalling
+// after scrolling to a different one in between, applies the stored
+// values to whatever's now in slots 0-7, not the original tracks.
+// Store/recall without scrolling in between - the normal way to use
+// this - is unaffected.
+//
+// Hide mode: no longer specially restricted. In Hide mode,
+// directTrackAt(i) resolves to mainTrackCursors[i] - also the exact
+// object the fader for that index is bound to and now gets touch()/
+// untouch() on press/release, so the same reasoning that fixed Show All
+// mode should cover Hide mode too. Unconfirmed on hardware as of this
+// commit - the before/after readback below covers this too.
+//
+// One slot's serialized text is "<entry>|<entry>|...", one entry per
+// bank slot 0-7: "-" for a slot with no track in it at capture time
+// (isMainSlotEmpty()), else "<vol>,<pan>" (4-decimal, normalized 0..1 -
+// the same range track.volume()/pan() already use everywhere else in
+// this file). Deliberately plain delimited text, not JSON - Bitwig's
+// Controller API has no JSON parser built in and this format is trivial
+// to split by hand.
+function storeMixerSnapshot(slotIndex) {
+   var parts = [];
+   for (var i = 0; i < 8; i++) {
+      if (isMainSlotEmpty(i)) {
+         parts.push("-");
+         continue;
+      }
+      var snapshotTrack = directTrackAt(i);
+      parts.push(snapshotTrack.volume().get().toFixed(4) + "," + snapshotTrack.pan().get().toFixed(4));
+   }
+   mixerSnapshotSettings[slotIndex].set(parts.join("|"));
+   host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Stored");
+   showModePopup("STORE " + (slotIndex + 1));
+}
+
+function recallMixerSnapshot(slotIndex) {
+   var serialized = mixerSnapshotSettings[slotIndex].get();
+   if (!serialized) {
+      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " is Empty");
+      showModePopup("EMPTY " + (slotIndex + 1));
+      return;
+   }
+   var parts = serialized.split("|");
+   // TEMPORARY DIAGNOSTIC: neither touch(false) (confirmed called
+   // correctly, on the exact right object, immediately before recall),
+   // a 300ms delay before the write, clearing+restoring hwFaders'
+   // bindings around the write, a fresh Bitwig restart, nor disabling
+   // Select Channel on Fader Touch fixed a channel that had recently
+   // received live hardware fader input - every one of those was ruled
+   // out on hardware in turn. The clearBindings()/rebindFaders()
+   // wrapping was dropped again (confirmed not to help, and suspected of
+   // leaving the fader/LCD display out of sync afterward on hardware).
+   //
+   // Untested until now: whether this is specific to volume, which stays
+   // natively setBinding()-bound to a HardwareSlider for real-time fader
+   // I/O, or affects pan too, which - in Mixer mode - is driven by an
+   // encoder instead (manual MIDI CC parsing, no setBinding() at all).
+   // If pan reliably updates while volume doesn't, that points at "a
+   // Parameter can't be reliably .set() by script while natively
+   // setBinding()-bound to a hardware fader" as the real, structural
+   // limitation - independent of touch state, and not fixable by
+   // anything tried so far. Logging pan's own before/after readback
+   // alongside volume's to test that directly.
+   for (var i = 0; i < 8 && i < parts.length; i++) {
+      if (parts[i] === "-" || isMainSlotEmpty(i)) {
+         continue;
+      }
+      var fields = parts[i].split(",");
+      var vol = parseFloat(fields[0]);
+      var pan = parseFloat(fields[1]);
+      if (isNaN(vol) || isNaN(pan)) {
+         continue;
+      }
+      var recallTrack = directTrackAt(i);
+      var beforeVol = recallTrack.volume().get();
+      var beforePan = recallTrack.pan().get();
+      recallTrack.volume().set(vol);
+      recallTrack.pan().set(pan);
+      var afterVol = recallTrack.volume().get();
+      var afterPan = recallTrack.pan().get();
+      println("Mixer Snapshot RECALL slot " + i + " - name=\"" + recallTrack.name().get() +
+         "\" target vol=" + vol + " pan=" + pan +
+         " | vol before=" + beforeVol + " after=" + afterVol +
+         " | pan before=" + beforePan + " after=" + afterPan +
+         " | faderTouchHeld=" + faderTouchHeld[i]);
+   }
+   host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
+   showModePopup("RECALL" + (slotIndex + 1));
+}
+
 // Requested directly: Bitwig's own Arranger/Mixer view didn't follow
 // when scrolling the bank here, so the hardware and Bitwig's own screen
 // could show completely different tracks. Selecting a track in the new
@@ -2505,9 +2666,12 @@ function init() {
    // Deactivated Tracks in Bank ("Hide" mode) - see mainTrackScanBank/
    // mainTrackCursors above. Scan bank: 0 sends/0 scenes, only ever used
    // for exists()/isActivated()/name(), never displayed or bound to
-   // hardware directly. Never scrolled - stays pinned at position 0 so
-   // raw slot i always means "track at position i in the document" for
-   // as long as the script runs.
+   // hardware directly (its volume()/pan() are deliberately never
+   // markInterested()/touched - a Mixer Snapshot recall rebuild that
+   // tried writing through this bank turned out to be a dead end, see
+   // the README "Mixer Snapshots" section). Never scrolled - stays
+   // pinned at position 0 so raw slot i always means "track at position
+   // i in the document" for as long as the script runs.
    mainTrackScanBank = host.createMainTrackBank(MAIN_TRACK_SCAN_DEPTH, 0, 0);
    for (var scanIdx = 0; scanIdx < MAIN_TRACK_SCAN_DEPTH; scanIdx++) {
       (function (si) {
@@ -2711,6 +2875,23 @@ function init() {
             warnIfDuplicateFKeyFunctions();
          });
       })(fkIdx);
+   }
+
+   // Mixer Snapshots (SHIFT+F1-F8 store / OPTION+F1-F8 recall - see
+   // storeMixerSnapshot()/recallMixerSnapshot() above) - persisted via
+   // host.getDocumentState() rather than host.getPreferences(), so each
+   // slot's serialized text is saved inside the Bitwig project itself and
+   // survives closing/reopening it, unlike a Preferences setting (global
+   // to this controller across every project - wrong scope for a
+   // per-song mix version). Hidden immediately via Setting.hide() - these
+   // are raw internal storage, not meant to be seen or hand-edited in
+   // the Studio I/O panel.
+   for (var snapshotIdx = 0; snapshotIdx < MIXER_SNAPSHOT_SLOTS; snapshotIdx++) {
+      var snapshotSetting = host.getDocumentState().getStringSetting(
+         "Mixer Snapshot " + (snapshotIdx + 1), "Mixer Snapshots (Internal)", 256, "");
+      snapshotSetting.markInterested();
+      snapshotSetting.hide();
+      mixerSnapshotSettings.push(snapshotSetting);
    }
 
    // What SHIFT+CTRL and ALT+CTRL + Jog Wheel each do - independent
@@ -4643,8 +4824,28 @@ function onMidi(status, data1, data2) {
                }
             }
             faderTouchHeld[faderTouchIndex] = true;
+            // See faderTouchedTarget above - tells Bitwig's own Parameter
+            // API a hardware gesture has started, captured now so release
+            // touches the same target even if mode changes meanwhile.
+            var pressedTarget = getFaderSnapZeroTarget(faderTouchIndex);
+            faderTouchedTarget[faderTouchIndex] = pressedTarget;
+            if (pressedTarget) {
+               // TEMPORARY DIAGNOSTIC - the "RAW Note-On received" log
+               // only ever fires on press (see the isPressed gate above),
+               // so this is the only way to see the actual touch(true)/
+               // touch(false) timeline the Mixer Snapshot recall bug
+               // needs. Remove once that's resolved.
+               println("Fader touch(true) - channel " + faderTouchIndex + " vol=" + pressedTarget.get());
+               pressedTarget.touch(true);
+            }
          } else {
             faderTouchHeld[faderTouchIndex] = false;
+            var releasedTarget = faderTouchedTarget[faderTouchIndex];
+            faderTouchedTarget[faderTouchIndex] = null;
+            if (releasedTarget) {
+               println("Fader touch(false) - channel " + faderTouchIndex + " vol=" + releasedTarget.get());
+               releasedTarget.touch(false);
+            }
             // Fader Snap to Zero - see scheduleFaderSnapZeroCheck() above.
             // Only arms a check on RELEASE; the check itself re-verifies
             // the fader is still untouched (and still within range) once
@@ -4657,8 +4858,8 @@ function onMidi(status, data1, data2) {
             // Zero - both can fire off the same release, whichever one's
             // range the fader actually landed in wins (Snap to Zero only
             // ever matches near true -inf, at the opposite end from every
-            // FADER_SNAP_DB_MARKS entry, so they can't both match at once
-            // in practice).
+            // mark in either activeFaderSnapDbMarks() list, so they can't
+            // both match at once in practice).
             if (faderSnapToDbMarksEnabled) {
                scheduleFaderSnapDbMarkCheck(faderTouchIndex, getFaderSnapZeroTarget(faderTouchIndex),
                   isFaderVolumeTarget(faderTouchIndex));
@@ -4701,8 +4902,26 @@ function onMidi(status, data1, data2) {
       // popup; only an actual HOLD (past FKEY_HOLD_THRESHOLD_MS) escalates
       // to revealing every F-key's assignment across all 8 channels, for
       // learning the whole layout without a manual - not on every tap.
+      //
+      // SHIFT+F(n)/OPTION+F(n) are otherwise-unused combos on these same
+      // 8 buttons (a plain press ignores modifier state entirely) - used
+      // here for Mixer Snapshots: SHIFT+F(n) stores the current bank
+      // window's volume+pan into slot n, OPTION+F(n) recalls it (see
+      // storeMixerSnapshot()/recallMixerSnapshot() above). Checked before
+      // the plain-press path so neither modifier's own standalone-tap
+      // action nor the normal F-key function fires at the same time.
       if (data1 >= 62 && data1 <= 69) {
          var fkeyIdx = data1 - 62;
+         if (isPressed && isShiftPressed) {
+            shiftUsedForCombo = true;
+            storeMixerSnapshot(fkeyIdx);
+            return;
+         }
+         if (isPressed && isOptionPressed) {
+            optionUsedForCombo = true;
+            recallMixerSnapshot(fkeyIdx);
+            return;
+         }
          if (isPressed) {
             handleFKeyPress(fkeyIdx);
          } else {
