@@ -1162,6 +1162,80 @@ function scheduleFaderSnapZeroCheck(index, target) {
    }, FADER_SNAP_ZERO_DELAY_MS);
 }
 
+// "Fader Snap to dB Marks" (Mixer category) - requested directly:
+// landing a motorized fader exactly on a specific dB value (e.g.
+// -10.0 dB) by hand is hard because Bitwig's own volume curve
+// compresses more heavily the further a level sits from unity (0 dB) -
+// the same physical fader travel covers a much bigger dB range down
+// around -10/-12 dB than it does near the top. Deliberately a separate
+// toggle from Fader Snap to Zero above, not folded into it - someone
+// may want -inf snapping without every other round number grabbing the
+// fader too. Same release-triggered/re-touch-cancels design as Snap to
+// Zero (own generation counter, not shared with it), just against a
+// fixed list of dB marks (FADER_SNAP_DB_MARKS) instead of a single
+// target. When enabled (default OFF - opt-in), releasing within
+// FADER_SNAP_DB_MARK_RANGE of one of them schedules a check
+// FADER_SNAP_DB_MARK_DELAY_MS later; if the fader is still untouched
+// and still in range, it snaps to that mark's exact value.
+//
+// Scoped to plain Track Volume only (see isFaderVolumeTarget() below) -
+// not Send level or device macros under FLIP, which may use a
+// different curve or an arbitrary (often percentage) scale entirely
+// where "snap to -10 dB" would be meaningless or wrong.
+//
+// Converting a target dB value to the normalized value Bitwig will
+// actually display as that dB figure uses dB = 60*log10(normalized) +
+// 6.0206 - Bitwig's volume curve, fit against this hardware's own
+// console-logged normalized-value/dB pairs from earlier this session
+// (0.7939->0.0dB, 0.6257->-6.2dB, 0.6182->-6.5dB) and accurate to
+// within ~0.02dB across that range - inverted to
+// normalized = 10^((dB - 6.0206) / 60).
+var faderSnapToDbMarksEnabled = false;
+var FADER_SNAP_DB_MARK_RANGE = 0.03;
+var FADER_SNAP_DB_MARK_DELAY_MS = 500;
+var FADER_SNAP_DB_MARKS = [0, -3, -6, -10, -12, -18, -24];
+var FADER_SNAP_DB_CURVE_SLOPE = 60;
+var FADER_SNAP_DB_CURVE_OFFSET = 6.0206;
+
+function dbMarkToNormalized(db) {
+   return Math.pow(10, (db - FADER_SNAP_DB_CURVE_OFFSET) / FADER_SNAP_DB_CURVE_SLOPE);
+}
+
+// True for whichever fader index/mode combination is plain Track Volume
+// (master always is; channel 0-7 only when in Mixer mode, unflipped,
+// and not showing a TOOL_DEVICE_NAME parameter instead) - see
+// getFaderTarget() above for the same mode logic applied to resolving
+// the target itself.
+function isFaderVolumeTarget(index) {
+   if (index === 8) {
+      return true;
+   }
+   return currentMode === MODE_MIXER && !isFlipped && !isToolVolumeMode;
+}
+
+var faderSnapDbMarkGeneration = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+function scheduleFaderSnapDbMarkCheck(index, target, isVolumeTarget) {
+   faderSnapDbMarkGeneration[index]++;
+   var myGeneration = faderSnapDbMarkGeneration[index];
+   host.scheduleTask(function () {
+      if (faderSnapDbMarkGeneration[index] !== myGeneration) {
+         return;
+      }
+      if (!faderSnapToDbMarksEnabled || faderTouchHeld[index] || !isVolumeTarget) {
+         return;
+      }
+      var current = target.get();
+      for (var i = 0; i < FADER_SNAP_DB_MARKS.length; i++) {
+         var markValue = dbMarkToNormalized(FADER_SNAP_DB_MARKS[i]);
+         if (Math.abs(current - markValue) <= FADER_SNAP_DB_MARK_RANGE) {
+            target.set(markValue);
+            return;
+         }
+      }
+   }, FADER_SNAP_DB_MARK_DELAY_MS);
+}
+
 // "Mixer Mode PAGE: Loop Behavior" - see findAdjacentMarkerPosition()/
 // jumpToMarkerAndSetLoop() above (the notes 82/83 handling in Device
 // mode is untouched by this - only Mixer mode's PAGE gains this
@@ -2994,6 +3068,32 @@ function init() {
       FADER_SNAP_ZERO_DELAY_MS = value;
    });
 
+   // Fader Snap to dB Marks - see faderSnapToDbMarksEnabled/
+   // FADER_SNAP_DB_MARK_RANGE/FADER_SNAP_DB_MARK_DELAY_MS and
+   // scheduleFaderSnapDbMarkCheck() above. Independent toggle from Fader
+   // Snap to Zero above (default OFF - opt-in) - someone may want -inf
+   // snapping without every round dB number grabbing the fader too.
+   var faderSnapToDbMarksSetting = host.getPreferences().getBooleanSetting(
+      "Fader Snap to dB Marks", "Mixer", false);
+   faderSnapToDbMarksSetting.markInterested();
+   faderSnapToDbMarksSetting.addValueObserver(function(value) {
+      faderSnapToDbMarksEnabled = value;
+   });
+
+   var faderSnapDbMarkRangeSetting = host.getPreferences().getNumberSetting(
+      "Fader Snap to dB Marks Range (%)", "Mixer", 0, 10, 0.5, "%", 3);
+   faderSnapDbMarkRangeSetting.markInterested();
+   faderSnapDbMarkRangeSetting.addRawValueObserver(function(value) {
+      FADER_SNAP_DB_MARK_RANGE = value / 100;
+   });
+
+   var faderSnapDbMarkDelaySetting = host.getPreferences().getNumberSetting(
+      "Fader Snap to dB Marks Delay (ms)", "Mixer", 100, 3000, 50, "ms", 500);
+   faderSnapDbMarkDelaySetting.markInterested();
+   faderSnapDbMarkDelaySetting.addRawValueObserver(function(value) {
+      FADER_SNAP_DB_MARK_DELAY_MS = value;
+   });
+
    // See sendBankConfiguredPages above - how many pages a normal SEND
    // press cycles through before exiting to Mixer. The underlying send
    // bank stays sized at MAX_SENDS (16) regardless, so this only affects
@@ -4514,6 +4614,17 @@ function onMidi(status, data1, data2) {
             // the delay elapses.
             if (faderSnapToZeroEnabled) {
                scheduleFaderSnapZeroCheck(faderTouchIndex, getFaderSnapZeroTarget(faderTouchIndex));
+            }
+            // Fader Snap to dB Marks - see scheduleFaderSnapDbMarkCheck()
+            // above. Independent toggle/generation counter from Snap to
+            // Zero - both can fire off the same release, whichever one's
+            // range the fader actually landed in wins (Snap to Zero only
+            // ever matches near true -inf, at the opposite end from every
+            // FADER_SNAP_DB_MARKS entry, so they can't both match at once
+            // in practice).
+            if (faderSnapToDbMarksEnabled) {
+               scheduleFaderSnapDbMarkCheck(faderTouchIndex, getFaderSnapZeroTarget(faderTouchIndex),
+                  isFaderVolumeTarget(faderTouchIndex));
             }
          }
          return;

@@ -1351,6 +1351,41 @@ always bound straight to `masterTrack.volume()` regardless of mode).
 Skipped for a genuine discrete/switch target, which has no continuous
 "close to the bottom" to land on. Not yet tested on hardware.
 
+**Fader Snap to dB Marks** (on/off, **default OFF**) - requested
+directly: around -10dB (and generally anywhere well below unity),
+Bitwig's own volume curve compresses more heavily than it does near the
+top, so the same small physical fader movement covers a much bigger dB
+range down there - landing exactly on a specific value like -10.0dB by
+hand is genuinely harder than it is near 0dB, not just a perception
+thing. Deliberately a **separate toggle from Fader Snap to Zero above,
+not folded into it** - someone may want -inf snapping on its own
+without every other round dB number grabbing the fader too, so it
+defaults off and each is independently switchable. Same
+release-triggered/re-touch-cancels mechanics as Fader Snap to Zero
+(own generation counter, not shared with it): releasing within **Fader
+Snap to dB Marks Range (%)** (default 3%, range 0-10%, same normalized-
+range meaning as the Snap to Zero range setting) of one of a fixed list
+of marks - 0, -3, -6, -10, -12, -18, -24 dB - arms a check
+`scheduleFaderSnapDbMarkCheck()` runs **Fader Snap to dB Marks Delay
+(ms)** later (default 500ms, range 100-3000ms); if the fader is still
+untouched and still in range, it snaps to that mark's exact value.
+
+Scoped to plain **Track Volume only** (`isFaderVolumeTarget()`) - not
+Send level or device macros under FLIP, which may use a different curve
+or an arbitrary (often percentage) scale where "snap to -10 dB" would be
+meaningless or outright wrong. Converting a target dB figure to the
+normalized value Bitwig will actually display as that figure uses
+`dB = 60*log10(normalized) + 6.0206` (Bitwig's volume curve) inverted to
+`normalized = 10^((dB - 6.0206) / 60)` - this formula wasn't guessed,
+it was fit against three real (normalized value, displayed dB) pairs
+read back from this hardware's own console log earlier in this session
+(0.7939&rarr;0.0dB, 0.6257&rarr;-6.2dB, 0.6182&rarr;-6.5dB) and predicts
+the third point to within 0.02dB of the other two, so it should be
+accurate across the whole practical fader range. The mark list itself
+isn't exposed as a setting (only enable/range/delay are) - edit
+`FADER_SNAP_DB_MARKS` directly if a different set of reference points is
+wanted. Not yet tested on hardware.
+
 ### Debug settings (Controller Preferences panel)
 
 Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
