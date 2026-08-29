@@ -2113,6 +2113,21 @@ into slot n (1-8, one per F-key); OPTION+F(n) recalls it. Both combos
 were free to use - a plain F-key press ignores modifier state entirely,
 so SHIFT/OPTION held during one previously did nothing extra.
 
+**Methodological finding, important for reading everything below**: a
+version confirmed working on hardware (`706fd95`) later failed on a
+retest with the identical script, reloaded via Bitwig's normal "reload
+script" - and only started working again after fully closing and
+reopening Bitwig itself, not just reloading the script. This means some
+of the write failures chased through this section's history may not
+be about the script at all - Bitwig appears to retain some internal
+per-track state (a stuck automation/gesture flag, or similar) across a
+script reload that a full application restart clears. Every hardware
+test after the first success this session was run without restarting
+Bitwig first, so several "disproofs" below may have actually been
+testing against already-corrupted Bitwig-side state rather than a
+genuinely non-working fix. Any future retest of a specific hypothesis
+should start from a full Bitwig restart to get a clean baseline.
+
 **Root cause of the original recall failures, found**: this script
 never called Bitwig's `Parameter.touch(isBeingTouched)` on fader
 touch/release (confirmed missing via Mossgraber's DrivenByMoss, a
