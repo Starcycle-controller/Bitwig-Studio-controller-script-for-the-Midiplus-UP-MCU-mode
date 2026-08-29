@@ -3350,18 +3350,6 @@ function init() {
       selectChannelOnFaderTouch = value;
    });
 
-   // See swapLcdRows/renderLCDDisplays() above - purely which physical
-   // row each channel strip's name/value text renders to, everywhere
-   // (Mixer, Sends, Device), since the encoder blocking a row is a
-   // hardware-layout issue independent of mode.
-   var swapLcdRowsSetting = host.getPreferences().getBooleanSetting(
-      "Swap LCD Rows (Value on Top)", "Mixer", false);
-   swapLcdRowsSetting.markInterested();
-   swapLcdRowsSetting.addValueObserver(function(value) {
-      swapLcdRows = value;
-      displayNeedsUpdate = true;
-   });
-
    // See scheduleSelectChannelOnTouch() above - debounces Select Channel
    // on Fader Touch so riding several faders together settles on one
    // selection instead of flickering through each one as you grab it. 0
@@ -3521,6 +3509,20 @@ function init() {
    armedLedBlinkIntervalSetting.markInterested();
    armedLedBlinkIntervalSetting.addRawValueObserver(function(value) {
       ARMED_LED_BLINK_INTERVAL_MS = value;
+   });
+
+   // See swapLcdRows/renderLCDDisplays() above - purely which physical
+   // row each channel strip's name/value text renders to, everywhere
+   // (Mixer, Sends, Device), since the encoder blocking a row is a
+   // hardware-layout issue independent of mode. No modifier of its own,
+   // so it's placed last in this category rather than between an
+   // unrelated on/off toggle and its own modifier.
+   var swapLcdRowsSetting = host.getPreferences().getBooleanSetting(
+      "Swap LCD Rows (Value on Top)", "Mixer", false);
+   swapLcdRowsSetting.markInterested();
+   swapLcdRowsSetting.addValueObserver(function(value) {
+      swapLcdRows = value;
+      displayNeedsUpdate = true;
    });
 
    // Remote Controls (8 Macros for selected device)
