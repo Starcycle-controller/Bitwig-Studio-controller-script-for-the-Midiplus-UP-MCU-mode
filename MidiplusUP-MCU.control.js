@@ -2174,6 +2174,28 @@ function recomputeActiveTrackIndices() {
    }
    if (hideDeactivatedTracksEnabled) {
       refreshMainCursors();
+      // Bug found and fixed: if "Deactivated Tracks in Bank" is already
+      // set to "Hide" when the script starts (persisted from a previous
+      // session), the Controller Preferences setting's own
+      // addValueObserver() fires immediately during init() - Bitwig
+      // convention, before this function has ever run even once - with
+      // activeTrackRawIndices still its initial empty array. Every slot
+      // looks like Hide mode's "no track left to fill this slot" case
+      // (see isMainSlotEmpty()), so that premature rebindFaders() call
+      // clears every one of the 8 fader bindings. This function running
+      // for real (via mainMappingTick(), ~100ms after init()) is what
+      // actually populates activeTrackRawIndices correctly for the first
+      // time - previously it only re-pointed the display cursors
+      // (refreshMainCursors()) and left the faders cleared from that
+      // earlier premature call, with nothing else to ever re-bind them.
+      // Reported as faders working fine if Hide mode is off at startup,
+      // or toggled on manually mid-session (activeTrackRawIndices is
+      // already populated by either point), but never moving Bitwig's
+      // volume if Hide mode was already on when the script started.
+      if (currentMode === MODE_MIXER) {
+         refreshDisplayText();
+         rebindFaders();
+      }
    }
 }
 

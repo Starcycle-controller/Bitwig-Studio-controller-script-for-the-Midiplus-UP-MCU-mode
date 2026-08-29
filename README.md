@@ -109,7 +109,44 @@ already marks this full set for `mainTrackCursors`/`effectTrackBank`
 items - now mirrored for `trackBank`'s own items too, matching exactly
 (one `markInterested()` call per sub-accessor; there's no "interest
 inherited from the parent Parameter" shortcut - each has to be marked
-individually). **Not yet re-tested on hardware since this second fix.**
+individually). **Confirmed working on hardware after this second fix.**
+
+**A follow-up consistency pass** extended the same `directTrackAt()`
+approach to REC ARM/SOLO/MUTE and the Mixer-mode encoder-push Pan Reset
+(same `activeTrackAt()`-through-`mainTrackCursors` pattern, same
+group-adjacent risk) - **reverted** after hardware testing showed faders
+not responding to input again, with no console exception. Turned out
+(see the startup race condition below, found immediately after) this
+was very likely misdiagnosed at the time - the real cause was probably
+already present and unrelated to that specific change. Not yet
+reintroduced; worth retrying now that the actual race condition is
+understood and fixed.
+
+**Second bug found, unrelated to the group/CursorTrack issue above -
+a genuine startup race condition**: reported as "faders don't move
+Bitwig's level" being inconsistent between reloads - worked if
+"Deactivated Tracks in Bank" (Hide mode) was off at startup, or toggled
+on manually mid-session, but never worked if Hide mode was *already* the
+persisted setting when the script started. Root cause: `activeTrackRawIndices`
+(which Hide mode needs to know which slots have a track) is only
+populated by a background scan that first completes ~100ms after `init()`
+returns (`mainMappingTick()`'s scheduled task). But when Hide mode is
+already the persisted Controller Preferences value at startup, its
+`addValueObserver()` fires immediately during `init()` registration -
+standard Bitwig behavior - calling `rebindFaders()` while
+`activeTrackRawIndices` is still empty. Every slot looks like "no track"
+(`isMainSlotEmpty()`), so all 8 fader bindings get cleared via
+`hwFaders[i].clearBindings()`. `recomputeActiveTrackIndices()` (the
+function that finally populates the list for real, ~100ms later) only
+ever called `refreshMainCursors()` afterward - it never called
+`rebindFaders()` again, so the faders stayed cleared indefinitely, with
+nothing left to ever re-bind them. Fixed by also calling
+`refreshDisplayText()`/`rebindFaders()` from `recomputeActiveTrackIndices()`
+whenever Hide mode is active and currently in Mixer mode - matches
+exactly what the Controller Preferences setting's own observer already
+does when toggled live. **Not yet re-tested on hardware since this fix -
+please verify by restarting Bitwig/reloading the script with Hide mode
+already enabled from a previous session, not just toggling it live.**
 
 ### Modes (`currentMode`)
 
