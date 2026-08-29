@@ -2123,15 +2123,17 @@ function recallMixerSnapshot(slotIndex) {
             println("Mixer Snapshot RECALL slot " + i + " skipped - bad position in \"" + parts[i] + "\"");
             continue;
          }
-         // mainTrackScanBank's volume()/pan() are deliberately never
-         // markInterested() - write-only .set() calls don't require it
-         // (only .get() does, confirmed via the Value.markInterested()
-         // Javadoc), and this code path never reads them. The first
-         // attempt at this feature marked them interested anyway (~256
-         // extra values across a bank spanning group boundaries) and was
-         // suspected, probably wrongly, of destabilizing fader binding
-         // for unrelated group tracks - kept uninterested here to stay
-         // well clear of that territory regardless.
+         // mainTrackScanBank's volume()/pan() ARE markInterested() (see
+         // the scan bank setup in init()) despite this code path only
+         // ever .set()ing, never .get()ing them - confirmed on hardware
+         // that skipping that (on the theory that write-only .set()
+         // shouldn't need it) made recall log success while the real
+         // Bitwig value silently never changed. The first attempt at
+         // this feature marked them interested too and was suspected,
+         // probably wrongly, of destabilizing fader binding for
+         // unrelated group tracks - that instability is now known to
+         // have a different, unrelated cause (the Hide-mode startup
+         // race condition, fixed separately).
          recallTrack = mainTrackScanBank.getItemAt(pos);
       }
       recallTrack.volume().set(vol);
@@ -2588,6 +2590,24 @@ function init() {
          // alone wouldn't fire a recompute in that case.
          scanTrack.name().markInterested();
          scanTrack.name().addValueObserver(function () { mainMappingDirty = true; });
+         // Read on-demand by recallMixerSnapshot() (Mixer Snapshots),
+         // which addresses Main tracks by absolute position through this
+         // same scan bank rather than through whichever bank window
+         // happens to be visible. Previously left un-markInterested()
+         // on the theory that .set() (write-only, never .get() here)
+         // shouldn't need it per the Value.markInterested() Javadoc -
+         // confirmed WRONG on hardware: recall logged every .set() call
+         // as applied, but the real Bitwig value never actually changed
+         // for tracks whose slot happened to differ from its stored
+         // value already. Marking these interested (same as the earlier,
+         // first Mixer Snapshot attempt did) fixes it; that attempt's
+         // fader instability is now known to have an unrelated cause
+         // (the Hide-mode startup race condition, fixed separately), so
+         // this should be safe.
+         scanTrack.volume().markInterested();
+         scanTrack.volume().value().markInterested();
+         scanTrack.pan().markInterested();
+         scanTrack.pan().value().markInterested();
       })(scanIdx);
    }
 
