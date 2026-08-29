@@ -111,16 +111,43 @@ items - now mirrored for `trackBank`'s own items too, matching exactly
 inherited from the parent Parameter" shortcut - each has to be marked
 individually). **Confirmed working on hardware after this second fix.**
 
-**A follow-up consistency pass** extended the same `directTrackAt()`
-approach to REC ARM/SOLO/MUTE and the Mixer-mode encoder-push Pan Reset
-(same `activeTrackAt()`-through-`mainTrackCursors` pattern, same
-group-adjacent risk) - **reverted** after hardware testing showed faders
-not responding to input again, with no console exception. Turned out
-(see the startup race condition below, found immediately after) this
-was very likely misdiagnosed at the time - the real cause was probably
-already present and unrelated to that specific change. Not yet
-reintroduced; worth retrying now that the actual race condition is
-understood and fixed.
+**Consistency review, requested directly**: asked whether the same bug
+could affect other sections/modes, since REC ARM, SOLO, MUTE, and the
+Mixer-mode encoder-push Pan Reset all read/write a track parameter
+through the exact same `activeTrackAt(i)`-through-`mainTrackCursors`
+pattern that was confirmed broken for volume/pan on a group-nested
+track. Pan Reset (`.pan().reset()`) is essentially the identical
+operation to the fader bug, just triggered by a button press instead of
+physical fader movement - very likely to have the same issue. REC
+ARM/SOLO/MUTE (`.arm()`/`.solo()`/`.mute()`, all `SettableBooleanValue`
+rather than `Parameter`) share the identical cursor mechanism but were
+never separately hardware-confirmed broken - given a wrong-track
+SOLO/MUTE/ARM on a group is a worse silent mistake than a fader glitch,
+all four were switched to the same `directTrackAt(i)` helper
+proactively (renamed from `faderTrackAt()` now that it covers more than
+faders) rather than waiting for each to be reported separately.
+`trackBank`'s own items also got `arm()`/`solo()`/`mute()`
+`markInterested()` in `init()`, alongside the existing volume()/pan()
+set.
+
+Left unchanged, lower risk/lower stakes: SELECT (notes 24-31, including
+its double-press group-fold check), fader-touch select-on-touch, bank-
+scroll's own track selection, and the per-channel track-color LED/LCD
+output - all still go through `activeTrackAt()`. Selection-related ones
+(`selectInMixer()`/`selectInEditor()`/`cursorTrack.selectChannel()`,
+`isGroup()`/`isGroupExpanded()`) got extensive hardware testing earlier
+this session (see "Bank scrolling selects a track" below) with no
+reported misdirection issue, and track color is cosmetic only (wrong
+color, not a wrong control) - both worth keeping an eye on, but not
+proactively changed without evidence they're actually affected.
+
+**First hardware test of this pass showed faders not responding to
+input at all - reverted.** Turned out to be a false alarm: the real
+cause (see the startup race condition immediately below) was an
+unrelated, pre-existing bug that happened to be triggered by whatever
+Hide-mode state was active during that specific test, not by this
+change. Re-applied once the actual race condition was found and fixed -
+**not yet re-tested on hardware since being reintroduced.**
 
 **Second bug found, unrelated to the group/CursorTrack issue above -
 a genuine startup race condition**: reported as "faders don't move
