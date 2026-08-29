@@ -2116,15 +2116,14 @@ modifier state entirely, so SHIFT/OPTION held during one previously did
 nothing extra.
 
 Both store and recall go through `directTrackAt()` - the same direct
-`trackBank.getItemAt(i)` binding (Show All mode) / `mainTrackCursors[i]`
-(Hide mode) already proven reliable for faders/encoders/REC ARM/SOLO/
-MUTE/Pan Reset elsewhere in this file - reading and writing "whichever
-track is currently in bank slot i", exactly like those other features
-do. **Known trade-off**: storing while looking at one 8-track window,
-then recalling after scrolling to a different one (or toggling Hide
-mode) in between, applies the stored values to whatever's now in slots
-0-7, not the original tracks. Store/recall without scrolling in
-between - the normal way to use this - is unaffected.
+`trackBank.getItemAt(i)` binding (Show All mode) already proven reliable
+for faders/encoders/REC ARM/SOLO/MUTE/Pan Reset elsewhere in this file -
+reading and writing "whichever track is currently in bank slot i",
+exactly like those other features do. **Known trade-off**: storing
+while looking at one 8-track window, then recalling after scrolling to
+a different one in between, applies the stored values to whatever's now
+in slots 0-7, not the original tracks. Store/recall without scrolling
+in between - the normal way to use this - is unaffected.
 
 **Why not scroll-proof**: an earlier version tried to fix exactly that
 trade-off by storing each track's **absolute** `Track.position()`
@@ -2138,11 +2137,28 @@ through `mainTrackScanBank` silently never actually changed Bitwig's
 real value, on hardware, regardless of whether that bank's `volume()`/
 `pan()` were `markInterested()` or not (tried both - the console logged
 every `.set()` call as applied either way, but the fader never moved).
-No further explanation was found for why that specific bank won't
-accept writes while every other bank/cursor object in this file does.
 Rather than keep chasing it, recall was moved back onto the
 proven-reliable `directTrackAt()` path, accepting the bank-scroll
 limitation as the cost of something that actually works.
+
+**Hide mode is unsupported - confirmed on hardware, not theoretical.**
+With "Deactivated Tracks in Bank" (Hide mode) active, `directTrackAt()`
+falls back to `mainTrackCursors[i]` (`CursorTrack.selectChannel()`-based
+- needed there since a plain `TrackBank` can't skip slots). For any slot
+sitting after a hidden/skipped track, `.set()` on that cursor's
+`volume()`/`pan()` turned out to be a silent no-op: reading the value
+immediately before and after the `.set()` call in the console showed
+them completely identical, even though `.get()` itself works fine
+(matched the live fader) and the exact same `directTrackAt()` pattern
+works for ARM/SOLO/MUTE/Pan Reset. Native fader input is unaffected by
+this because it goes through Bitwig's own `setBinding()` mechanism, not
+a script-side `.set()` call - a different path entirely. Rather than
+silently fail per-slot (some channels reset, others don't, depending on
+where the hidden tracks happen to sit - very confusing), both store and
+recall now refuse outright with a clear "Mixer Snapshots require Hide
+mode off" popup whenever Hide mode is active. Returns are unaffected
+either way (never routes through `mainTrackCursors`) and works normally
+regardless of Hide mode.
 
 Stored via `host.getDocumentState()` (saved inside the Bitwig project
 file itself, hidden from the Studio I/O panel via `Setting.hide()`) so a
@@ -2151,8 +2167,10 @@ currently visible 8-track window - not the whole project, not
 Mute/Solo/Sends. Both store and recall show a corner popup
 (`host.showPopupNotification()`) and briefly flash across all 8
 channels' bottom LCD row via `showModePopup()` - "STORE n"/"RECALL n"/
-"EMPTY n" (recalling a slot that's never been stored). **Not yet
-re-tested on hardware since this simplification.**
+"EMPTY n" (recalling a slot that's never been stored). All hardware
+testing so far happened with Hide mode on (now refused outright, see
+above) - **not yet tested on hardware with Hide mode off**, which is
+the only mode this feature actually supports.
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 

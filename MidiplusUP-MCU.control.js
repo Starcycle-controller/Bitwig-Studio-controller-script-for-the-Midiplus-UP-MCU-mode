@@ -2035,17 +2035,33 @@ function directTrackAt(i) {
 // resolved to the right track every time (confirmed via console
 // logging) but writing through mainTrackScanBank silently never
 // actually changed Bitwig's real value, regardless of whether that
-// bank's volume()/pan() were markInterested() or not - tried both, both
-// failed identically on hardware, and no more direct explanation was
-// found. Rather than keep chasing that, dropped back to the simpler,
-// proven-reliable directTrackAt() write path.
+// bank's volume()/pan() were markInterested() or not. Dropped back to
+// the simpler, proven-reliable directTrackAt() write path.
 //
 // Trade-off this reintroduces: storing while looking at one 8-track
-// window, then recalling after scrolling to a DIFFERENT window (or
-// toggling Hide mode) in between, will apply the stored values to
-// whatever's now in slots 0-7, not the original tracks - correct only
-// if the bank hasn't moved between store and recall. Store/recall
-// without scrolling in between - the common case - is unaffected.
+// window, then recalling after scrolling to a DIFFERENT window in
+// between, will apply the stored values to whatever's now in slots 0-7,
+// not the original tracks. Store/recall without scrolling in between -
+// the common case - is unaffected.
+//
+// HIDE MODE IS UNSUPPORTED - CONFIRMED ON HARDWARE, not just a
+// theoretical risk: with "Deactivated Tracks in Bank" (Hide mode)
+// active, directTrackAt(i) falls back to mainTrackCursors[i]
+// (CursorTrack.selectChannel()-based, needed there since a plain
+// TrackBank can't skip slots). For any slot sitting after a
+// hidden/skipped track, .set() on that cursor's volume()/pan() is
+// silently a no-op - confirmed by reading the value immediately before
+// and after the .set() call and finding them identical, even though
+// .get() itself works fine (matches the live fader) and the SAME
+// directTrackAt() access pattern works for ARM/SOLO/MUTE/Pan Reset.
+// Native fader input still works in this situation because it goes
+// through Bitwig's own setBinding() mechanism, not a script-side
+// .set() call - a completely different path that isn't affected.
+// Rather than silently fail per-slot (confusing - some channels reset,
+// others don't, depending on where the hidden tracks happen to be),
+// both store and recall refuse outright with a clear popup whenever
+// Hide mode is on. Returns are unaffected either way (never routes
+// through mainTrackCursors) and still works normally.
 //
 // One slot's serialized text is "<entry>|<entry>|...", one entry per
 // bank slot 0-7: "-" for a slot with no track in it at capture time
@@ -2055,19 +2071,18 @@ function directTrackAt(i) {
 // Controller API has no JSON parser built in and this format is trivial
 // to split by hand.
 function storeMixerSnapshot(slotIndex) {
+   if (!isViewingReturns && hideDeactivatedTracksEnabled) {
+      host.showPopupNotification("Mixer Snapshots require Hide mode off");
+      return;
+   }
    var parts = [];
    for (var i = 0; i < 8; i++) {
       if (isMainSlotEmpty(i)) {
          parts.push("-");
-         println("Mixer Snapshot STORE slot " + i + " - isMainSlotEmpty() true, storing \"-\"");
          continue;
       }
       var snapshotTrack = directTrackAt(i);
-      var storedVol = snapshotTrack.volume().get();
-      var storedPan = snapshotTrack.pan().get();
-      parts.push(storedVol.toFixed(4) + "," + storedPan.toFixed(4));
-      println("Mixer Snapshot STORE slot " + i + " - name=\"" + snapshotTrack.name().get() +
-         "\" vol=" + storedVol + " pan=" + storedPan);
+      parts.push(snapshotTrack.volume().get().toFixed(4) + "," + snapshotTrack.pan().get().toFixed(4));
    }
    mixerSnapshotSettings[slotIndex].set(parts.join("|"));
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Stored");
@@ -2075,6 +2090,10 @@ function storeMixerSnapshot(slotIndex) {
 }
 
 function recallMixerSnapshot(slotIndex) {
+   if (!isViewingReturns && hideDeactivatedTracksEnabled) {
+      host.showPopupNotification("Mixer Snapshots require Hide mode off");
+      return;
+   }
    var serialized = mixerSnapshotSettings[slotIndex].get();
    if (!serialized) {
       host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " is Empty");
@@ -2084,24 +2103,17 @@ function recallMixerSnapshot(slotIndex) {
    var parts = serialized.split("|");
    for (var i = 0; i < 8 && i < parts.length; i++) {
       if (parts[i] === "-" || isMainSlotEmpty(i)) {
-         println("Mixer Snapshot RECALL slot " + i + " skipped - stored=\"" + parts[i] +
-            "\" isMainSlotEmpty=" + isMainSlotEmpty(i));
          continue;
       }
       var fields = parts[i].split(",");
       var vol = parseFloat(fields[0]);
       var pan = parseFloat(fields[1]);
       if (isNaN(vol) || isNaN(pan)) {
-         println("Mixer Snapshot RECALL slot " + i + " skipped - bad vol/pan in \"" + parts[i] + "\"");
          continue;
       }
       var recallTrack = directTrackAt(i);
-      var beforeVol = recallTrack.volume().get();
       recallTrack.volume().set(vol);
       recallTrack.pan().set(pan);
-      var afterVol = recallTrack.volume().get();
-      println("Mixer Snapshot RECALL slot " + i + " - name=\"" + recallTrack.name().get() +
-         "\" target vol=" + vol + " pan=" + pan + " | before=" + beforeVol + " after=" + afterVol);
    }
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
    showModePopup("RECALL" + (slotIndex + 1));
