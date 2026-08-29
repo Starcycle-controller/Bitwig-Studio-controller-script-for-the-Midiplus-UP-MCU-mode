@@ -2162,39 +2162,43 @@ replacement now in place instead.
    index) - worth trying only if track color on this hardware still
    matters enough to keep chasing.
 
-### Mixer Snapshots - SHELVED, see patches/mixer-snapshots.patch
+### Mixer Snapshots
 
-SHIFT+F(n)/OPTION+F(n) store/recall of a bank window's Volume+Pan was
-attempted four times this session and shelved rather than shipped -
-recall reliably fails to write a value to any channel whose fader was
-touched earlier in the same Bitwig session, and every theory tried for
-it (a fader-binding echo, a missing `Parameter.touch()` call, a
-settle-time race, stale Bitwig-side state, `Select Channel on Fader
-Touch` interference, `touch()` + binding-clear combined, volume vs. pan
-as the distinguishing factor) was individually disproven on hardware.
-The leading theory - a Parameter can be script-`.set()` successfully
-exactly once per Bitwig session, on its first-ever live touch, and every
-touch after that permanently blocks script writes to it until Bitwig
-restarts - was never confirmed under controlled logging either. This
-looks like a genuine Bitwig engine limitation rather than something
-fixable from the Controller API surface available here; no comparable
-open-source Bitwig script was found that attempts this same "recall a
-value on a channel the user already touched" pattern, and the one known
-commercial product that does it reliably (Melbourne Instruments'
-Roto-Control, Bitwig Edition) ships as a closed, compiled extension
-built in direct partnership with Bitwig, not something to learn an
-implementation approach from.
+SHIFT+F(n) stores the current 8-track bank window's Volume+Pan into slot
+n; OPTION+F(n) recalls it back. Persisted via `host.getDocumentState()`,
+so a snapshot is saved inside the Bitwig project file itself and travels
+with the song.
 
-The full working implementation (as of the last attempt), the diagnostic
-logging, and this entire investigation's blow-by-blow history are
-preserved in `patches/mixer-snapshots.patch` (see that directory's own
-notes for how to reapply it) and in git history (`git log --oneline`
-around commits `e1d4e2b` through `efeeb43`) for whoever picks this back
-up with a new idea. The main tree now has none of it - no F-key
-SHIFT/OPTION combos, no `Parameter.touch()` wiring (added purely to
-chase this bug, never independently validated), no persisted settings -
-back to plain F1-F8 green-state behavior and the Hide-mode ("skip and
-shift") fixes from earlier in this session standing on their own.
+Shelved once already this session after recall reliably failed to write
+a value to any channel whose fader had been touched earlier in the same
+session - see `patches/mixer-snapshots.patch` and git history
+(`e1d4e2b`..`efeeb43`) for that investigation's full blow-by-blow. The
+actual root cause turned out to be simpler than the leading "permanent
+per-session write lock" theory: this script never called Bitwig's own
+`Parameter.touch(isBeingTouched)` on hardware fader press/release, so
+Bitwig had no signal a touch gesture had ever ended and kept ignoring
+subsequent script `.set()` calls on that parameter. Confirmed via
+Mossgraber's DrivenByMoss (`ParameterImpl.touchValue()` calls
+`parameter.touch()`) - real MCU-style drivers call this on every touch/
+release, and this script simply never did. Fixed by capturing the exact
+`directTrackAt(i)`-resolved target on press (`faderTouchedTarget`) and
+calling `.touch(true)`/`.touch(false)` on it at press/release - the same
+object the fader is actually bound to, not a separately-resolved one (an
+earlier absolute-position rebuild through `mainTrackScanBank` failed
+identically, since touch state on the fader-bound object has no bearing
+on a different object's writability).
+
+Reintroduced for a second round of testing once the unrelated all-8-
+columns/all-8-SELECT-LEDs "cursor collapse" bug (see "Faders"/git history
+around the `mainTrackCursors` fix) was found and fixed - that bug's
+`mainTrackCursors`/`selectChannel()` unreliability was never ruled out as
+a contributing factor in the original recall failures, so worth a clean
+retest now that it's gone. Scope unchanged: Volume + Pan only, on
+whichever 8 tracks are currently visible in the bank window at
+store/recall time (not the whole project, not mute/solo/sends, and not
+scroll-proof - storing then scrolling to a different window before
+recalling applies the stored values to whatever's now in slots 0-7, not
+the original tracks).
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 

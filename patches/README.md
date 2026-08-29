@@ -8,12 +8,11 @@ reapply if someone picks the idea back up.
 
 The Mixer Snapshots feature (SHIFT+F1-F8 store / OPTION+F1-F8 recall a
 bank window's Volume+Pan), as it stood at commit `efeeb43` - the last
-attempt before the feature was shelved. See the main README's "Mixer
-Snapshots" section for why: recall reliably failed to write a value to
-any channel whose fader had been touched earlier in the same Bitwig
-session, and every theory tried for it was individually disproven on
-hardware. This patch is provided as a starting point for a *new* idea,
-not something expected to work as-is.
+attempt before the feature was first shelved. See the main README's
+"Mixer Snapshots" section for the root cause found since (a missing
+`Parameter.touch()` call) and its fix, and for why it was reintroduced -
+this patch is now back in the main tree, kept here only as a rollback
+point in case the current attempt needs shelving again.
 
 To reapply on top of the current `MidiplusUP-MCU.control.js`:
 
