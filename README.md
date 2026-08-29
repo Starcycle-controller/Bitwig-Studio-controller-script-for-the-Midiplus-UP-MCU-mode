@@ -2107,32 +2107,42 @@ replacement now in place instead.
 
 ### Mixer Snapshots (SHIFT+F1-F8 store / OPTION+F1-F8 recall)
 
-Second attempt this session - see "Reverted / abandoned" below for what
-happened to the first one and why it doesn't reflect on this rebuild.
-SHIFT+F(n) stores the current 8-track bank window's Volume+Pan into slot
-n (1-8, one per F-key); OPTION+F(n) recalls it. Both combos were free to
-use - a plain F-key press ignores modifier state entirely, so SHIFT/
-OPTION held during one previously did nothing extra.
+Third attempt this session - see "Reverted / abandoned" below for the
+first, and the paragraphs below for why the second (absolute-position)
+design was abandoned too. SHIFT+F(n) stores the current 8-track bank
+window's Volume+Pan into slot n (1-8, one per F-key); OPTION+F(n)
+recalls it. Both combos were free to use - a plain F-key press ignores
+modifier state entirely, so SHIFT/OPTION held during one previously did
+nothing extra.
 
-Rebuilt on `directTrackAt()` (the same direct `trackBank.getItemAt(i)`
-binding proven reliable for faders/encoders/ARM/SOLO/MUTE/Pan Reset
-elsewhere in this file) instead of the original `activeTrackAt()`
-(`mainTrackCursors` indirection) - avoids that whole class of risk from
-the outset rather than only reacting to it. Each stored entry captures
-its track's **absolute** `Track.position()` (Main tracks) rather than
-its bank-window slot, then recall targets that exact position via
-`mainTrackScanBank.getItemAt(pos)` - the same permanently-unscrolled,
-128-deep scan bank used elsewhere in this file - so recall finds the
-right track regardless of any scrolling, Hide/Show-All toggling, or
-which bank is currently on screen in between store and recall. Returns
-tracks keep simple bank-slot-relative recall (no equivalent unscrolled
-scan bank exists for them, and Returns rarely exceeds 8 tracks anyway).
-`mainTrackScanBank`'s `volume()`/`pan()` are deliberately left
-un-`markInterested()`'d - the first attempt marked them anyway (~256
-extra live-tracked values spanning group boundaries) and that was
-suspected, probably wrongly, of destabilizing the fader path; recall
-only ever `.set()`s through that bank, never `.get()`s, and only `.get()`
-requires prior interest.
+Both store and recall go through `directTrackAt()` - the same direct
+`trackBank.getItemAt(i)` binding (Show All mode) / `mainTrackCursors[i]`
+(Hide mode) already proven reliable for faders/encoders/REC ARM/SOLO/
+MUTE/Pan Reset elsewhere in this file - reading and writing "whichever
+track is currently in bank slot i", exactly like those other features
+do. **Known trade-off**: storing while looking at one 8-track window,
+then recalling after scrolling to a different one (or toggling Hide
+mode) in between, applies the stored values to whatever's now in slots
+0-7, not the original tracks. Store/recall without scrolling in
+between - the normal way to use this - is unaffected.
+
+**Why not scroll-proof**: an earlier version tried to fix exactly that
+trade-off by storing each track's **absolute** `Track.position()`
+instead of its bank-slot index, then recalling straight through
+`mainTrackScanBank.getItemAt(pos)` - a permanently-unscrolled, 128-deep
+bank already used elsewhere in this file, so slot index === absolute
+position by construction. The position bookkeeping itself worked
+correctly (confirmed via console logging, matching Hide mode's own
+skip-deactivated-tracks behavior exactly) - but writing volume/pan
+through `mainTrackScanBank` silently never actually changed Bitwig's
+real value, on hardware, regardless of whether that bank's `volume()`/
+`pan()` were `markInterested()` or not (tried both - the console logged
+every `.set()` call as applied either way, but the fader never moved).
+No further explanation was found for why that specific bank won't
+accept writes while every other bank/cursor object in this file does.
+Rather than keep chasing it, recall was moved back onto the
+proven-reliable `directTrackAt()` path, accepting the bank-scroll
+limitation as the cost of something that actually works.
 
 Stored via `host.getDocumentState()` (saved inside the Bitwig project
 file itself, hidden from the Studio I/O panel via `Setting.hide()`) so a
@@ -2141,8 +2151,8 @@ currently visible 8-track window - not the whole project, not
 Mute/Solo/Sends. Both store and recall show a corner popup
 (`host.showPopupNotification()`) and briefly flash across all 8
 channels' bottom LCD row via `showModePopup()` - "STORE n"/"RECALL n"/
-"EMPTY n" (recalling a slot that's never been stored). **Not yet tested
-on hardware.**
+"EMPTY n" (recalling a slot that's never been stored). **Not yet
+re-tested on hardware since this simplification.**
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 
