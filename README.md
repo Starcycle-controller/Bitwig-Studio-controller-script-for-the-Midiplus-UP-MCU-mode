@@ -91,11 +91,25 @@ again whenever Hide mode isn't actually active - restoring the exact
 confirmed-working pre-`c9bd10e` binding for the common case - and only
 falls back to the `mainTrackCursors` indirection when Hide mode is on
 (where it's structurally required, and hasn't been reported broken).
-`trackBank`'s own 8 items now also get `volume()`/`pan()` (and their
-`.value()` sub-accessors) `markInterested()` directly in `init()`,
-matching exactly what the confirmed-working version did before
-`mainTrackCursors` existed. **Not yet re-tested on hardware since this
-fix.**
+`trackBank`'s own 8 items now also get `volume()`/`pan()` `markInterested()`
+directly in `init()`, matching exactly what the confirmed-working version
+did before `mainTrackCursors` existed.
+
+**First hardware retest confirmed the fader fix itself worked** (the
+group child's volume updated correctly) **but crashed shortly after** -
+"Either call markInterested() or add at least one observer in init in
+order to access the current value", from Fader Snap to Zero's
+`target.discreteValueCount().get()` against one of these `trackBank`
+items. The first pass only marked `.value()` interested - enough for
+basic fader motion, but missing everything else
+`applyEncoderStep()`/`resolveOrigin()`/Fader Snap to Zero also call on a
+fader/encoder target: `discreteValueCount()`, `discreteValueNames()`,
+`getOrigin()`, `name()`, `displayedValue()`. `setupChannelStripObservers()`
+already marks this full set for `mainTrackCursors`/`effectTrackBank`
+items - now mirrored for `trackBank`'s own items too, matching exactly
+(one `markInterested()` call per sub-accessor; there's no "interest
+inherited from the parent Parameter" shortcut - each has to be marked
+individually). **Not yet re-tested on hardware since this second fix.**
 
 ### Modes (`currentMode`)
 
