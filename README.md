@@ -147,7 +147,9 @@ cause (see the startup race condition immediately below) was an
 unrelated, pre-existing bug that happened to be triggered by whatever
 Hide-mode state was active during that specific test, not by this
 change. Re-applied once the actual race condition was found and fixed -
-**not yet re-tested on hardware since being reintroduced.**
+**confirmed correct on hardware**: REC ARM, SOLO, MUTE, and encoder-push
+Pan Reset all now act on the intended track (tested on both a group's
+child track and a plain ungrouped track), not the enclosing group.
 
 **Second bug found, unrelated to the group/CursorTrack issue above -
 a genuine startup race condition**: reported as "faders don't move
