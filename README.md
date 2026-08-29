@@ -2169,40 +2169,47 @@ Mute/Solo/Sends. Both store and recall show a corner popup
 channels' bottom LCD row via `showModePopup()` - "STORE n"/"RECALL n"/
 "EMPTY n" (recalling a slot that's never been stored).
 
-**Recall unreliable even with Hide mode off, root cause still open.**
-With Hide mode confirmed off (so `directTrackAt()` is the plain
+**Recall unreliable even with Hide mode off - root cause found.** With
+Hide mode confirmed off (so `directTrackAt()` is the plain
 `trackBank.getItemAt(i)` path - the same one ARM/SOLO/MUTE/Pan Reset use
 successfully), recall on hardware still intermittently failed to move
 some faders, then failed completely for every touched channel on a
-clean, hands-off retest - ruling out a touch/fader-drag race.
+clean, hands-off retest.
 
-First hypothesis tried and **disproven**: that `hwFaders` staying
-natively `setBinding()`-bound (with `disableTakeOver()`) to the same
-parameter lets the motorized fader's own position echo land back
-through that live binding and clobber the `.set()` write. Fix attempted
-- clear every fader's binding before writing, `rebindFaders()`
-afterwards - made no difference on hardware. Crucially, the diagnostic
-before/after readback showed the two channels that failed to recall
-(both recently touched/moved by hand right before store+recall) were
-completely unchanged by `.set()` **immediately**, while bindings were
-still fully cleared - so nothing was bound to "fight" the write at that
-moment, ruling this theory out. The other 6 channels in that same test
-happened to already be at their stored value, so they're not real
-evidence either way - a real test needs the channel's value to actually
-differ at recall time.
+Two hypotheses tried and **disproven** first:
+- That `hwFaders` staying natively `setBinding()`-bound (with
+  `disableTakeOver()`) to the same parameter lets the motorized fader's
+  own position echo land back through that live binding and clobber the
+  `.set()` write. Fix attempted - clear every fader's binding before
+  writing, `rebindFaders()` afterwards - made no difference. Crucially,
+  the failing channels were unchanged by `.set()` **immediately**, while
+  bindings were still fully cleared - nothing was bound to fight the
+  write at that moment.
+- That it was a touch/release debounce - `faderTouchHeld[i]` (this
+  script's own touch-tracking flag) was confirmed `false` at recall time
+  for the failing channels, across repeated attempts with waits in
+  between, and it still failed identically every time.
 
-Current leads: the failure correlates with how *recently* a fader was
-physically touched, not with anything about the write path itself
-(same `directTrackAt()` pattern that works fine for ARM/SOLO/MUTE/Pan
-Reset, and works for slots that weren't just touched). Possibly a
-touch/gesture cooldown Bitwig applies internally to a Parameter after
-recent live hardware input, independent of our own binding state.
-`faderTouchHeld[i]` (this script's own touch-tracking flag) is now
-logged alongside the before/after readback to check whether our own
-release detection is the one getting stuck. Next hardware test: touch
-and release a fader, wait several full seconds with hands completely
-off everything, confirm the console shows `faderTouchHeld=false`, then
-recall - to see whether a longer cooldown after release resolves it.
+**Actual root cause**: Bitwig's `Parameter` interface has an explicit
+`touch(isBeingTouched)` method - confirmed via Mossgraber's DrivenByMoss
+(a reference implementation covering many real MCU-style motorized-
+fader controllers), where every touch/release calls it on the
+corresponding parameter. This script's Fader Touch handler (notes
+104-112) never called it at all - it only drove local bookkeeping
+(`faderTouchHeld`, channel selection, Fader Snap to Zero). Bitwig had no
+signal that a hardware gesture had ever ended, so once a fader sent any
+live input, Bitwig kept treating that parameter as hardware-owned and
+silently ignored every subsequent script `.set()` call on it -
+regardless of track-access path or fader binding state, which is why
+both earlier theories looked plausible but didn't fix it. Fixed by
+capturing the touched target (`faderTouchedTarget[i]`, mirroring
+`getFaderSnapZeroTarget()`) on press and calling `.touch(true)`/
+`.touch(false)` on it at press/release - captured per-index rather than
+re-resolved at release time, so a mode change mid-touch still releases
+the same parameter that got touched instead of leaving one stuck
+forever. Not yet confirmed on hardware - the before/after (immediate
+and 500ms-delayed) volume readback logging stays in place for that
+verification pass.
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 

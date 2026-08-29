@@ -1135,6 +1135,24 @@ function scheduleSelectChannelOnTouch(track) {
 // fix is the same either way.
 var faderTouchHeld = [false, false, false, false, false, false, false, false, false];
 
+// Root cause of Mixer Snapshot recall silently failing to write volume/
+// pan on channels that had recently received live hardware fader input
+// (confirmed on hardware - see README "Mixer Snapshots"): we never told
+// Bitwig's Parameter API when a hardware touch gesture starts/ends.
+// Bitwig's own Parameter interface has touch(isBeingTouched) exactly for
+// this (confirmed present via Mossgraber's DrivenByMoss - ParameterImpl.
+// touchValue() calls parameter.touch()) - real MCU-style controller
+// drivers call it on every fader touch/release so Bitwig knows when a
+// hardware gesture owns a parameter vs. when it's free again. We were
+// never calling it at all, so once a fader had sent any live input,
+// Bitwig had no signal that the gesture ever ended and kept ignoring
+// subsequent script .set() calls on that parameter indefinitely - not a
+// binding, touch-debounce, or track-access-path issue as earlier
+// theories assumed. Captured per-index (not re-resolved at release)
+// so a mode change mid-touch still releases the SAME parameter that got
+// touched, never leaving one stuck touched forever.
+var faderTouchedTarget = [null, null, null, null, null, null, null, null, null];
+
 function isFaderTouchLocked(faderTouchIndex) {
    for (var i = 0; i < faderTouchHeld.length; i++) {
       if (i !== faderTouchIndex && faderTouchHeld[i]) {
@@ -2101,24 +2119,15 @@ function recallMixerSnapshot(slotIndex) {
       return;
    }
    var parts = serialized.split("|");
-   // Even directTrackAt() with Hide mode off - the same access pattern
-   // already proven reliable for ARM/SOLO/MUTE/Pan Reset - has shown
-   // recall silently failing to move some faders on hardware. Working
-   // hypothesis, not yet confirmed: hwFaders stay natively setBinding()-
-   // bound to whichever parameter they currently control, with
-   // disableTakeOver() so ANY incoming pitch-bend is applied straight
-   // back to the bound parameter with no catch-up gesture required (see
-   // hwFaders setup in init()) - the motorized fader's own echo of its
-   // position while moving toward the value we .set() here could be
-   // landing back through that same live binding and clobbering our
-   // write. Testing that by clearing every fader's binding before
-   // writing, then rebindFaders() afterwards, so no echo can land mid-
-   // recall and the hardware gets resynced to the values actually
-   // stored. Diagnostic before/after readbacks below (immediate and
-   // delayed) confirm whether this actually fixes it.
-   for (var clearIdx = 0; clearIdx < 8; clearIdx++) {
-      hwFaders[clearIdx].clearBindings();
-   }
+   // Root cause (see faderTouchedTarget above): a channel that had
+   // recently received live hardware fader input stayed permanently
+   // "touched" from Bitwig's own Parameter API's point of view, since we
+   // never called touch(false) on release - silently blocking any script
+   // .set() write on it, regardless of track-access path or fader
+   // binding state. Fixed at the source (fader touch handler now calls
+   // touch(true)/touch(false) properly), so no special handling is
+   // needed here anymore. Diagnostic before/after readbacks below
+   // (immediate and delayed) confirm the fix on hardware.
    for (var i = 0; i < 8 && i < parts.length; i++) {
       if (parts[i] === "-" || isMainSlotEmpty(i)) {
          continue;
@@ -2144,7 +2153,6 @@ function recallMixerSnapshot(slotIndex) {
          }, 500);
       })(i, recallTrack, vol);
    }
-   rebindFaders();
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
    showModePopup("RECALL" + (slotIndex + 1));
 }
@@ -4684,8 +4692,21 @@ function onMidi(status, data1, data2) {
                }
             }
             faderTouchHeld[faderTouchIndex] = true;
+            // See faderTouchedTarget above - tells Bitwig's own Parameter
+            // API a hardware gesture has started, captured now so release
+            // touches the same target even if mode changes meanwhile.
+            var pressedTarget = getFaderSnapZeroTarget(faderTouchIndex);
+            faderTouchedTarget[faderTouchIndex] = pressedTarget;
+            if (pressedTarget) {
+               pressedTarget.touch(true);
+            }
          } else {
             faderTouchHeld[faderTouchIndex] = false;
+            var releasedTarget = faderTouchedTarget[faderTouchIndex];
+            faderTouchedTarget[faderTouchIndex] = null;
+            if (releasedTarget) {
+               releasedTarget.touch(false);
+            }
             // Fader Snap to Zero - see scheduleFaderSnapZeroCheck() above.
             // Only arms a check on RELEASE; the check itself re-verifies
             // the fader is still untouched (and still within range) once
