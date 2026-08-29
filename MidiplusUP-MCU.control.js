@@ -2059,10 +2059,15 @@ function storeMixerSnapshot(slotIndex) {
    for (var i = 0; i < 8; i++) {
       if (isMainSlotEmpty(i)) {
          parts.push("-");
+         println("Mixer Snapshot STORE slot " + i + " - isMainSlotEmpty() true, storing \"-\"");
          continue;
       }
       var snapshotTrack = directTrackAt(i);
-      parts.push(snapshotTrack.volume().get().toFixed(4) + "," + snapshotTrack.pan().get().toFixed(4));
+      var storedVol = snapshotTrack.volume().get();
+      var storedPan = snapshotTrack.pan().get();
+      parts.push(storedVol.toFixed(4) + "," + storedPan.toFixed(4));
+      println("Mixer Snapshot STORE slot " + i + " - name=\"" + snapshotTrack.name().get() +
+         "\" vol=" + storedVol + " pan=" + storedPan);
    }
    mixerSnapshotSettings[slotIndex].set(parts.join("|"));
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Stored");
@@ -2079,17 +2084,24 @@ function recallMixerSnapshot(slotIndex) {
    var parts = serialized.split("|");
    for (var i = 0; i < 8 && i < parts.length; i++) {
       if (parts[i] === "-" || isMainSlotEmpty(i)) {
+         println("Mixer Snapshot RECALL slot " + i + " skipped - stored=\"" + parts[i] +
+            "\" isMainSlotEmpty=" + isMainSlotEmpty(i));
          continue;
       }
       var fields = parts[i].split(",");
       var vol = parseFloat(fields[0]);
       var pan = parseFloat(fields[1]);
       if (isNaN(vol) || isNaN(pan)) {
+         println("Mixer Snapshot RECALL slot " + i + " skipped - bad vol/pan in \"" + parts[i] + "\"");
          continue;
       }
       var recallTrack = directTrackAt(i);
+      var beforeVol = recallTrack.volume().get();
       recallTrack.volume().set(vol);
       recallTrack.pan().set(pan);
+      var afterVol = recallTrack.volume().get();
+      println("Mixer Snapshot RECALL slot " + i + " - name=\"" + recallTrack.name().get() +
+         "\" target vol=" + vol + " pan=" + pan + " | before=" + beforeVol + " after=" + afterVol);
    }
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
    showModePopup("RECALL" + (slotIndex + 1));
