@@ -2065,12 +2065,28 @@ function storeMixerSnapshot(slotIndex) {
       var volPan = snapshotTrack.volume().get().toFixed(4) + "," + snapshotTrack.pan().get().toFixed(4);
       if (isViewingReturns) {
          parts.push("R," + volPan);
+      } else if (hideDeactivatedTracksEnabled) {
+         // Bug found and fixed: reading .position() off
+         // mainTrackCursors[i] (what directTrackAt(i) falls back to in
+         // Hide mode) produced stale/duplicated values - e.g. slots 1-3
+         // all read back a position one behind where they should've
+         // been, and slots whose vol/pan happened to already match
+         // masked further errors that only showed up once a real
+         // before/after difference was tested. Same class of cursor-
+         // staleness bug as the group-volume and stale-LCD-after-shift
+         // issues found earlier this session. Fixed by computing the
+         // absolute position directly from activeTrackRawIndices - the
+         // same reliable, synchronously-correct array refreshMainCursors()
+         // itself already uses to decide where to point each cursor -
+         // instead of asking the (possibly not-yet-settled) cursor for
+         // its own position after the fact.
+         parts.push(activeTrackRawIndices[mainBankScrollOffset + i] + "," + volPan);
       } else {
          parts.push(snapshotTrack.position().get() + "," + volPan);
       }
    }
-   // TEMPORARY DIAGNOSTIC - investigating "only slot 1 recalls, 2-8
-   // stay untouched" report. Remove once root cause is confirmed/fixed.
+   // TEMPORARY DIAGNOSTIC - keeping through the Hide-mode position fix
+   // above for one more confirmation round. Remove once confirmed.
    println("Mixer Snapshot STORE " + (slotIndex + 1) + " raw: " + parts.join("|"));
    mixerSnapshotSettings[slotIndex].set(parts.join("|"));
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Stored");
