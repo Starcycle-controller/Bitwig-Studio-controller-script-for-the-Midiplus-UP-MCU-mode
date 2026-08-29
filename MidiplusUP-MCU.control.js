@@ -2102,14 +2102,19 @@ function recallMixerSnapshot(slotIndex) {
       var recallTrack = directTrackAt(i);
       // Diagnostic before/after readback - confirms the touch() fix
       // covers Hide mode's mainTrackCursors[i] the same way it already
-      // confirmed Show All mode's trackBank.getItemAt(i). Remove once
-      // confirmed working in both modes.
+      // confirmed Show All mode's trackBank.getItemAt(i). faderTouchHeld
+      // included since a still-true value at recall time means the
+      // fader's touch was never actually released (hardware never sent
+      // it, or a finger was still down) - Bitwig correctly refusing to
+      // override a live, still-in-progress hardware gesture in that case
+      // isn't a bug. Remove once confirmed working in both modes.
       var beforeVol = recallTrack.volume().get();
       recallTrack.volume().set(vol);
       recallTrack.pan().set(pan);
       var afterVol = recallTrack.volume().get();
       println("Mixer Snapshot RECALL slot " + i + " - name=\"" + recallTrack.name().get() +
-         "\" target vol=" + vol + " pan=" + pan + " | before=" + beforeVol + " immediate after=" + afterVol);
+         "\" target vol=" + vol + " pan=" + pan + " | before=" + beforeVol + " immediate after=" + afterVol +
+         " | faderTouchHeld=" + faderTouchHeld[i]);
       (function (slotI, slotTrack, targetVol) {
          host.scheduleTask(function () {
             println("Mixer Snapshot RECALL slot " + slotI + " - delayed readback (500ms) vol=" +
