@@ -2154,19 +2154,43 @@ test:
   the LCD dB readout afterward on hardware, so dropped again rather than
   carried forward.
 
-**Not yet tested**: whether this is specific to volume (which stays
-natively `setBinding()`-bound to a `HardwareSlider` for real-time fader
-I/O) versus pan (which, in Mixer mode, is driven by an *encoder*
-instead - manual MIDI CC parsing, no `setBinding()` at all). If pan
-reliably updates while volume doesn't on the next test, that would
-point at "a Parameter can't be reliably `.set()` by script while
-natively `setBinding()`-bound to a hardware fader" as the real,
-structural limitation - independent of touch state, and something none
-of the above could have fixed. `recallMixerSnapshot()` now logs pan's
-own before/after readback alongside volume's to test this directly.
-Also unconfirmed: whether the same failure applies to Hide mode
-(`mainTrackCursors[i]`), since every hardware test so far has been in
-Show All mode.
+**Volume vs. pan - disproven as the distinguishing factor.** Pan, in
+Mixer mode, is driven by an *encoder* (manual MIDI CC parsing, no
+`setBinding()` at all) rather than the natively `setBinding()`-bound
+fader that drives volume - if only volume failed, that would point at
+something binding-specific. Instead, a controlled test where both were
+touched after store and before the same recall showed **both fail
+identically** (`vol before=0 after=0`, `pan before=0.7949 after=0.7949`
+in one representative case) - ruling out anything specific to
+`setBinding()`/`HardwareSlider` involvement. Whatever blocks the write
+affects the Parameter itself, not the mechanism that touched it.
+
+**Best theory so far, from a real hardware account (not yet re-tested
+under controlled logging): a Parameter can be script-`.set()`
+successfully exactly once per Bitwig session - on its first-ever live
+touch - and every touch after that permanently blocks script writes to
+it until Bitwig itself restarts.** One clean success was reported:
+right after a script init, *before ever touching a given fader*,
+storing its untouched value, then touching/moving it for the first time
+that session and recalling - the write succeeded and the fader visibly
+moved back. Every other test this session, without exception, involved
+a channel already touched at least once earlier in the same running
+session, and every one of those failed. This is also consistent with
+the earlier finding that only a full Bitwig restart (not a script
+reload) restored `706fd95` to working - a restart would reset the
+"first touch" state for every parameter. Not yet confirmed under the
+before/after diagnostic logging (the successful account predates it in
+this session's testing order); the next hardware test should be a
+freshly-restarted Bitwig, one deliberate first touch + store + second
+touch + recall on the same channel, with the log pasted, to nail down
+whether the block truly starts on the *second* touch specifically.
+
+If confirmed, this would make Mixer Snapshot recall reliable for at
+most one recall per channel per Bitwig session - not practically usable
+for a real mixing workflow where the same fader gets touched
+repeatedly. At that point this looks less like something fixable from
+the Controller API surface available here, and more like a genuine
+Bitwig engine limitation or bug independent of this script.
 
 **`mainTrackScanBank` is a separate, independent dead end for writes -
 not to be confused with the above.** A scroll-proof rebuild (storing
