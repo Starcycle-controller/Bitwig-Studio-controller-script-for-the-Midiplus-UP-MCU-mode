@@ -2624,6 +2624,59 @@ function scrollActiveBankStepForward() {
    selectLastTrackOfBank();
 }
 
+// Auto-Banking (Follow Track Selection) - requested directly, modeled on
+// the SSL UF8's autobanking: when the user selects a different track by
+// any means outside this hardware (mouse click, keyboard, etc.), scroll
+// the visible bank window just enough to bring it into view - the same
+// minimal-scroll behavior a text editor uses to keep the cursor line
+// visible, not always resetting to the window's left edge. Live from the
+// "Auto-Banking (Bank Follows Track Selection)" Controller Preferences
+// setting below (default off - a hardware view that can jump on its own
+// from background mouse activity is a big enough behavior change to
+// opt into deliberately, matching this project's usual default for
+// anything similarly invasive-if-unwanted).
+//
+// A selection this hardware itself caused (SELECT button, Select
+// Channel on Fader Touch, a Bank Scroll Left/Right edge-select) always
+// lands on an already-visible slot, so the "already visible" checks
+// below make this naturally a no-op for those - no separate "was this a
+// mouse click" detection needed.
+//
+// Main tracks only: mainTrackScanBank (see its own
+// addIsSelectedInMixerObserver() registration above, which calls this
+// with the scanned track's absolute position) only scans Main tracks,
+// so this can't tell where a newly-selected Return track sits - skipped
+// entirely while viewing Returns.
+var autoBankToSelectionEnabled = false;
+
+function handleAutoBankSelectionChanged(rawIndex, isSelected) {
+   if (!isSelected || !autoBankToSelectionEnabled || isViewingReturns) {
+      return;
+   }
+   if (hideDeactivatedTracksEnabled) {
+      var filteredIndex = activeTrackRawIndices.indexOf(rawIndex);
+      if (filteredIndex < 0) {
+         return; // Deactivated/hidden - not a visible slot at all in Hide mode.
+      }
+      if (filteredIndex < mainBankScrollOffset) {
+         mainBankScrollOffset = filteredIndex;
+      } else if (filteredIndex > mainBankScrollOffset + 7) {
+         mainBankScrollOffset = filteredIndex - 7;
+      } else {
+         return; // Already visible.
+      }
+   } else {
+      var currentScrollPos = trackBank.scrollPosition().get();
+      if (rawIndex >= currentScrollPos && rawIndex <= currentScrollPos + 7) {
+         return; // Already visible.
+      }
+      var maxOffset = Math.max(0, activeBankItemCount() - 8);
+      var newScrollPos = rawIndex < currentScrollPos ? rawIndex : rawIndex - 7;
+      trackBank.scrollPosition().set(Math.max(0, Math.min(maxOffset, newScrollPos)));
+   }
+   refreshMainCursors();
+}
+
 // Keeps mainTrackCursors[0-7] pointed at the correct real tracks for
 // Hide mode's filtered activeTrackRawIndices list (see
 // recomputeActiveTrackIndices() below), and blanks any trailing slot
@@ -2945,6 +2998,11 @@ function init() {
          // alone wouldn't fire a recompute in that case.
          scanTrack.name().markInterested();
          scanTrack.name().addValueObserver(function () { mainMappingDirty = true; });
+         // Auto-Banking (Follow Track Selection) - see
+         // handleAutoBankSelectionChanged() above.
+         scanTrack.addIsSelectedInMixerObserver(function (isSelected) {
+            handleAutoBankSelectionChanged(si, isSelected);
+         });
       })(scanIdx);
    }
 
@@ -3674,6 +3732,16 @@ function init() {
    swapLcdRowsSetting.addValueObserver(function(value) {
       swapLcdRows = value;
       displayNeedsUpdate = true;
+   });
+
+   // See autoBankToSelectionEnabled/handleAutoBankSelectionChanged()
+   // above. No modifier of its own, so placed last in this category
+   // rather than between an unrelated toggle and its modifier.
+   var autoBankToSelectionSetting = host.getPreferences().getBooleanSetting(
+      "Auto-Banking (Bank Follows Track Selection)", "Mixer", false);
+   autoBankToSelectionSetting.markInterested();
+   autoBankToSelectionSetting.addValueObserver(function(value) {
+      autoBankToSelectionEnabled = value;
    });
 
    // Remote Controls (8 Macros for selected device)

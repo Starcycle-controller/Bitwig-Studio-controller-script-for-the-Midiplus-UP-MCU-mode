@@ -1548,6 +1548,28 @@ in `renderLCDDisplays()` - `topRowText`/`bottomRowText` still mean
 exactly what they always did everywhere else in the script (name/value
 respectively); only which SysEx offset each one is sent to changes.
 
+**Auto-Banking (Bank Follows Track Selection)** (Controller Preferences
+-> "Mixer" category, default off) - requested directly, modeled on the
+SSL UF8's autobanking: when the user selects a different track by any
+means outside this hardware (mouse click, keyboard, etc.), the bank
+window scrolls just enough to bring it into view - the same
+minimal-scroll behavior a text editor uses to keep the cursor line
+visible, not always resetting to the window's left edge. Works via a new
+`addIsSelectedInMixerObserver()` on every one of `mainTrackScanBank`'s
+128 scanned positions (the same permanently-unscrolled background scan
+bank used for "Deactivated Tracks in Bank" and the whole-project Mixer
+Snapshots) - whichever one reports selected gives
+`handleAutoBankSelectionChanged()` the absolute position to scroll
+toward. A selection this hardware itself caused (SELECT button, Select
+Channel on Fader Touch, a Bank Scroll Left/Right edge-select) always
+lands on an already-visible slot, so the "already visible" check inside
+it makes this naturally a no-op for those - no separate "was this a
+mouse click" detection needed. Main tracks only (`mainTrackScanBank`
+doesn't scan Returns) - skipped entirely while viewing Returns. Default
+off: a hardware view that can jump on its own from background mouse
+activity is a big enough behavior change to opt into deliberately.
+Not yet tested on hardware.
+
 **Per-channel LCD meter bar: confirmed working, and confirmed NOT
 independently paintable for color.** Console-verified: `track idx 7`'s
 Channel Pressure level fluctuated correctly (2-6, tracking real playback)
