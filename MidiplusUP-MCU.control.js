@@ -1940,6 +1940,37 @@ function activeBankItemCount() {
    return hideDeactivatedTracksEnabled ? activeTrackRawIndices.length : trackBank.itemCount().get();
 }
 
+// Used ONLY by getFaderTarget()/getEncoderTarget() below, in place of
+// activeTrackAt(), for the specific volume()/pan() parameter targets a
+// hardware fader/encoder gets bound to. Reported and confirmed on
+// hardware: a group's first CHILD track's fader silently controlled the
+// GROUP's own volume instead of the child's - name/display resolution
+// via activeTrackAt() was correct (the LCD showed the child's real
+// name), only the volume()/pan() *parameter* binding was wrong. Bisected
+// against an earlier confirmed-working version of this script (before
+// the "Deactivated Tracks in Bank" feature existed) and found that the
+// working version bound faders straight to trackBank.getItemAt(i)
+// directly - no CursorTrack involved at all - whereas every version
+// since routes it through mainTrackCursors[i] (a persistent CursorTrack
+// re-pointed via selectChannel(), added specifically so Hide mode can
+// skip deactivated slots - see activeTrackAt() above). That CursorTrack
+// indirection is apparently unreliable for volume()/pan() specifically
+// on a track nested inside a group, even though the exact same cursor's
+// name()/other reads are fine. Fixed by going back to the direct,
+// confirmed-working trackBank.getItemAt(i) binding whenever Hide mode
+// isn't actually active (the common case, and where this was reported) -
+// Hide mode still needs the cursor indirection, since a plain TrackBank
+// can't skip slots the way it does, and hasn't been reported broken.
+function faderTrackAt(i) {
+   if (isViewingReturns) {
+      return effectTrackBank.getItemAt(i);
+   }
+   if (hideDeactivatedTracksEnabled) {
+      return mainTrackCursors[i];
+   }
+   return trackBank.getItemAt(i);
+}
+
 // Requested directly: Bitwig's own Arranger/Mixer view didn't follow
 // when scrolling the bank here, so the hardware and Bitwig's own screen
 // could show completely different tracks. Selecting a track in the new
@@ -2234,6 +2265,28 @@ function init() {
    // handlers below, so they need markInterested() or .get() throws.
    trackBank.itemCount().markInterested();
    effectTrackBank.itemCount().markInterested();
+
+   // Mark trackBank's own 8 items' volume()/pan() interested directly (not
+   // just mainTrackCursors', see below) - see faderTrackAt() further down,
+   // used by getFaderTarget()/getEncoderTarget() to bind hardware faders/
+   // encoders straight to these plain bank items (Show All mode) instead
+   // of through the CursorTrack indirection, restoring the exact binding
+   // an earlier confirmed-working version of this script used. Matches
+   // that version's own setup (it called markInterested() on the plain
+   // bank items directly, since mainTrackCursors didn't exist yet).
+   for (var directTrackIdx = 0; directTrackIdx < 8; directTrackIdx++) {
+      // Both the Parameter itself AND its .value() sub-accessor - the
+      // confirmed-working baseline only ever called markInterested() on
+      // .value() (used by updateFaderOutputs()/updateVPotRingOutputs()'s
+      // target.value().get() below), so that one is required; the bare
+      // Parameter is marked too since setBinding()/.set() are called on
+      // it directly elsewhere and every other track object in this file
+      // marks both consistently.
+      trackBank.getItemAt(directTrackIdx).volume().markInterested();
+      trackBank.getItemAt(directTrackIdx).volume().value().markInterested();
+      trackBank.getItemAt(directTrackIdx).pan().markInterested();
+      trackBank.getItemAt(directTrackIdx).pan().value().markInterested();
+   }
 
    // Show All mode's mainTrackCursors only get re-pointed at
    // trackBank.getItemAt(i) at explicit trigger points (scroll, RETURNS
@@ -5277,7 +5330,7 @@ function getFaderTarget(i) {
       if (currentMode === MODE_MIXER && isToolVolumeMode) {
          return getToolParam(i, 0);
       }
-      return activeTrackAt(i).volume();
+      return faderTrackAt(i).volume();
    }
    if (currentMode === MODE_DEVICE) {
       return remoteControls.getParameter(i);
@@ -5285,7 +5338,7 @@ function getFaderTarget(i) {
    if (isToolVolumeMode) {
       return getToolParam(i, 1);
    }
-   return activeTrackAt(i).pan();
+   return faderTrackAt(i).pan();
 }
 
 // Same as getFaderTarget(), except also covers the master fader (index 8,
@@ -5322,12 +5375,12 @@ function getEncoderTarget(i) {
       if (currentMode === MODE_MIXER && isToolVolumeMode) {
          return getToolParam(i, 1);
       }
-      return activeTrackAt(i).pan();
+      return faderTrackAt(i).pan();
    }
    if (currentMode === MODE_MIXER && isToolVolumeMode) {
       return getToolParam(i, 0);
    }
-   return activeTrackAt(i).volume();
+   return faderTrackAt(i).volume();
 }
 
 // Re-binds each of the 8 hwFaders to whichever Parameter they should

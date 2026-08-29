@@ -60,6 +60,43 @@ Two independent halves, both required:
   only on discrete button events, this covers hardware input, mouse drags,
   automation playback, and mode/bank switches alike.
 
+**Fader-vs-group-volume bug (found, bisected, and fixed)**: reported as
+"the fader moves but the volume doesn't update" - console logs proved a
+value really was changing live, but on a group's first CHILD track, the
+hardware fader was actually reading/writing the GROUP's own volume
+instead of the child's, even though the LCD correctly showed the child's
+name. First suspected as a Mixer Snapshots regression (see "Reverted /
+abandoned" below) - reverting that feature entirely did NOT fix it, so
+the user went back to progressively older working versions and
+confirmed bidirectional fader sync was solid on the exact version right
+after the original fader fix above (`a543d30`, long before Mixer
+Snapshots or even the "Deactivated Tracks in Bank" feature existed).
+Comparing that confirmed-good version against current directly (rather
+than guessing) found the real cause: `a543d30` bound faders/encoders
+straight to `trackBank.getItemAt(i).volume()`/`.pan()` - a plain bank
+item, no `CursorTrack` involved. `c9bd10e` ("Add Deactivated Tracks in
+Bank setting") replaced that everywhere, even in the default Show All
+mode, with `mainTrackCursors[i]` - 8 persistent `CursorTrack` objects
+re-pointed via `selectChannel()`, needed so Hide mode can skip
+deactivated slots (something a plain `TrackBank` can't do per-slot).
+That commit's own message says "not yet tested on hardware" for exactly
+this path. The `CursorTrack` indirection turned out fine for reads like
+`name()` (matches what the LCD showed), but apparently unreliable for
+`volume()`/`pan()` specifically on a track nested inside a group.
+
+Fixed with a new `faderTrackAt(i)` helper (used only by
+`getFaderTarget()`/`getEncoderTarget()`, not the shared `activeTrackAt()`
+used everywhere else) that binds straight to `trackBank.getItemAt(i)`
+again whenever Hide mode isn't actually active - restoring the exact
+confirmed-working pre-`c9bd10e` binding for the common case - and only
+falls back to the `mainTrackCursors` indirection when Hide mode is on
+(where it's structurally required, and hasn't been reported broken).
+`trackBank`'s own 8 items now also get `volume()`/`pan()` (and their
+`.value()` sub-accessors) `markInterested()` directly in `init()`,
+matching exactly what the confirmed-working version did before
+`mainTrackCursors` existed. **Not yet re-tested on hardware since this
+fix.**
+
 ### Modes (`currentMode`)
 
 - `MODE_MIXER` (default) - faders/encoders control track volume/pan (or a
@@ -1980,17 +2017,12 @@ replacement now in place instead.
   polling approach described above, which does work.
 - **Mixer Snapshots** (SHIFT+F1-F8 store / OPTION+F1-F8 recall a
   Volume+Pan mix balance) - fully reverted after its first real hardware
-  test broke the core fader-input path itself: moving a physical fader
-  stopped updating Bitwig's volume at all, on every channel, including
-  plain non-group tracks (first reported as group-track-specific, but
-  confirmed broader once tested further). Two rounds of targeted fixes
-  (removing `mainTrackScanBank`'s new `volume()`/`pan()` interest, then
-  investigating the `mainTrackCursors`' new `position()` interest) failed
-  to resolve it, so rather than keep guessing against live hardware with
-  the core fader path down, the whole feature was reverted back to
-  before it existed (`git revert` of all 3 commits, keeping the unrelated
-  Debug-category reorganization from the same session). Worth
-  re-approaching from scratch with a different, less invasive identity
-  mechanism if revisited - `Track.position()`/extra `markInterested()`
-  calls on shared or heavily-scanned track objects appear to be risky
-  territory on this hardware/API combination.
+  test appeared to break the core fader-input path: moving a physical
+  fader stopped updating Bitwig's volume. **Turned out to be a red
+  herring** - see "Fader-vs-group-volume bug" below for the real cause,
+  which predates this feature entirely and was just never exercised (or
+  reported) until a group track happened to be tested. Reverted anyway
+  since the real cause wasn't known yet at the time and the core control
+  path had to come first; not yet reintroduced, but the reason it broke
+  is now understood and had nothing to do with Mixer Snapshots itself -
+  safe to rebuild if wanted.
