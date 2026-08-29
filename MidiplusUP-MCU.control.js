@@ -1300,6 +1300,127 @@ function scheduleFaderSnapDbMarkCheck(index, target, isVolumeTarget) {
    }, FADER_SNAP_DB_MARK_DELAY_MS);
 }
 
+// Fader Position Test (Debug feature, requested directly) - a way to
+// verify every motorized fader actually drives to the correct physical
+// position for each printed hardware dB label. Gated behind the "Fader
+// Position Test Mode" Debug setting below so ALT+F8/F8 can't trigger it
+// by accident; wired into the F1-F8 handler in onMidi() (notes 62-69).
+// ALT+F8 starts it (or cancels an already-running one - same button
+// toggles); it drives all 8 channel faders to FADER_SNAP_DB_MARKS_HARDWARE's
+// values one at a time, bottom-to-top (-60 up to +5, matching how this
+// was originally described: "the fader moves to -60 ... then we move to
+// -50 ..."). Plain F8 (no ALT) confirms the CURRENT position once the
+// user has visually checked it against the hardware's printed scale, and
+// advances to the next mark - or ends the test after the last one.
+// Recommended setup: a throwaway project with 8 real tracks, so every
+// channel actually has something to drive.
+//
+// IMPORTANT CAVEAT, logged and worth repeating here: volume().get()
+// right after volume().set() can only confirm Bitwig's own parameter
+// model holds the value this script itself just wrote - it is NOT an
+// independent physical-position readback. This hardware's motorized
+// fader input is handled entirely through the native setBinding()/
+// setAdjustValueMatcher() plumbing (see the "Motorized Pitchbend
+// Faders" comment in onMidi() above), with no raw pitch-bend byte ever
+// reaching this script's own code - there is no software-visible signal
+// distinct from "what we told Bitwig the value is" to compare a
+// physical motor position against. The .get() readback below is still
+// worth logging - it would catch a write silently failing to take
+// effect in Bitwig's model at all, exactly what an earlier Mixer
+// Snapshot bug turned out to be (see storeMixerSnapshot() above) - but
+// the human visually confirming the physical fader position via the F8
+// press is the actual ground-truth check this feature is built around,
+// not something software can substitute for here.
+var faderPositionTestModeEnabled = false;
+var faderPositionTestActive = false;
+// Index into FADER_SNAP_DB_MARKS_HARDWARE - counts down from the last
+// entry (-60) to the first (+5) to test bottom-to-top.
+var faderPositionTestMarkIndex = -1;
+
+function faderPositionTestLabel(db) {
+   return (db > 0 ? "+" : "") + db + "dB";
+}
+
+// Same gating logic as isFaderVolumeTarget(0) above - only meaningful
+// while the physical faders are actually bound to plain track volume.
+function faderPositionTestGateOk() {
+   return currentMode === MODE_MIXER && !isFlipped && !isToolVolumeMode;
+}
+
+function driveFaderPositionTestMark() {
+   var db = FADER_SNAP_DB_MARKS_HARDWARE[faderPositionTestMarkIndex];
+   var target = dbMarkToNormalized(db);
+   println("Fader Position Test - driving all faders to " + db +
+      " dB (normalized " + target.toFixed(4) + ")");
+   for (var i = 0; i < 8; i++) {
+      if (isMainSlotEmpty(i)) {
+         continue;
+      }
+      var track = directTrackAt(i);
+      track.volume().set(target);
+      println("Fader Position Test - channel " + (i + 1) + " target=" + target.toFixed(4) +
+         " immediate readback=" + track.volume().get().toFixed(4));
+   }
+   host.showPopupNotification("Fader Position Test: " + faderPositionTestLabel(db) +
+      " - press F8 once confirmed");
+   showModePopup(faderPositionTestLabel(db));
+}
+
+function startFaderPositionTest() {
+   if (!faderPositionTestModeEnabled) {
+      return;
+   }
+   if (faderPositionTestActive) {
+      faderPositionTestActive = false;
+      faderPositionTestMarkIndex = -1;
+      println("Fader Position Test - cancelled");
+      host.showPopupNotification("Fader Position Test Cancelled");
+      showModePopup("CANCEL");
+      return;
+   }
+   if (!faderPositionTestGateOk()) {
+      host.showPopupNotification("Fader Position Test: switch to Mixer mode (not Flipped/Tool Volume)");
+      showModePopup("SWITCH MIX");
+      return;
+   }
+   faderPositionTestActive = true;
+   faderPositionTestMarkIndex = FADER_SNAP_DB_MARKS_HARDWARE.length - 1;
+   println("Fader Position Test - started (bottom to top)");
+   driveFaderPositionTestMark();
+}
+
+function confirmFaderPositionTest() {
+   if (!faderPositionTestActive) {
+      return;
+   }
+   var db = FADER_SNAP_DB_MARKS_HARDWARE[faderPositionTestMarkIndex];
+   println("Fader Position Test - confirmed " + db + " dB, settled readback:");
+   for (var i = 0; i < 8; i++) {
+      if (isMainSlotEmpty(i)) {
+         continue;
+      }
+      println("Fader Position Test - channel " + (i + 1) + " settled=" +
+         directTrackAt(i).volume().get().toFixed(4));
+   }
+   if (!faderPositionTestGateOk()) {
+      faderPositionTestActive = false;
+      faderPositionTestMarkIndex = -1;
+      println("Fader Position Test - aborted (mode changed mid-test)");
+      host.showPopupNotification("Fader Position Test Aborted (mode changed)");
+      showModePopup("ABORTED");
+      return;
+   }
+   faderPositionTestMarkIndex--;
+   if (faderPositionTestMarkIndex < 0) {
+      faderPositionTestActive = false;
+      println("Fader Position Test - complete");
+      host.showPopupNotification("Fader Position Test Complete");
+      showModePopup("DONE");
+      return;
+   }
+   driveFaderPositionTestMark();
+}
+
 // "Mixer Mode PAGE: Loop Behavior" - see findAdjacentMarkerPosition()/
 // jumpToMarkerAndSetLoop() above (the notes 82/83 handling in Device
 // mode is untouched by this - only Mixer mode's PAGE gains this
@@ -3736,10 +3857,21 @@ function init() {
       midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, 7, meterTestModeValues[value], 0xF7]);
    });
 
+   // See faderPositionTestModeEnabled/startFaderPositionTest() above -
+   // gates ALT+F8/F8 so the test can't be triggered by accident. Default
+   // off, unlike this category's logging toggles, since it actively
+   // drives every fader's motor rather than just printing to console.
+   var faderPositionTestModeSetting = host.getPreferences().getBooleanSetting(
+      "Fader Position Test Mode (ALT+F8 start/cancel, F8 confirm)", "Debug", false);
+   faderPositionTestModeSetting.markInterested();
+   faderPositionTestModeSetting.addValueObserver(function (value) {
+      faderPositionTestModeEnabled = value;
+   });
+
    var debugCategorySettings = [
       debugRawMidiSetting, debugButtonDispatchSetting,
       debugModifierStateSetting, debugLcdSetting, debugEncoderSetting,
-      meterTestModeSetting
+      meterTestModeSetting, faderPositionTestModeSetting
    ];
    debugEnabledSetting.addValueObserver(function (value) {
       DEBUG_ENABLED = value;
@@ -5067,6 +5199,21 @@ function onMidi(status, data1, data2) {
       // action nor the normal F-key function fires at the same time.
       if (data1 >= 62 && data1 <= 69) {
          var fkeyIdx = data1 - 62;
+         // ALT+F8 starts/cancels the Fader Position Test (see
+         // startFaderPositionTest() above); plain F8 confirms/advances
+         // it while active. Both only take over from F8's normal
+         // green-state function while "Fader Position Test Mode" is
+         // enabled in Debug settings (the ALT+F8 check itself no-ops if
+         // it's off) or a test is already running (the plain-F8 check).
+         if (isPressed && fkeyIdx === 7 && isAltPressed && faderPositionTestModeEnabled) {
+            altUsedForCombo = true;
+            startFaderPositionTest();
+            return;
+         }
+         if (isPressed && fkeyIdx === 7 && faderPositionTestActive) {
+            confirmFaderPositionTest();
+            return;
+         }
          if (isPressed && isShiftPressed) {
             shiftUsedForCombo = true;
             storeMixerSnapshot(fkeyIdx);

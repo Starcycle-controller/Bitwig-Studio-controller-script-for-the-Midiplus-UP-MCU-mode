@@ -1475,6 +1475,34 @@ setting per category:
   to get out of the LCD worth revisiting later, rather than concluding
   this hardware categorically can't do anything more with it. Conclusion
   below.
+- **Fader Position Test Mode (ALT+F8 start/cancel, F8 confirm)** (default
+  off) - requested directly: a way to verify every motorized fader
+  actually drives to the correct physical position for each printed
+  hardware dB label. Once enabled, **ALT+F8** drives all 8 channel
+  faders to `FADER_SNAP_DB_MARKS_HARDWARE`'s values one at a time,
+  bottom-to-top (`-60` up to `+5`); **F8** (no ALT) confirms the current
+  position once you've checked it against the hardware's printed scale
+  and advances to the next mark, ending the test after the last one.
+  ALT+F8 again cancels early. Only takes over F8's normal function while
+  the setting is on (ALT+F8) or a test is already running (plain F8) -
+  otherwise F8 behaves exactly as before. Requires Mixer mode,
+  unflipped, not showing a Tool Volume parameter (where the faders are
+  actually bound to plain track volume - see `getFaderTarget()`); shows
+  a popup and refuses to start otherwise. Recommended setup: a
+  throwaway project with 8 real tracks, so every channel has something
+  to drive. Logs the driven target and an immediate `volume().get()`
+  readback for every channel at each step, then a settled readback again
+  on confirm - **important caveat**: this can only confirm Bitwig's own
+  parameter model holds the value this script wrote, not the fader's
+  true physical position - this hardware's motorized fader input goes
+  entirely through the native `setBinding()`/`setAdjustValueMatcher()`
+  plumbing with no raw pitch-bend byte ever reaching this script's own
+  code, so there's no independent electronic position readback to check
+  against. The logged value is still useful (it would catch a write
+  silently failing to take effect at all, as an earlier Mixer Snapshot
+  bug turned out to be), but the human visually confirming the physical
+  fader position via the F8 press remains the actual ground-truth check.
+  Not yet tested on hardware.
 
 Real error/warning logging (caught exceptions, invalid action ids,
 duplicate F-key assignments, a cue marker that couldn't be found to
