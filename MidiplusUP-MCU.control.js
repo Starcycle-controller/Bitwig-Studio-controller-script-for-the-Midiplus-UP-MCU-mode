@@ -2070,9 +2070,17 @@ var mainHideToolRemote = [];
 var cursorToolSlot = -1;
 var cursorToolRemote = [];
 
-// Display State Caches (8 channels x 7 chars)
+// Display State Caches (8 channels x 7 chars). topRowText is always
+// whichever text every other part of this script treats as "the name"
+// (track/send/parameter name), bottomRowText always "the value"
+// (level/displayedValue) - the swapLcdRows setting only affects which
+// physical LCD row each one is rendered to, in renderLCDDisplays()
+// below, not which array anything is written into. Requested directly:
+// this hardware's rotary encoders can physically block the row above
+// them, and the value is what gets watched more often than the name.
 var topRowText = ["       ", "       ", "       ", "       ", "       ", "       ", "       ", "       "];
 var bottomRowText = ["       ", "       ", "       ", "       ", "       ", "       ", "       ", "       "];
+var swapLcdRows = false;
 
 // Display Refresh Throttle Flag
 var displayNeedsUpdate = true;
@@ -3340,6 +3348,18 @@ function init() {
    selectChannelOnFaderTouchSetting.markInterested();
    selectChannelOnFaderTouchSetting.addValueObserver(function(value) {
       selectChannelOnFaderTouch = value;
+   });
+
+   // See swapLcdRows/renderLCDDisplays() above - purely which physical
+   // row each channel strip's name/value text renders to, everywhere
+   // (Mixer, Sends, Device), since the encoder blocking a row is a
+   // hardware-layout issue independent of mode.
+   var swapLcdRowsSetting = host.getPreferences().getBooleanSetting(
+      "Swap LCD Rows (Value on Top)", "Mixer", false);
+   swapLcdRowsSetting.markInterested();
+   swapLcdRowsSetting.addValueObserver(function(value) {
+      swapLcdRows = value;
+      displayNeedsUpdate = true;
    });
 
    // See scheduleSelectChannelOnTouch() above - debounces Select Channel
@@ -6172,8 +6192,13 @@ function renderLCDDisplays() {
    var topTextCombined = topRowText.join("");
    var bottomTextCombined = bottomRowText.join("");
 
-   sendMCUSysex(0x00, topTextCombined);   // Top Row (56 chars)
-   sendMCUSysex(0x38, bottomTextCombined); // Bottom Row (56 chars offset 56)
+   if (swapLcdRows) {
+      sendMCUSysex(0x00, bottomTextCombined); // Top Row (56 chars)
+      sendMCUSysex(0x38, topTextCombined);    // Bottom Row (56 chars offset 56)
+   } else {
+      sendMCUSysex(0x00, topTextCombined);    // Top Row (56 chars)
+      sendMCUSysex(0x38, bottomTextCombined); // Bottom Row (56 chars offset 56)
+   }
 }
 
 function sendMCUSysex(offset, text) {

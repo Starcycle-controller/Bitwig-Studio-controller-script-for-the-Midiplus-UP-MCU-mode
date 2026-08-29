@@ -1489,6 +1489,16 @@ packing `(stripIndex<<4)|level`) - all cross-checked against Ableton's own
 `ChannelStrip.py`. Button LEDs are plain Note On/Off (`midiOut.sendMidi(
 0x90, note, 127/0)`).
 
+**Swap LCD Rows (Value on Top)** (Controller Preferences -> "Mixer"
+category, default off) - swaps which physical row shows the name vs. the
+value (level/pan/parameter text) for every channel strip, in every mode
+(Mixer, Sends, Device). Requested directly: this hardware's rotary
+encoders can physically block the row directly above them, and the value
+is what gets watched more often than the name. Purely a rendering swap
+in `renderLCDDisplays()` - `topRowText`/`bottomRowText` still mean
+exactly what they always did everywhere else in the script (name/value
+respectively); only which SysEx offset each one is sent to changes.
+
 **Per-channel LCD meter bar: confirmed working, and confirmed NOT
 independently paintable for color.** Console-verified: `track idx 7`'s
 Channel Pressure level fluctuated correctly (2-6, tracking real playback)
