@@ -3703,6 +3703,11 @@ function setupChannelStripObservers(tracks, ledState, isActiveFn) {
          });
 
          track.addIsSelectedInMixerObserver(function (isSelected) {
+            // TEMPORARY DIAGNOSTIC - tracking down all 8 SELECT LEDs
+            // lighting up together even with a single real track
+            // selected. Remove once resolved.
+            println("isSelectedInMixer observer fired - index=" + index + " isSelected=" + isSelected +
+               " name=\"" + track.name().get() + "\"");
             ledState.select[index] = isSelected;
             if (isActiveFn(index)) {
                // Select LED - breathes instead if this track is armed,
