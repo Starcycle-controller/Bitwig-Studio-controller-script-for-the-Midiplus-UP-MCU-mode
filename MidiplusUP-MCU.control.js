@@ -4670,6 +4670,12 @@ function onMidi(status, data1, data2) {
             var pressedTarget = getFaderSnapZeroTarget(faderTouchIndex);
             faderTouchedTarget[faderTouchIndex] = pressedTarget;
             if (pressedTarget) {
+               // TEMPORARY DIAGNOSTIC - the "RAW Note-On received" log
+               // only ever fires on press (see the isPressed gate above),
+               // so this is the only way to see the actual touch(true)/
+               // touch(false) timeline the Mixer Snapshot recall bug
+               // needs. Remove once that's resolved.
+               println("Fader touch(true) - channel " + faderTouchIndex + " vol=" + pressedTarget.get());
                pressedTarget.touch(true);
             }
          } else {
@@ -4677,6 +4683,7 @@ function onMidi(status, data1, data2) {
             var releasedTarget = faderTouchedTarget[faderTouchIndex];
             faderTouchedTarget[faderTouchIndex] = null;
             if (releasedTarget) {
+               println("Fader touch(false) - channel " + faderTouchIndex + " vol=" + releasedTarget.get());
                releasedTarget.touch(false);
             }
             // Fader Snap to Zero - see scheduleFaderSnapZeroCheck() above.
