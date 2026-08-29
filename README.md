@@ -2167,10 +2167,24 @@ currently visible 8-track window - not the whole project, not
 Mute/Solo/Sends. Both store and recall show a corner popup
 (`host.showPopupNotification()`) and briefly flash across all 8
 channels' bottom LCD row via `showModePopup()` - "STORE n"/"RECALL n"/
-"EMPTY n" (recalling a slot that's never been stored). All hardware
-testing so far happened with Hide mode on (now refused outright, see
-above) - **not yet tested on hardware with Hide mode off**, which is
-the only mode this feature actually supports.
+"EMPTY n" (recalling a slot that's never been stored).
+
+**Recall unreliable even with Hide mode off, root cause still open.**
+With Hide mode confirmed off (so `directTrackAt()` is the plain
+`trackBank.getItemAt(i)` path - the same one ARM/SOLO/MUTE/Pan Reset use
+successfully), recall on hardware still intermittently failed to move
+some faders, then failed completely for every touched channel on a
+clean, hands-off retest - ruling out a touch/fader-drag race. Working
+hypothesis: `hwFaders` stay natively `setBinding()`-bound to whichever
+parameter they currently control, with `disableTakeOver()` so any
+incoming pitch-bend is applied straight back to the bound parameter -
+the motorized fader's own echo of its position while moving toward the
+recalled value may be landing back through that same live binding and
+clobbering the `.set()` call before the motor settles. Testing a fix
+that clears every fader's binding before writing the recalled values,
+then calls `rebindFaders()` afterwards to resync the hardware - not yet
+confirmed on hardware, diagnostic before/after (immediate and 500ms-
+delayed) volume readbacks are logged to the console alongside it.
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 

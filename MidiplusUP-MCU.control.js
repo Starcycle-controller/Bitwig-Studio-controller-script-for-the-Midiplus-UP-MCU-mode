@@ -2101,6 +2101,24 @@ function recallMixerSnapshot(slotIndex) {
       return;
    }
    var parts = serialized.split("|");
+   // Even directTrackAt() with Hide mode off - the same access pattern
+   // already proven reliable for ARM/SOLO/MUTE/Pan Reset - has shown
+   // recall silently failing to move some faders on hardware. Working
+   // hypothesis, not yet confirmed: hwFaders stay natively setBinding()-
+   // bound to whichever parameter they currently control, with
+   // disableTakeOver() so ANY incoming pitch-bend is applied straight
+   // back to the bound parameter with no catch-up gesture required (see
+   // hwFaders setup in init()) - the motorized fader's own echo of its
+   // position while moving toward the value we .set() here could be
+   // landing back through that same live binding and clobbering our
+   // write. Testing that by clearing every fader's binding before
+   // writing, then rebindFaders() afterwards, so no echo can land mid-
+   // recall and the hardware gets resynced to the values actually
+   // stored. Diagnostic before/after readbacks below (immediate and
+   // delayed) confirm whether this actually fixes it.
+   for (var clearIdx = 0; clearIdx < 8; clearIdx++) {
+      hwFaders[clearIdx].clearBindings();
+   }
    for (var i = 0; i < 8 && i < parts.length; i++) {
       if (parts[i] === "-" || isMainSlotEmpty(i)) {
          continue;
@@ -2112,9 +2130,20 @@ function recallMixerSnapshot(slotIndex) {
          continue;
       }
       var recallTrack = directTrackAt(i);
+      var beforeVol = recallTrack.volume().get();
       recallTrack.volume().set(vol);
       recallTrack.pan().set(pan);
+      var afterVol = recallTrack.volume().get();
+      println("Mixer Snapshot RECALL slot " + i + " - name=\"" + recallTrack.name().get() +
+         "\" target vol=" + vol + " pan=" + pan + " | before=" + beforeVol + " immediate after=" + afterVol);
+      (function (slotI, slotTrack, targetVol) {
+         host.scheduleTask(function () {
+            println("Mixer Snapshot RECALL slot " + slotI + " - delayed readback (500ms) vol=" +
+               slotTrack.volume().get() + " (target was " + targetVol + ")");
+         }, 500);
+      })(i, recallTrack, vol);
    }
+   rebindFaders();
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
    showModePopup("RECALL" + (slotIndex + 1));
 }
