@@ -144,9 +144,28 @@ nothing left to ever re-bind them. Fixed by also calling
 `refreshDisplayText()`/`rebindFaders()` from `recomputeActiveTrackIndices()`
 whenever Hide mode is active and currently in Mixer mode - matches
 exactly what the Controller Preferences setting's own observer already
-does when toggled live. **Not yet re-tested on hardware since this fix -
-please verify by restarting Bitwig/reloading the script with Hide mode
-already enabled from a previous session, not just toggling it live.**
+does when toggled live. **Confirmed fixed on hardware** - faders now
+work immediately on restart even with Hide mode already enabled from a
+previous session.
+
+**Third bug found in the same area, smaller**: with Hide mode active,
+hiding a track correctly shifts the remaining tracks up/down and the
+fader/motor immediately follows the newly-shifted-in track's real
+value - but the LCD text (name + level) kept showing the *previous*
+occupant's stale text until the channel was manually clicked/selected.
+Cause: `refreshMainCursors()` re-points `mainTrackCursors[i]` via
+`selectChannel()`, but the newly-selected track's `name()`/
+`displayedValue()` aren't reliably available to a synchronous `.get()`
+in the very same tick - the immediate `refreshDisplayText()` call added
+by the previous fix could read the old track's still-cached data before
+Bitwig had actually delivered the new one. The fader/motor output
+doesn't have this problem since it re-polls continuously via `flush()`
+rather than reading once; `refreshDisplayText()` is exactly that kind of
+one-shot read. Fixed with a short delayed follow-up call (75ms,
+debounce-token-guarded so hiding/showing several tracks in quick
+succession doesn't pile up stale scheduled calls) that re-reads the text
+once Bitwig has actually caught up. **Not yet re-tested on hardware
+since this fix.**
 
 ### Modes (`currentMode`)
 

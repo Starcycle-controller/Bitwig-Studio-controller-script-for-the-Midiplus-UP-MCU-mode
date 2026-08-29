@@ -1767,6 +1767,11 @@ var mainBankScrollOffset = 0; // logical scroll position into activeTrackRawIndi
 var mainCursorHasTrack = [true, true, true, true, true, true, true, true]; // Hide mode: does slot i have a track?
 var hideDeactivatedTracksEnabled = false; // live from the "Deactivated Tracks in Bank" Controller Preferences setting
 var mainMappingDirty = true; // set by any scan-bank exists()/isActivated()/name() change; consumed by mainMappingTick()
+// Debounce token for the delayed LCD-text re-read scheduled by
+// recomputeActiveTrackIndices() below - see there for why a one-shot
+// synchronous refreshDisplayText() right after a Hide-mode shift isn't
+// always enough on its own.
+var displayRefreshRetryGeneration = 0;
 
 // 0-based slot indices selectFirstTrackOfBank()/selectLastTrackOfBank()
 // (see below) select after a bank scroll - live from the "Bank Scroll
@@ -2195,6 +2200,35 @@ function recomputeActiveTrackIndices() {
       if (currentMode === MODE_MIXER) {
          refreshDisplayText();
          rebindFaders();
+         // Second bug found and fixed, same session: reported as the LCD
+         // showing the PREVIOUS track's stale name/level after a
+         // hide-triggered shift moved a different track into a slot -
+         // correcting itself only once you manually click/select that
+         // channel (a different code path that forces its own fresh
+         // read later). refreshMainCursors() above re-points
+         // mainTrackCursors[i] via selectChannel(), but the newly
+         // selected track's name()/displayedValue() aren't reliably
+         // available to a synchronous .get() in the very same tick -
+         // the immediate refreshDisplayText() call right above can read
+         // the OLD track's still-cached data before Bitwig has actually
+         // delivered the new one. The fader/motor output doesn't have
+         // this problem since updateFaderOutputs() re-polls continuously
+         // via flush() rather than reading once, but refreshDisplayText()
+         // is exactly that kind of one-shot read. A short delayed
+         // follow-up catches the case where the immediate read landed
+         // too early, using the same debounce-generation-token pattern
+         // used elsewhere in this file so hiding/showing several tracks
+         // in quick succession doesn't pile up stale scheduled calls.
+         displayRefreshRetryGeneration++;
+         var myDisplayRefreshGeneration = displayRefreshRetryGeneration;
+         host.scheduleTask(function () {
+            if (displayRefreshRetryGeneration !== myDisplayRefreshGeneration) {
+               return;
+            }
+            if (currentMode === MODE_MIXER) {
+               refreshDisplayText();
+            }
+         }, 75);
       }
    }
 }
