@@ -2105,6 +2105,45 @@ replacement now in place instead.
    index) - worth trying only if track color on this hardware still
    matters enough to keep chasing.
 
+### Mixer Snapshots (SHIFT+F1-F8 store / OPTION+F1-F8 recall)
+
+Second attempt this session - see "Reverted / abandoned" below for what
+happened to the first one and why it doesn't reflect on this rebuild.
+SHIFT+F(n) stores the current 8-track bank window's Volume+Pan into slot
+n (1-8, one per F-key); OPTION+F(n) recalls it. Both combos were free to
+use - a plain F-key press ignores modifier state entirely, so SHIFT/
+OPTION held during one previously did nothing extra.
+
+Rebuilt on `directTrackAt()` (the same direct `trackBank.getItemAt(i)`
+binding proven reliable for faders/encoders/ARM/SOLO/MUTE/Pan Reset
+elsewhere in this file) instead of the original `activeTrackAt()`
+(`mainTrackCursors` indirection) - avoids that whole class of risk from
+the outset rather than only reacting to it. Each stored entry captures
+its track's **absolute** `Track.position()` (Main tracks) rather than
+its bank-window slot, then recall targets that exact position via
+`mainTrackScanBank.getItemAt(pos)` - the same permanently-unscrolled,
+128-deep scan bank used elsewhere in this file - so recall finds the
+right track regardless of any scrolling, Hide/Show-All toggling, or
+which bank is currently on screen in between store and recall. Returns
+tracks keep simple bank-slot-relative recall (no equivalent unscrolled
+scan bank exists for them, and Returns rarely exceeds 8 tracks anyway).
+`mainTrackScanBank`'s `volume()`/`pan()` are deliberately left
+un-`markInterested()`'d - the first attempt marked them anyway (~256
+extra live-tracked values spanning group boundaries) and that was
+suspected, probably wrongly, of destabilizing the fader path; recall
+only ever `.set()`s through that bank, never `.get()`s, and only `.get()`
+requires prior interest.
+
+Stored via `host.getDocumentState()` (saved inside the Bitwig project
+file itself, hidden from the Studio I/O panel via `Setting.hide()`) so a
+snapshot travels with the song. Scoped to just Volume + Pan on the
+currently visible 8-track window - not the whole project, not
+Mute/Solo/Sends. Both store and recall show a corner popup
+(`host.showPopupNotification()`) and briefly flash across all 8
+channels' bottom LCD row via `showModePopup()` - "STORE n"/"RECALL n"/
+"EMPTY n" (recalling a slot that's never been stored). **Not yet tested
+on hardware.**
+
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 
 - **Encoder-click volume-to-dB reset** (three different implementation
@@ -2114,14 +2153,12 @@ replacement now in place instead.
 - **Live fader-follow via manual `sendMidi()` from a value observer /
   `scheduleTask`** - never worked; superseded entirely by the `flush()`-
   polling approach described above, which does work.
-- **Mixer Snapshots** (SHIFT+F1-F8 store / OPTION+F1-F8 recall a
-  Volume+Pan mix balance) - fully reverted after its first real hardware
-  test appeared to break the core fader-input path: moving a physical
-  fader stopped updating Bitwig's volume. **Turned out to be a red
-  herring** - see "Fader-vs-group-volume bug" below for the real cause,
-  which predates this feature entirely and was just never exercised (or
-  reported) until a group track happened to be tested. Reverted anyway
-  since the real cause wasn't known yet at the time and the core control
-  path had to come first; not yet reintroduced, but the reason it broke
-  is now understood and had nothing to do with Mixer Snapshots itself -
-  safe to rebuild if wanted.
+- **Mixer Snapshots, first attempt** (SHIFT+F1-F8 store / OPTION+F1-F8
+  recall a Volume+Pan mix balance) - fully reverted after its first real
+  hardware test appeared to break the core fader-input path: moving a
+  physical fader stopped updating Bitwig's volume. **Turned out to be a
+  red herring** - the real cause (an unrelated Hide-mode startup race
+  condition, see "Faders" above) predates this feature entirely and just
+  happened to be triggered during that test. Rebuilt from scratch below
+  using `directTrackAt()` instead of the original cursor-based
+  `activeTrackAt()`, once the real cause was found and fixed elsewhere.

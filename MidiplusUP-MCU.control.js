@@ -79,6 +79,39 @@ var EQ_DEVICE_SCAN_DEPTH = 32;
 // than this before the point you're adding new ones.
 var CUE_MARKER_SCAN_DEPTH = 128;
 
+// Mixer Snapshots - SHIFT+F1-F8 stores the current 8-track bank window's
+// Volume+Pan into slot N, OPTION+F1-F8 recalls it back (see
+// storeMixerSnapshot()/recallMixerSnapshot() near directTrackAt() below,
+// and the note 62-69 handler in onMidi()). Second attempt this session -
+// the first (see git history around commits e1d4e2b/80df0b1/9d6b9c1/
+// fd48775) was fully reverted after apparently breaking fader input on
+// every channel; re-examined once the REAL cause of that instability
+// turned out to be an unrelated Hide-mode startup race condition (fixed
+// separately - see recomputeActiveTrackIndices()), so the original
+// diagnosis blaming this feature was very likely wrong. Rebuilt using
+// directTrackAt() throughout (Main tracks: direct trackBank.getItemAt(i)
+// binding, no CursorTrack involved, confirmed reliable elsewhere in this
+// file) instead of the original activeTrackAt() (cursor-based) - avoids
+// that whole class of risk from the start this time, and skips the
+// extra ~256 markInterested() calls the first attempt added on
+// mainTrackScanBank (confirmed unnecessary - recallMixerSnapshot() only
+// ever .set()s through that bank, never .get()s, and only .get() needs
+// prior interest).
+//
+// Persisted via host.getDocumentState() rather than host.getPreferences()
+// - Document State settings are saved INSIDE the Bitwig project file
+// itself (normally shown in its Studio I/O panel, hidden here via
+// Setting.hide() since these are raw serialized data, not meant for
+// hand-editing), so a snapshot travels with the song and survives
+// closing/reopening it, unlike Preferences which are global to this
+// controller across every project. Deliberately scoped to just
+// Volume + Pan on whichever 8 tracks are currently visible in the bank
+// (not the whole project, not mute/solo/sends) - the simplest version of
+// "recall a mix balance", easy to extend later if that scope turns out
+// to be too narrow.
+var MIXER_SNAPSHOT_SLOTS = 8;
+var mixerSnapshotSettings = []; // SettableStringValue per slot, filled in init()
+
 // ---------------------------------------------------------------------
 // DEBUG / Diagnostics hub (Controller Preferences panel -> "Debug"
 // category) - every println() used purely for development/diagnostic
@@ -1988,6 +2021,103 @@ function directTrackAt(i) {
    return trackBank.getItemAt(i);
 }
 
+// Mixer Snapshots - see MIXER_SNAPSHOT_SLOTS/mixerSnapshotSettings above.
+//
+// Identity fix (same root problem as the fader/ARM/SOLO/MUTE bug this
+// whole session was about): the original version keyed each stored
+// entry to a bank-WINDOW slot (0-7) and read/wrote through activeTrackAt(i)
+// (or, this rebuild, directTrackAt(i)) both at store and recall time.
+// Since that means "whatever track is currently in slot i", storing
+// while looking at one 8-track window and recalling after scrolling to a
+// different one would silently apply the wrong tracks' stored values to
+// whatever now sits in slots 0-7. Fixed for Main tracks (the case this
+// can actually happen in - Returns rarely exceeds 8 tracks) by storing
+// each track's ABSOLUTE position in the project via Track.position()
+// instead of its bank-window slot, then recalling straight through
+// mainTrackScanBank.getItemAt(pos) - a permanently-unscrolled, 128-deep
+// bank already used elsewhere in this file (see MAIN_TRACK_SCAN_DEPTH
+// above) where slot index === absolute track position by construction.
+// That makes recall target the exact same tracks regardless of any
+// scrolling, Hide/Show-All toggling, or even which bank (Main/Returns)
+// is currently on screen, in between store and recall. Returns tracks
+// keep the simpler bank-slot-relative behavior - no equivalent
+// unscrolled scan bank exists for them, and Returns rarely scrolls in
+// practice.
+//
+// One slot's serialized text is "<entry>|<entry>|...", one entry per bank
+// slot 0-7: "-" for a slot with no track in it at capture time
+// (isMainSlotEmpty()); "R,<vol>,<pan>" for a Returns-context capture
+// (recalled positionally via effectTrackBank); or "<pos>,<vol>,<pan>"
+// for a Main-context capture, <pos> being the track's absolute
+// Track.position(). vol/pan are 4-decimal, normalized 0..1 - the same
+// range track.volume()/pan() already use everywhere else in this file.
+// Deliberately plain delimited text, not JSON - Bitwig's Controller API
+// has no JSON parser built in and this format is trivial to split by
+// hand.
+function storeMixerSnapshot(slotIndex) {
+   var parts = [];
+   for (var i = 0; i < 8; i++) {
+      if (isMainSlotEmpty(i)) {
+         parts.push("-");
+         continue;
+      }
+      var snapshotTrack = directTrackAt(i);
+      var volPan = snapshotTrack.volume().get().toFixed(4) + "," + snapshotTrack.pan().get().toFixed(4);
+      if (isViewingReturns) {
+         parts.push("R," + volPan);
+      } else {
+         parts.push(snapshotTrack.position().get() + "," + volPan);
+      }
+   }
+   mixerSnapshotSettings[slotIndex].set(parts.join("|"));
+   host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Stored");
+   showModePopup("STORE " + (slotIndex + 1));
+}
+
+function recallMixerSnapshot(slotIndex) {
+   var serialized = mixerSnapshotSettings[slotIndex].get();
+   if (!serialized) {
+      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " is Empty");
+      showModePopup("EMPTY " + (slotIndex + 1));
+      return;
+   }
+   var parts = serialized.split("|");
+   for (var i = 0; i < 8 && i < parts.length; i++) {
+      if (parts[i] === "-") {
+         continue;
+      }
+      var fields = parts[i].split(",");
+      var vol = parseFloat(fields[1]);
+      var pan = parseFloat(fields[2]);
+      if (isNaN(vol) || isNaN(pan)) {
+         continue;
+      }
+      var recallTrack;
+      if (fields[0] === "R") {
+         recallTrack = effectTrackBank.getItemAt(i);
+      } else {
+         var pos = parseInt(fields[0], 10);
+         if (isNaN(pos) || pos < 0 || pos >= MAIN_TRACK_SCAN_DEPTH) {
+            continue;
+         }
+         // mainTrackScanBank's volume()/pan() are deliberately never
+         // markInterested() - write-only .set() calls don't require it
+         // (only .get() does, confirmed via the Value.markInterested()
+         // Javadoc), and this code path never reads them. The first
+         // attempt at this feature marked them interested anyway (~256
+         // extra values across a bank spanning group boundaries) and was
+         // suspected, probably wrongly, of destabilizing fader binding
+         // for unrelated group tracks - kept uninterested here to stay
+         // well clear of that territory regardless.
+         recallTrack = mainTrackScanBank.getItemAt(pos);
+      }
+      recallTrack.volume().set(vol);
+      recallTrack.pan().set(pan);
+   }
+   host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
+   showModePopup("RECALL" + (slotIndex + 1));
+}
+
 // Requested directly: Bitwig's own Arranger/Mixer view didn't follow
 // when scrolling the bank here, so the hardware and Bitwig's own screen
 // could show completely different tracks. Selecting a track in the new
@@ -2380,6 +2510,14 @@ function init() {
       trackBank.getItemAt(directTrackIdx).arm().markInterested();
       trackBank.getItemAt(directTrackIdx).solo().markInterested();
       trackBank.getItemAt(directTrackIdx).mute().markInterested();
+      // Read by storeMixerSnapshot() (Mixer Snapshots, below) to capture
+      // each track's ABSOLUTE position - independent of which bank
+      // window is currently scrolled into view - rather than its
+      // bank-relative slot index. Same rationale as everything else in
+      // this loop: directTrackAt(i) is a plain trackBank item here, not
+      // the mainTrackCursors CursorTrack, so it needs its own explicit
+      // markInterested() same as every other sub-value.
+      trackBank.getItemAt(directTrackIdx).position().markInterested();
    }
 
    // Show All mode's mainTrackCursors only get re-pointed at
@@ -2435,8 +2573,13 @@ function init() {
    // launcher features all go through the separate sceneBank/actions
    // instead), so there's nothing to replicate here.
    for (var cursorIdx = 0; cursorIdx < 8; cursorIdx++) {
-      mainTrackCursors.push(host.createCursorTrack(
-         "MIDIPLUS_MAIN_TRACK_" + cursorIdx, "Main Track " + (cursorIdx + 1), MAX_SENDS, 0, false));
+      var mainCursor = host.createCursorTrack(
+         "MIDIPLUS_MAIN_TRACK_" + cursorIdx, "Main Track " + (cursorIdx + 1), MAX_SENDS, 0, false);
+      // Read by storeMixerSnapshot() (Mixer Snapshots, below) when Hide
+      // mode is active - directTrackAt(i) falls back to this cursor in
+      // that case, same as trackBank's own items' position() above.
+      mainCursor.position().markInterested();
+      mainTrackCursors.push(mainCursor);
    }
 
    // Scene Bank (8 scenes) - MODE_SCENE, entered via BTA. Fixed window, no
@@ -2614,6 +2757,23 @@ function init() {
             warnIfDuplicateFKeyFunctions();
          });
       })(fkIdx);
+   }
+
+   // Mixer Snapshots (SHIFT+F1-F8 store / OPTION+F1-F8 recall - see
+   // storeMixerSnapshot()/recallMixerSnapshot() above) - persisted via
+   // host.getDocumentState() rather than host.getPreferences(), so each
+   // slot's serialized text is saved inside the Bitwig project itself and
+   // survives closing/reopening it, unlike a Preferences setting (global
+   // to this controller across every project - wrong scope for a
+   // per-song mix version). Hidden immediately via Setting.hide() - these
+   // are raw internal storage, not meant to be seen or hand-edited in
+   // the Studio I/O panel.
+   for (var snapshotIdx = 0; snapshotIdx < MIXER_SNAPSHOT_SLOTS; snapshotIdx++) {
+      var snapshotSetting = host.getDocumentState().getStringSetting(
+         "Mixer Snapshot " + (snapshotIdx + 1), "Mixer Snapshots (Internal)", 256, "");
+      snapshotSetting.markInterested();
+      snapshotSetting.hide();
+      mixerSnapshotSettings.push(snapshotSetting);
    }
 
    // What SHIFT+CTRL and ALT+CTRL + Jog Wheel each do - independent
@@ -4553,8 +4713,26 @@ function onMidi(status, data1, data2) {
       // popup; only an actual HOLD (past FKEY_HOLD_THRESHOLD_MS) escalates
       // to revealing every F-key's assignment across all 8 channels, for
       // learning the whole layout without a manual - not on every tap.
+      //
+      // SHIFT+F(n)/OPTION+F(n) are otherwise-unused combos on these same
+      // 8 buttons (a plain press ignores modifier state entirely) - used
+      // here for Mixer Snapshots: SHIFT+F(n) stores the current bank
+      // window's volume+pan into slot n, OPTION+F(n) recalls it (see
+      // storeMixerSnapshot()/recallMixerSnapshot() above). Checked before
+      // the plain-press path so neither modifier's own standalone-tap
+      // action nor the normal F-key function fires at the same time.
       if (data1 >= 62 && data1 <= 69) {
          var fkeyIdx = data1 - 62;
+         if (isPressed && isShiftPressed) {
+            shiftUsedForCombo = true;
+            storeMixerSnapshot(fkeyIdx);
+            return;
+         }
+         if (isPressed && isOptionPressed) {
+            optionUsedForCombo = true;
+            recallMixerSnapshot(fkeyIdx);
+            return;
+         }
          if (isPressed) {
             handleFKeyPress(fkeyIdx);
          } else {
