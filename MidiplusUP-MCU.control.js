@@ -1172,11 +1172,27 @@ function scheduleFaderSnapZeroCheck(index, target) {
 // may want -inf snapping without every other round number grabbing the
 // fader too. Same release-triggered/re-touch-cancels design as Snap to
 // Zero (own generation counter, not shared with it), just against a
-// fixed list of dB marks (FADER_SNAP_DB_MARKS) instead of a single
-// target. When enabled (default OFF - opt-in), releasing within
-// FADER_SNAP_DB_MARK_RANGE of one of them schedules a check
+// fixed list of dB marks (see FADER_SNAP_DB_MARKS_MUSICAL/_HARDWARE and
+// faderSnapDbMarkLayout below) instead of a single target. When enabled
+// (default OFF - opt-in), releasing within FADER_SNAP_DB_MARK_RANGE of
+// one of the active layout's marks schedules a check
 // FADER_SNAP_DB_MARK_DELAY_MS later; if the fader is still untouched
 // and still in range, it snaps to that mark's exact value.
+//
+// Two selectable mark layouts (Fader Snap to dB Marks Layout below),
+// since which set of numbers is "the round ones" depends on context:
+// - Musical (Standard): 0, -6, -12, -18, -24, -30, -36 dB - the classic
+//   halving series (every -6dB is half the amplitude) used across audio
+//   engineering generally, requested directly.
+// - Hardware Scale: 5, 0, -10, -20, -30, -50, -60 dB - matches the
+//   marks actually printed on this hardware's own fader scale (read
+//   directly off the unit: 10, 5, 0, -10, -20, -30, -50, -60, -Infinity
+//   top to bottom). The printed "10" is deliberately excluded - Bitwig's
+//   volume curve tops out around +6.02dB at full fader travel (see the
+//   curve fit below, evaluated at normalized=1.0), so a literal +10dB
+//   target is never actually reachable; dbMarkToNormalized() clamps
+//   defensively regardless. -Infinity isn't included in either list -
+//   Fader Snap to Zero above already owns that endpoint.
 //
 // Scoped to plain Track Volume only (see isFaderVolumeTarget() below) -
 // not Send level or device macros under FLIP, which may use a
@@ -1193,12 +1209,18 @@ function scheduleFaderSnapZeroCheck(index, target) {
 var faderSnapToDbMarksEnabled = false;
 var FADER_SNAP_DB_MARK_RANGE = 0.03;
 var FADER_SNAP_DB_MARK_DELAY_MS = 500;
-var FADER_SNAP_DB_MARKS = [0, -3, -6, -10, -12, -18, -24];
+var FADER_SNAP_DB_MARKS_MUSICAL = [0, -6, -12, -18, -24, -30, -36];
+var FADER_SNAP_DB_MARKS_HARDWARE = [5, 0, -10, -20, -30, -50, -60];
+var faderSnapDbMarkLayout = "Musical (Standard)";
 var FADER_SNAP_DB_CURVE_SLOPE = 60;
 var FADER_SNAP_DB_CURVE_OFFSET = 6.0206;
 
 function dbMarkToNormalized(db) {
-   return Math.pow(10, (db - FADER_SNAP_DB_CURVE_OFFSET) / FADER_SNAP_DB_CURVE_SLOPE);
+   return Math.max(0, Math.min(1, Math.pow(10, (db - FADER_SNAP_DB_CURVE_OFFSET) / FADER_SNAP_DB_CURVE_SLOPE)));
+}
+
+function activeFaderSnapDbMarks() {
+   return faderSnapDbMarkLayout === "Hardware Scale" ? FADER_SNAP_DB_MARKS_HARDWARE : FADER_SNAP_DB_MARKS_MUSICAL;
 }
 
 // True for whichever fader index/mode combination is plain Track Volume
@@ -1226,8 +1248,9 @@ function scheduleFaderSnapDbMarkCheck(index, target, isVolumeTarget) {
          return;
       }
       var current = target.get();
-      for (var i = 0; i < FADER_SNAP_DB_MARKS.length; i++) {
-         var markValue = dbMarkToNormalized(FADER_SNAP_DB_MARKS[i]);
+      var marks = activeFaderSnapDbMarks();
+      for (var i = 0; i < marks.length; i++) {
+         var markValue = dbMarkToNormalized(marks[i]);
          if (Math.abs(current - markValue) <= FADER_SNAP_DB_MARK_RANGE) {
             target.set(markValue);
             return;
@@ -3092,6 +3115,17 @@ function init() {
    faderSnapDbMarkDelaySetting.markInterested();
    faderSnapDbMarkDelaySetting.addRawValueObserver(function(value) {
       FADER_SNAP_DB_MARK_DELAY_MS = value;
+   });
+
+   // Which set of marks Fader Snap to dB Marks snaps to - see
+   // FADER_SNAP_DB_MARKS_MUSICAL/_HARDWARE and activeFaderSnapDbMarks()
+   // above.
+   var faderSnapDbMarkLayoutSetting = host.getPreferences().getEnumSetting(
+      "Fader Snap to dB Marks Layout", "Mixer",
+      ["Musical (Standard)", "Hardware Scale"], "Musical (Standard)");
+   faderSnapDbMarkLayoutSetting.markInterested();
+   faderSnapDbMarkLayoutSetting.addValueObserver(function(value) {
+      faderSnapDbMarkLayout = value;
    });
 
    // See sendBankConfiguredPages above - how many pages a normal SEND
