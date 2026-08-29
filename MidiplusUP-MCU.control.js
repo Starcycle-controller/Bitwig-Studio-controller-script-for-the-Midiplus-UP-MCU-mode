@@ -1995,6 +1995,21 @@ var mainLedState = { arm: [false, false, false, false, false, false, false, fals
                       solo: [false, false, false, false, false, false, false, false],
                       mute: [false, false, false, false, false, false, false, false],
                       select: [false, false, false, false, false, false, false, false] };
+// Hide mode's own copy - kept separate from mainLedState (Show All) so
+// mainTrackCursors' observers (still Hide-mode only, see
+// setupChannelStripObservers() below) never cross-write into Show All's
+// state. They used to share one object; since mainTrackCursors is no
+// longer repositioned at all while Show All is active (see the all-8-
+// collapse fix), it sits in its default state and its isSelectedInMixer
+// observer can still fire for whatever that default happens to be,
+// silently overwriting an already-correct Show All value with stale
+// data - confirmed on hardware as all 8 SELECT LEDs sticking on after a
+// bank scroll, clearing one slot at a time as each one's real (Show All)
+// observer happened to fire again.
+var mainHideLedState = { arm: [false, false, false, false, false, false, false, false],
+                          solo: [false, false, false, false, false, false, false, false],
+                          mute: [false, false, false, false, false, false, false, false],
+                          select: [false, false, false, false, false, false, false, false] };
 var returnsLedState = { arm: [false, false, false, false, false, false, false, false],
                          solo: [false, false, false, false, false, false, false, false],
                          mute: [false, false, false, false, false, false, false, false],
@@ -2040,6 +2055,11 @@ var mainToolSlot = [-1, -1, -1, -1, -1, -1, -1, -1];
 var returnsToolSlot = [-1, -1, -1, -1, -1, -1, -1, -1];
 var mainToolRemote = [];
 var returnsToolRemote = [];
+// Hide mode's own copies - same reason as mainHideLedState above:
+// mainTrackCursors is never repositioned while Show All is active, so
+// its device-tracking observer must not write into Show All's arrays.
+var mainHideToolSlot = [-1, -1, -1, -1, -1, -1, -1, -1];
+var mainHideToolRemote = [];
 
 // Same tracking, but for the single arranger-selected cursorTrack rather
 // than a bank slot - used by PAN (case 42) to decide whether it needs to
@@ -2388,10 +2408,10 @@ function refreshMainCursors() {
             mainCursorHasTrack[i] = false;
             topRowText[i] = "       ";
             bottomRowText[i] = "       ";
-            mainLedState.arm[i] = false;
-            mainLedState.solo[i] = false;
-            mainLedState.mute[i] = false;
-            mainLedState.select[i] = false;
+            mainHideLedState.arm[i] = false;
+            mainHideLedState.solo[i] = false;
+            mainHideLedState.mute[i] = false;
+            mainHideLedState.select[i] = false;
          }
       } else {
          mainCursorHasTrack[i] = true;
@@ -2520,7 +2540,10 @@ function setTransportPosition(beats) {
 }
 
 function activeLedState() {
-   return isViewingReturns ? returnsLedState : mainLedState;
+   if (isViewingReturns) {
+      return returnsLedState;
+   }
+   return hideDeactivatedTracksEnabled ? mainHideLedState : mainLedState;
 }
 
 // Returns the Gain (paramIndex 0) or Pan (paramIndex 1) parameter of the
@@ -2534,11 +2557,20 @@ function getToolParam(trackIndex, paramIndex) {
    if (isMainSlotEmpty(trackIndex)) {
       return null;
    }
-   var slot = isViewingReturns ? returnsToolSlot[trackIndex] : mainToolSlot[trackIndex];
+   var slot, remotesForTrack;
+   if (isViewingReturns) {
+      slot = returnsToolSlot[trackIndex];
+      remotesForTrack = returnsToolRemote[trackIndex];
+   } else if (hideDeactivatedTracksEnabled) {
+      slot = mainHideToolSlot[trackIndex];
+      remotesForTrack = mainHideToolRemote[trackIndex];
+   } else {
+      slot = mainToolSlot[trackIndex];
+      remotesForTrack = mainToolRemote[trackIndex];
+   }
    if (slot < 0) {
       return null;
    }
-   var remotesForTrack = isViewingReturns ? returnsToolRemote[trackIndex] : mainToolRemote[trackIndex];
    return remotesForTrack[slot].getParameter(paramIndex);
 }
 
@@ -3489,7 +3521,7 @@ function init() {
    // Hide mode still needs mainTrackCursors - a plain TrackBank can't
    // skip/shift slots to hide deactivated tracks the way selectChannel()
    // -driven cursors do.
-   setupChannelStripObservers(mainTrackCursors, mainLedState, function (index) {
+   setupChannelStripObservers(mainTrackCursors, mainHideLedState, function (index) {
       return !isViewingReturns && hideDeactivatedTracksEnabled && mainCursorHasTrack[index];
    });
    setupChannelStripObservers(effectTrackBankItems, returnsLedState, function () {
@@ -3597,11 +3629,12 @@ function init() {
    // behavior cursorTrack's own device tracking below already relies on.
    // Show All mode: track straight off trackBankItems, same reasoning as
    // setupChannelStripObservers() above (mainTrackCursors is Hide-mode
-   // only now). Both write into the same mainToolSlot/mainToolRemote
-   // arrays, same as mainLedState above - harmless since only one mode's
-   // refreshMainCursors() branch is actually moving its tracks at a time.
+   // only now). Separate mainHideToolSlot/mainHideToolRemote arrays for
+   // the Hide-mode registration, same reason as mainHideLedState above -
+   // mainTrackCursors is never repositioned while Show All is active, so
+   // its device-tracking observer must not write into Show All's arrays.
    setupToolDeviceTracking(trackBankItems, mainToolSlot, mainToolRemote);
-   setupToolDeviceTracking(mainTrackCursors, mainToolSlot, mainToolRemote);
+   setupToolDeviceTracking(mainTrackCursors, mainHideToolSlot, mainHideToolRemote);
    setupToolDeviceTracking(effectTrackBankItems, returnsToolSlot, returnsToolRemote);
    cursorToolRemote = scanTrackForToolDevice(
       cursorTrack,
