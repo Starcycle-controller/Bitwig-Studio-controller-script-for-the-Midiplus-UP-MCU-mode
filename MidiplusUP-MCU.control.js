@@ -82,21 +82,11 @@ var CUE_MARKER_SCAN_DEPTH = 128;
 // Mixer Snapshots - SHIFT+F1-F8 stores the current 8-track bank window's
 // Volume+Pan into slot N, OPTION+F1-F8 recalls it back (see
 // storeMixerSnapshot()/recallMixerSnapshot() near directTrackAt() below,
-// and the note 62-69 handler in onMidi()). Second attempt this session -
-// the first (see git history around commits e1d4e2b/80df0b1/9d6b9c1/
-// fd48775) was fully reverted after apparently breaking fader input on
-// every channel; re-examined once the REAL cause of that instability
-// turned out to be an unrelated Hide-mode startup race condition (fixed
-// separately - see recomputeActiveTrackIndices()), so the original
-// diagnosis blaming this feature was very likely wrong. Rebuilt using
-// directTrackAt() throughout (Main tracks: direct trackBank.getItemAt(i)
-// binding, no CursorTrack involved, confirmed reliable elsewhere in this
-// file) instead of the original activeTrackAt() (cursor-based) - avoids
-// that whole class of risk from the start this time, and skips the
-// extra ~256 markInterested() calls the first attempt added on
-// mainTrackScanBank (confirmed unnecessary - recallMixerSnapshot() only
-// ever .set()s through that bank, never .get()s, and only .get() needs
-// prior interest).
+// and the note 62-69 handler in onMidi()). Third attempt this session -
+// see the header comment on storeMixerSnapshot() below for the full
+// history (bank-relative directTrackAt(), then this absolute-position
+// mainTrackScanBank version, and why each earlier attempt looked broken
+// for reasons that turned out to be unrelated).
 //
 // Persisted via host.getDocumentState() rather than host.getPreferences()
 // - Document State settings are saved INSIDE the Bitwig project file
@@ -2041,58 +2031,48 @@ function directTrackAt(i) {
 
 // Mixer Snapshots - see MIXER_SNAPSHOT_SLOTS/mixerSnapshotSettings above.
 //
-// SCOPE, after repeated hardware failures: this bank-WINDOW-relative
-// version (store and recall both go through directTrackAt(i), i.e.
-// "whatever track is currently in slot i" - the exact same access
-// pattern already proven reliable on hardware for faders/encoders/REC
-// ARM/SOLO/MUTE/Pan Reset) is deliberately simpler than an earlier
-// attempt at this feature. That attempt stored each track's ABSOLUTE
-// Track.position() and recalled straight through
-// mainTrackScanBank.getItemAt(pos), specifically to stay correct even
-// if you scroll the bank between store and recall. It correctly
-// resolved to the right track every time (confirmed via console
-// logging) but writing through mainTrackScanBank silently never
-// actually changed Bitwig's real value, regardless of whether that
-// bank's volume()/pan() were markInterested() or not. Dropped back to
-// the simpler, proven-reliable directTrackAt() write path.
+// Third attempt this session. First attempt (bank-relative directTrackAt()
+// throughout, git history around fe89595/a3adb27/80e6c3a) was dropped back
+// to bank-window-relative after an absolute-position version writing
+// through mainTrackScanBank.getItemAt(pos) appeared to silently no-op on
+// hardware, regardless of markInterested(). That diagnosis turned out to
+// be a red herring: the REAL cause (see faderTouchedTarget above) was that
+// this script never called Bitwig's Parameter.touch() on fader touch/
+// release, so any channel that had recently received live hardware fader
+// input stayed permanently "touched" from Bitwig's point of view and
+// silently ignored EVERY script .set() call on it - independent of which
+// track-access path was used. Same root cause also explained the earlier
+// "Hide mode unsupported" finding (directTrackAt() falling back to
+// mainTrackCursors[i] past a hidden track) - not something inherent to
+// CursorTrack access either. Now that the real fix is in place (fader
+// touch handler calls touch(true)/touch(false) properly), this rebuilds
+// the absolute-position version: scroll-proof, and no longer needs to
+// special-case Hide mode at all, since recall never touches
+// mainTrackCursors in the first place.
 //
-// Trade-off this reintroduces: storing while looking at one 8-track
-// window, then recalling after scrolling to a DIFFERENT window in
-// between, will apply the stored values to whatever's now in slots 0-7,
-// not the original tracks. Store/recall without scrolling in between -
-// the common case - is unaffected.
+// Store captures each visible slot's ABSOLUTE Track.position() (Show All)
+// or activeTrackRawIndices[mainBankScrollOffset + i] (Hide mode - same
+// technique as the position-capture fix from fe89595, still needed since
+// mainTrackCursors' position() can read stale/duplicated in Hide mode even
+// though its volume()/pan() read fine). Recall writes straight through
+// mainTrackScanBank.getItemAt(pos) - a plain, permanently-unscrolled
+// TrackBank pinned at position 0 (see init()), the same class of object as
+// the plain trackBank already proven reliable for ARM/SOLO/MUTE/Pan Reset,
+// not a CursorTrack - so slot index === absolute document position by
+// construction, correct even if you scroll the bank (or toggle Hide mode)
+// between store and recall. Returns are separate: fixed 8-slot
+// effectTrackBank, never scrolled, so still just "R,<vol>,<pan>" at
+// bank-relative slot i like before.
 //
-// HIDE MODE IS UNSUPPORTED - CONFIRMED ON HARDWARE, not just a
-// theoretical risk: with "Deactivated Tracks in Bank" (Hide mode)
-// active, directTrackAt(i) falls back to mainTrackCursors[i]
-// (CursorTrack.selectChannel()-based, needed there since a plain
-// TrackBank can't skip slots). For any slot sitting after a
-// hidden/skipped track, .set() on that cursor's volume()/pan() is
-// silently a no-op - confirmed by reading the value immediately before
-// and after the .set() call and finding them identical, even though
-// .get() itself works fine (matches the live fader) and the SAME
-// directTrackAt() access pattern works for ARM/SOLO/MUTE/Pan Reset.
-// Native fader input still works in this situation because it goes
-// through Bitwig's own setBinding() mechanism, not a script-side
-// .set() call - a completely different path that isn't affected.
-// Rather than silently fail per-slot (confusing - some channels reset,
-// others don't, depending on where the hidden tracks happen to be),
-// both store and recall refuse outright with a clear popup whenever
-// Hide mode is on. Returns are unaffected either way (never routes
-// through mainTrackCursors) and still works normally.
-//
-// One slot's serialized text is "<entry>|<entry>|...", one entry per
-// bank slot 0-7: "-" for a slot with no track in it at capture time
-// (isMainSlotEmpty()), else "<vol>,<pan>" (4-decimal, normalized 0..1 -
-// the same range track.volume()/pan() already use everywhere else in
-// this file). Deliberately plain delimited text, not JSON - Bitwig's
-// Controller API has no JSON parser built in and this format is trivial
-// to split by hand.
+// One slot's serialized text is "<entry>|<entry>|...", one entry per bank
+// slot 0-7: "-" for a slot with no track in it at capture time
+// (isMainSlotEmpty()), "R,<vol>,<pan>" for a Returns slot, else
+// "<absolute position>,<vol>,<pan>" for a main-track slot (vol/pan
+// 4-decimal, normalized 0..1 - the same range track.volume()/pan() already
+// use everywhere else in this file). Deliberately plain delimited text,
+// not JSON - Bitwig's Controller API has no JSON parser built in and this
+// format is trivial to split by hand.
 function storeMixerSnapshot(slotIndex) {
-   if (!isViewingReturns && hideDeactivatedTracksEnabled) {
-      host.showPopupNotification("Mixer Snapshots require Hide mode off");
-      return;
-   }
    var parts = [];
    for (var i = 0; i < 8; i++) {
       if (isMainSlotEmpty(i)) {
@@ -2100,7 +2080,14 @@ function storeMixerSnapshot(slotIndex) {
          continue;
       }
       var snapshotTrack = directTrackAt(i);
-      parts.push(snapshotTrack.volume().get().toFixed(4) + "," + snapshotTrack.pan().get().toFixed(4));
+      var volPan = snapshotTrack.volume().get().toFixed(4) + "," + snapshotTrack.pan().get().toFixed(4);
+      if (isViewingReturns) {
+         parts.push("R," + volPan);
+      } else if (hideDeactivatedTracksEnabled) {
+         parts.push(activeTrackRawIndices[mainBankScrollOffset + i] + "," + volPan);
+      } else {
+         parts.push(snapshotTrack.position().get() + "," + volPan);
+      }
    }
    mixerSnapshotSettings[slotIndex].set(parts.join("|"));
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Stored");
@@ -2108,10 +2095,6 @@ function storeMixerSnapshot(slotIndex) {
 }
 
 function recallMixerSnapshot(slotIndex) {
-   if (!isViewingReturns && hideDeactivatedTracksEnabled) {
-      host.showPopupNotification("Mixer Snapshots require Hide mode off");
-      return;
-   }
    var serialized = mixerSnapshotSettings[slotIndex].get();
    if (!serialized) {
       host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " is Empty");
@@ -2119,33 +2102,37 @@ function recallMixerSnapshot(slotIndex) {
       return;
    }
    var parts = serialized.split("|");
-   // Root cause (see faderTouchedTarget above): a channel that had
-   // recently received live hardware fader input stayed permanently
-   // "touched" from Bitwig's own Parameter API's point of view, since we
-   // never called touch(false) on release - silently blocking any script
-   // .set() write on it, regardless of track-access path or fader
-   // binding state. Fixed at the source (fader touch handler now calls
-   // touch(true)/touch(false) properly), so no special handling is
-   // needed here anymore. Diagnostic before/after readbacks below
-   // (immediate and delayed) confirm the fix on hardware.
    for (var i = 0; i < 8 && i < parts.length; i++) {
-      if (parts[i] === "-" || isMainSlotEmpty(i)) {
+      if (parts[i] === "-") {
          continue;
       }
       var fields = parts[i].split(",");
-      var vol = parseFloat(fields[0]);
-      var pan = parseFloat(fields[1]);
+      var vol, pan, recallTrack;
+      if (fields[0] === "R") {
+         vol = parseFloat(fields[1]);
+         pan = parseFloat(fields[2]);
+         recallTrack = effectTrackBank.getItemAt(i);
+      } else {
+         var pos = parseInt(fields[0], 10);
+         if (isNaN(pos) || pos < 0 || pos >= MAIN_TRACK_SCAN_DEPTH) {
+            continue;
+         }
+         vol = parseFloat(fields[1]);
+         pan = parseFloat(fields[2]);
+         recallTrack = mainTrackScanBank.getItemAt(pos);
+      }
       if (isNaN(vol) || isNaN(pan)) {
          continue;
       }
-      var recallTrack = directTrackAt(i);
+      // Diagnostic before/after readback - first hardware test of this
+      // absolute-position write path since the real Parameter.touch()
+      // root cause was fixed. Remove once confirmed working.
       var beforeVol = recallTrack.volume().get();
       recallTrack.volume().set(vol);
       recallTrack.pan().set(pan);
       var afterVol = recallTrack.volume().get();
       println("Mixer Snapshot RECALL slot " + i + " - name=\"" + recallTrack.name().get() +
-         "\" target vol=" + vol + " pan=" + pan + " | before=" + beforeVol + " immediate after=" + afterVol +
-         " | faderTouchHeld=" + faderTouchHeld[i]);
+         "\" target vol=" + vol + " pan=" + pan + " | before=" + beforeVol + " immediate after=" + afterVol);
       (function (slotI, slotTrack, targetVol) {
          host.scheduleTask(function () {
             println("Mixer Snapshot RECALL slot " + slotI + " - delayed readback (500ms) vol=" +
@@ -2549,6 +2536,10 @@ function init() {
       trackBank.getItemAt(directTrackIdx).arm().markInterested();
       trackBank.getItemAt(directTrackIdx).solo().markInterested();
       trackBank.getItemAt(directTrackIdx).mute().markInterested();
+      // Show All mode's Mixer Snapshot store reads this directly (see
+      // storeMixerSnapshot() - absolute Track.position(), used as the
+      // scroll-proof recall key through mainTrackScanBank).
+      trackBank.getItemAt(directTrackIdx).position().markInterested();
    }
 
    // Show All mode's mainTrackCursors only get re-pointed at
@@ -2575,11 +2566,16 @@ function init() {
    }
 
    // Deactivated Tracks in Bank ("Hide" mode) - see mainTrackScanBank/
-   // mainTrackCursors above. Scan bank: 0 sends/0 scenes, only ever used
-   // for exists()/isActivated()/name(), never displayed or bound to
-   // hardware directly. Never scrolled - stays pinned at position 0 so
-   // raw slot i always means "track at position i in the document" for
-   // as long as the script runs.
+   // mainTrackCursors above. Scan bank: 0 sends/0 scenes, used for
+   // exists()/isActivated()/name() (never displayed or bound to hardware
+   // directly), and now also as the write target for scroll-proof Mixer
+   // Snapshot recall (see storeMixerSnapshot()/recallMixerSnapshot()
+   // below) - volume()/pan() are marked interested for that reason, even
+   // though .set() itself doesn't require it, since the recall diagnostic
+   // logging reads them back with .get() to confirm the write actually
+   // took. Never scrolled - stays pinned at position 0 so raw slot i
+   // always means "track at position i in the document" for as long as
+   // the script runs.
    mainTrackScanBank = host.createMainTrackBank(MAIN_TRACK_SCAN_DEPTH, 0, 0);
    for (var scanIdx = 0; scanIdx < MAIN_TRACK_SCAN_DEPTH; scanIdx++) {
       (function (si) {
@@ -2594,6 +2590,8 @@ function init() {
          // alone wouldn't fire a recompute in that case.
          scanTrack.name().markInterested();
          scanTrack.name().addValueObserver(function () { mainMappingDirty = true; });
+         scanTrack.volume().markInterested();
+         scanTrack.pan().markInterested();
       })(scanIdx);
    }
 
