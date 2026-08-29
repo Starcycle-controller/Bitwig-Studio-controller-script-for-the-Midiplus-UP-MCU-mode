@@ -2266,6 +2266,18 @@ function refreshMainCursors() {
       displayNeedsUpdate = true;
       refreshChannelStripLEDs();
    }
+   // TEMPORARY DIAGNOSTIC - tracking down the identical-LCD-columns bug.
+   // Logs each cursor's resulting name/volume right after selectChannel(),
+   // to check whether the 8 mainTrackCursors genuinely end up pointing at
+   // 8 different tracks or have somehow collapsed onto one. Remove once
+   // resolved.
+   if (!hideDeactivatedTracksEnabled && !isViewingReturns) {
+      for (var diagIdx = 0; diagIdx < 8; diagIdx++) {
+         println("refreshMainCursors diagnostic - index=" + diagIdx +
+            " name=\"" + mainTrackCursors[diagIdx].name().get() +
+            "\" vol=" + mainTrackCursors[diagIdx].volume().get());
+      }
+   }
 }
 
 // Rebuilds activeTrackRawIndices from scratch - called by mainMappingTick()
