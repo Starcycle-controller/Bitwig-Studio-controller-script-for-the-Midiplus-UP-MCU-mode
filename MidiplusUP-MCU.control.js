@@ -2240,7 +2240,28 @@ function recallMixerSnapshot(slotIndex) {
          "\" target vol=" + vol + " pan=" + pan +
          " | vol before=" + beforeVol + " after=" + afterVol +
          " | pan before=" + beforePan + " after=" + afterPan +
-         " | faderTouchHeld=" + faderTouchHeld[i]);
+         " | faderTouchHeld=" + faderTouchHeld[i] +
+         " | displayedValue immediate=\"" + recallTrack.volume().displayedValue().get() + "\"");
+      // TEMPORARY DIAGNOSTIC - testing whether the immediate .get() right
+      // after .set(), in the same script tick, is itself stale/cached
+      // (a same-tick "read your own write" quirk) even when the write
+      // actually did commit - independent delayed re-checks at two
+      // delays, reading both the raw value and Bitwig's own
+      // displayedValue() text (the same source the LCD itself uses), to
+      // see whether either catches up to the target after the fact even
+      // though the immediate readback above didn't.
+      (function (slotI, slotTrack, targetVol) {
+         host.scheduleTask(function () {
+            println("Mixer Snapshot RECALL slot " + slotI + " - delayed (50ms) vol=" +
+               slotTrack.volume().get() + " displayedValue=\"" + slotTrack.volume().displayedValue().get() +
+               "\" (target was " + targetVol + ")");
+         }, 50);
+         host.scheduleTask(function () {
+            println("Mixer Snapshot RECALL slot " + slotI + " - delayed (500ms) vol=" +
+               slotTrack.volume().get() + " displayedValue=\"" + slotTrack.volume().displayedValue().get() +
+               "\" (target was " + targetVol + ")");
+         }, 500);
+      })(i, recallTrack, vol);
    }
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
    showModePopup("RECALL" + (slotIndex + 1));
