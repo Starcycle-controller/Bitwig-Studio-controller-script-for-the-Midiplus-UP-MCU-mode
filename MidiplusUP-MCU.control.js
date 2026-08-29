@@ -2271,21 +2271,35 @@ function init() {
    // used by getFaderTarget()/getEncoderTarget() to bind hardware faders/
    // encoders straight to these plain bank items (Show All mode) instead
    // of through the CursorTrack indirection, restoring the exact binding
-   // an earlier confirmed-working version of this script used. Matches
-   // that version's own setup (it called markInterested() on the plain
-   // bank items directly, since mainTrackCursors didn't exist yet).
+   // an earlier confirmed-working version of this script used. Full set
+   // matches setupChannelStripObservers() below exactly (that function
+   // does the same for mainTrackCursors/effectTrackBank items) - a first
+   // pass here only covered .value(), which was enough for basic fader
+   // motion but crashed on hardware ("Either call markInterested() or add
+   // at least one observer") the moment Fader Snap to Zero's
+   // target.discreteValueCount().get() ran against one of these targets,
+   // since that (and getOrigin()/discreteValueNames()/name(), needed by
+   // applyEncoderStep()/resolveOrigin() for the encoder side) were never
+   // marked. Every sub-value any fader/encoder-target consumer might call
+   // needs its own explicit markInterested() - there's no "interest
+   // inherited from the parent Parameter" shortcut.
    for (var directTrackIdx = 0; directTrackIdx < 8; directTrackIdx++) {
-      // Both the Parameter itself AND its .value() sub-accessor - the
-      // confirmed-working baseline only ever called markInterested() on
-      // .value() (used by updateFaderOutputs()/updateVPotRingOutputs()'s
-      // target.value().get() below), so that one is required; the bare
-      // Parameter is marked too since setBinding()/.set() are called on
-      // it directly elsewhere and every other track object in this file
-      // marks both consistently.
-      trackBank.getItemAt(directTrackIdx).volume().markInterested();
-      trackBank.getItemAt(directTrackIdx).volume().value().markInterested();
-      trackBank.getItemAt(directTrackIdx).pan().markInterested();
-      trackBank.getItemAt(directTrackIdx).pan().value().markInterested();
+      var directVolume = trackBank.getItemAt(directTrackIdx).volume();
+      directVolume.markInterested();
+      directVolume.value().markInterested();
+      directVolume.discreteValueCount().markInterested();
+      directVolume.discreteValueNames().markInterested();
+      directVolume.getOrigin().markInterested();
+      directVolume.name().markInterested();
+      directVolume.displayedValue().markInterested();
+      var directPan = trackBank.getItemAt(directTrackIdx).pan();
+      directPan.markInterested();
+      directPan.value().markInterested();
+      directPan.discreteValueCount().markInterested();
+      directPan.discreteValueNames().markInterested();
+      directPan.getOrigin().markInterested();
+      directPan.name().markInterested();
+      directPan.displayedValue().markInterested();
    }
 
    // Show All mode's mainTrackCursors only get re-pointed at
