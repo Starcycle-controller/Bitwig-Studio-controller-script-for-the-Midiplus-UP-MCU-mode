@@ -3619,6 +3619,10 @@ function setupChannelStripObservers(tracks, ledState, isActiveFn) {
          track.pan().name().markInterested();
 
          track.volume().displayedValue().addValueObserver(function (dispVal) {
+            // TEMPORARY DIAGNOSTIC - tracking down why every LCD column
+            // shows the same dB text regardless of which fader moved.
+            // Remove once resolved.
+            println("volume displayedValue observer fired - index=" + index + " dispVal=\"" + dispVal + "\"");
             if (currentMode === MODE_MIXER && !isFlipped && isActiveFn(index) &&
                 !isShowingPanTemporarily[index]) {
                bottomRowText[index] = track.isActivated().get() ? formatString(dispVal, 7) : "       ";
