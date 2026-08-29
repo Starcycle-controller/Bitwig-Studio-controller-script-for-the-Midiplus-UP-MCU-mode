@@ -1485,23 +1485,40 @@ setting per category:
   and advances to the next mark, ending the test after the last one.
   ALT+F8 again cancels early. Only takes over F8's normal function while
   the setting is on (ALT+F8) or a test is already running (plain F8) -
-  otherwise F8 behaves exactly as before. Requires Mixer mode,
-  unflipped, not showing a Tool Volume parameter (where the faders are
-  actually bound to plain track volume - see `getFaderTarget()`); shows
-  a popup and refuses to start otherwise. Recommended setup: a
-  throwaway project with 8 real tracks, so every channel has something
-  to drive. Logs the driven target and an immediate `volume().get()`
-  readback for every channel at each step, then a settled readback again
-  on confirm - **important caveat**: this can only confirm Bitwig's own
-  parameter model holds the value this script wrote, not the fader's
-  true physical position - this hardware's motorized fader input goes
-  entirely through the native `setBinding()`/`setAdjustValueMatcher()`
-  plumbing with no raw pitch-bend byte ever reaching this script's own
-  code, so there's no independent electronic position readback to check
-  against. The logged value is still useful (it would catch a write
-  silently failing to take effect at all, as an earlier Mixer Snapshot
-  bug turned out to be), but the human visually confirming the physical
-  fader position via the F8 press remains the actual ground-truth check.
+  otherwise F8 behaves exactly as before. Requires Mixer mode, Show All
+  (not Hide/Returns), unflipped, not showing a Tool Volume parameter
+  (where the faders are actually bound to plain track volume - see
+  `getFaderTarget()`, and Mixer Snapshots need Main/Show All - see
+  below); shows a popup and refuses to start otherwise. Logs the driven
+  target and an immediate `volume().get()` readback for every channel at
+  each step, then a settled readback again on confirm - **important
+  caveat**: this can only confirm Bitwig's own parameter model holds the
+  value this script wrote, not the fader's true physical position - this
+  hardware's motorized fader input goes entirely through the native
+  `setBinding()`/`setAdjustValueMatcher()` plumbing with no raw
+  pitch-bend byte ever reaching this script's own code, so there's no
+  independent electronic position readback to check against. The logged
+  value is still useful (it would catch a write silently failing to take
+  effect at all, as an earlier Mixer Snapshot bug turned out to be), but
+  the human visually confirming the physical fader position via the F8
+  press remains the actual ground-truth check.
+
+  **Auto-backs up and restores via Mixer Snapshot slot 8** (requested
+  directly, so the test doesn't permanently disturb whatever mix you were
+  actually working on): starting the test (ALT+F8) stores the current
+  bank window's Volume+Pan into slot 8 (overwriting whatever was there,
+  the same as manually pressing SHIFT+F8), then ending the test - however
+  it ends: completing all marks, cancelling early with ALT+F8, or the
+  test auto-aborting because you switched modes mid-test - recalls it
+  (the same as OPTION+F8), only while this test mode is actually running;
+  slot 8 is a completely normal, independent Mixer Snapshot the rest of
+  the time. **Recommended setup regardless: a throwaway project with 8
+  real tracks**, so every channel has something to drive and the slot-8
+  backup isn't your only safety net. If you switch to Hide mode or
+  Returns mid-test, the auto-abort's restore can't run either (same
+  Main/Show All requirement) - switch back and press OPTION+F8 to recall
+  slot 8 manually in that case.
+
   Not yet tested on hardware.
 
 Real error/warning logging (caught exceptions, invalid action ids,

@@ -1341,10 +1341,14 @@ function faderPositionTestLabel(db) {
    return (db > 0 ? "+" : "") + db + "dB";
 }
 
-// Same gating logic as isFaderVolumeTarget(0) above - only meaningful
-// while the physical faders are actually bound to plain track volume.
+// Same gating logic as isFaderVolumeTarget(0) above (only meaningful
+// while the physical faders are actually bound to plain track volume),
+// plus isMixerSnapshotBankSupported() (see storeMixerSnapshot() below) -
+// this test backs up/restores via Mixer Snapshot slot 8, which only
+// works in Main/Show All.
 function faderPositionTestGateOk() {
-   return currentMode === MODE_MIXER && !isFlipped && !isToolVolumeMode;
+   return currentMode === MODE_MIXER && !isFlipped && !isToolVolumeMode &&
+      isMixerSnapshotBankSupported();
 }
 
 function driveFaderPositionTestMark() {
@@ -1373,16 +1377,25 @@ function startFaderPositionTest() {
    if (faderPositionTestActive) {
       faderPositionTestActive = false;
       faderPositionTestMarkIndex = -1;
-      println("Fader Position Test - cancelled");
+      println("Fader Position Test - cancelled, restoring pre-test mixer state from Mixer Snapshot slot 8");
       host.showPopupNotification("Fader Position Test Cancelled");
-      showModePopup("CANCEL");
+      recallMixerSnapshot(7);
       return;
    }
    if (!faderPositionTestGateOk()) {
-      host.showPopupNotification("Fader Position Test: switch to Mixer mode (not Flipped/Tool Volume)");
+      host.showPopupNotification("Fader Position Test: switch to Mixer mode, Show All (not Flipped/Tool Volume)");
       showModePopup("SWITCH MIX");
       return;
    }
+   // Requested directly: back up the current mix into Mixer Snapshot
+   // slot 8 before driving any faders, then restore it automatically
+   // once the test ends (cancelled, aborted, or completed) - see the
+   // recallMixerSnapshot(7) calls below. Only happens while this test
+   // mode is actually running; slot 8 (SHIFT+F8/OPTION+F8) is otherwise
+   // a completely normal, independent Mixer Snapshot slot the rest of
+   // the time - starting the test simply overwrites whatever was in it.
+   println("Fader Position Test - backing up current mixer state to Mixer Snapshot slot 8");
+   storeMixerSnapshot(7);
    faderPositionTestActive = true;
    faderPositionTestMarkIndex = FADER_SNAP_DB_MARKS_HARDWARE.length - 1;
    println("Fader Position Test - started (bottom to top)");
@@ -1405,17 +1418,22 @@ function confirmFaderPositionTest() {
    if (!faderPositionTestGateOk()) {
       faderPositionTestActive = false;
       faderPositionTestMarkIndex = -1;
-      println("Fader Position Test - aborted (mode changed mid-test)");
+      println("Fader Position Test - aborted (mode changed mid-test), restoring pre-test mixer state " +
+         "from Mixer Snapshot slot 8");
       host.showPopupNotification("Fader Position Test Aborted (mode changed)");
-      showModePopup("ABORTED");
+      // If the mode change was itself a move away from Main/Show All,
+      // this recall will refuse (same guard as above) rather than
+      // silently restoring the wrong bank - switch back to Main/Show
+      // All and use OPTION+F8 to recall slot 8 manually in that case.
+      recallMixerSnapshot(7);
       return;
    }
    faderPositionTestMarkIndex--;
    if (faderPositionTestMarkIndex < 0) {
       faderPositionTestActive = false;
-      println("Fader Position Test - complete");
+      println("Fader Position Test - complete, restoring pre-test mixer state from Mixer Snapshot slot 8");
       host.showPopupNotification("Fader Position Test Complete");
-      showModePopup("DONE");
+      recallMixerSnapshot(7);
       return;
    }
    driveFaderPositionTestMark();
