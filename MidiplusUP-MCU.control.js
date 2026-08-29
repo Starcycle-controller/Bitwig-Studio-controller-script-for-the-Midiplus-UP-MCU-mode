@@ -80,11 +80,13 @@ var EQ_DEVICE_SCAN_DEPTH = 32;
 var CUE_MARKER_SCAN_DEPTH = 128;
 
 // Mixer Snapshots - SHIFT+F1-F8 stores the current 8-track bank window's
-// Volume+Pan into slot N, OPTION+F1-F8 recalls it back (see
+// Volume+Pan into slot N, OPTION+F1-F8 recalls it back, restoring that
+// same bank window first if you've scrolled away since (see
 // storeMixerSnapshot()/recallMixerSnapshot() near directTrackAt() below,
-// and the note 62-69 handler in onMidi()). Fourth attempt this session -
-// see the header comment on storeMixerSnapshot() below for the full
-// history and why this settled on bank-relative directTrackAt().
+// and the note 62-69 handler in onMidi()). See the header comment on
+// storeMixerSnapshot() below for the full history: why writes have to go
+// through directTrackAt() specifically, and why that means recall has to
+// scroll back to the original window rather than writing to it in place.
 //
 // Persisted via host.getDocumentState() rather than host.getPreferences()
 // - Document State settings are saved INSIDE the Bitwig project file
@@ -93,10 +95,10 @@ var CUE_MARKER_SCAN_DEPTH = 128;
 // hand-editing), so a snapshot travels with the song and survives
 // closing/reopening it, unlike Preferences which are global to this
 // controller across every project. Deliberately scoped to just
-// Volume + Pan on whichever 8 tracks are currently visible in the bank
-// (not the whole project, not mute/solo/sends) - the simplest version of
-// "recall a mix balance", easy to extend later if that scope turns out
-// to be too narrow.
+// Volume + Pan on whichever 8 tracks were visible in the bank at store
+// time (not the whole project, not mute/solo/sends) - the simplest
+// version of "recall a mix balance", easy to extend later if that scope
+// turns out to be too narrow.
 var MIXER_SNAPSHOT_SLOTS = 8;
 var mixerSnapshotSettings = []; // SettableStringValue per slot, filled in init()
 
@@ -2174,26 +2176,48 @@ function directTrackAt(i) {
 // write path changed) - not revisiting this again without new evidence
 // pointing at a genuinely different mechanism.
 //
-// SCOPE: storing while looking at one 8-track window, then recalling
-// after scrolling to a different one in between, applies the stored
-// values to whatever's now in slots 0-7, not the original tracks.
-// Store/recall without scrolling in between - the normal way to use
-// this - is unaffected.
+// SCOPE: writes still have to go through directTrackAt(i) - the exact
+// object the fader for that index is bound to (see above) - since
+// writing through any other object (e.g. a separate, unscrolled scan
+// bank) was already confirmed a dead end independent of the touch()
+// fix. That means recall can't silently update a track off-screen; it
+// has to bring the ORIGINAL 8 tracks back into slots 0-7 first. Store
+// captures the active bank's scroll position (trackBank/effectTrackBank
+// scrollPosition(), or mainBankScrollOffset in Hide mode) alongside
+// which of Main-Show-All/Main-Hide/Returns was active, and recall
+// restores that exact scroll position (jumping the visible bank window
+// and physical faders/LCD to it, same as the BANK scroll buttons would)
+// before writing - same mechanism as scrollActiveBankToStart()/
+// scrollActiveBankToEnd() above, just to a stored position instead of an
+// edge. Recalling a snapshot stored in a different bank view (Main vs
+// Returns, or Show All vs Hide) than the one currently active is
+// refused with a popup rather than guessing which tracks were meant,
+// since there's no way to tell Bitwig to also switch views reliably
+// mid-recall without risking the same kind of surprise this feature has
+// already caused once.
 //
-// Hide mode: no longer specially restricted. In Hide mode,
-// directTrackAt(i) resolves to mainTrackCursors[i] - also the exact
-// object the fader for that index is bound to and now gets touch()/
+// Hide mode: directTrackAt(i) resolves to mainTrackCursors[i] - also the
+// exact object the fader for that index is bound to and gets touch()/
 // untouch() on press/release, so the same reasoning that fixed Show All
-// mode should cover Hide mode too. Unconfirmed on hardware as of this
-// commit - the before/after readback below covers this too.
+// mode covers Hide mode too. Restoring mainBankScrollOffset then calling
+// refreshMainCursors() re-points those cursors at the stored slots,
+// exactly like the existing Hide-mode scroll helpers already do.
 //
-// One slot's serialized text is "<entry>|<entry>|...", one entry per
-// bank slot 0-7: "-" for a slot with no track in it at capture time
-// (isMainSlotEmpty()), else "<vol>,<pan>" (4-decimal, normalized 0..1 -
-// the same range track.volume()/pan() already use everywhere else in
-// this file). Deliberately plain delimited text, not JSON - Bitwig's
-// Controller API has no JSON parser built in and this format is trivial
-// to split by hand.
+// One slot's serialized text is "<bankKind>,<scrollPos>|<entry>|...",
+// one entry per bank slot 0-7 after the header: "-" for a slot with no
+// track in it at capture time (isMainSlotEmpty()), else "<vol>,<pan>"
+// (4-decimal, normalized 0..1 - the same range track.volume()/pan()
+// already use everywhere else in this file). bankKind is "M" (Main, Show
+// All), "H" (Main, Hide), or "R" (Returns). Deliberately plain delimited
+// text, not JSON - Bitwig's Controller API has no JSON parser built in
+// and this format is trivial to split by hand.
+function activeMixerSnapshotBankKind() {
+   if (isViewingReturns) {
+      return "R";
+   }
+   return hideDeactivatedTracksEnabled ? "H" : "M";
+}
+
 function storeMixerSnapshot(slotIndex) {
    var parts = [];
    for (var i = 0; i < 8; i++) {
@@ -2204,19 +2228,27 @@ function storeMixerSnapshot(slotIndex) {
       var snapshotTrack = directTrackAt(i);
       parts.push(snapshotTrack.volume().get().toFixed(4) + "," + snapshotTrack.pan().get().toFixed(4));
    }
-   mixerSnapshotSettings[slotIndex].set(parts.join("|"));
+   var bankKind = activeMixerSnapshotBankKind();
+   var scrollPos;
+   if (bankKind === "R") {
+      scrollPos = effectTrackBank.scrollPosition().get();
+   } else if (bankKind === "H") {
+      scrollPos = mainBankScrollOffset;
+   } else {
+      scrollPos = trackBank.scrollPosition().get();
+   }
+   var header = bankKind + "," + scrollPos;
+   mixerSnapshotSettings[slotIndex].set(header + "|" + parts.join("|"));
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Stored");
    showModePopup("STORE " + (slotIndex + 1));
 }
 
-function recallMixerSnapshot(slotIndex) {
-   var serialized = mixerSnapshotSettings[slotIndex].get();
-   if (!serialized) {
-      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " is Empty");
-      showModePopup("EMPTY " + (slotIndex + 1));
-      return;
-   }
-   var parts = serialized.split("|");
+// Actually writes the volume/pan values once the correct bank window is
+// confirmed in view - split out from recallMixerSnapshot() below since a
+// scroll restore needs a short delay before the window's tracks are
+// reliably readable/writable (same settle-time reasoning already
+// documented elsewhere in this file for a fresh cursor reposition).
+function applyMixerSnapshotValues(slotIndex, parts) {
    for (var i = 0; i < 8 && i < parts.length; i++) {
       if (parts[i] === "-" || isMainSlotEmpty(i)) {
          continue;
@@ -2233,6 +2265,56 @@ function recallMixerSnapshot(slotIndex) {
    }
    host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
    showModePopup("RECALL" + (slotIndex + 1));
+}
+
+var mixerSnapshotRecallGeneration = 0;
+
+function recallMixerSnapshot(slotIndex) {
+   var serialized = mixerSnapshotSettings[slotIndex].get();
+   if (!serialized) {
+      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " is Empty");
+      showModePopup("EMPTY " + (slotIndex + 1));
+      return;
+   }
+   var allParts = serialized.split("|");
+   var header = allParts[0].split(",");
+   var bankKind = header[0];
+   var scrollPos = parseInt(header[1], 10);
+   var parts = allParts.slice(1);
+
+   if (bankKind !== activeMixerSnapshotBankKind()) {
+      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) +
+         ": switch to the view it was stored in");
+      showModePopup("WRONG VIEW");
+      return;
+   }
+
+   var needsScroll = false;
+   if (bankKind === "R" && effectTrackBank.scrollPosition().get() !== scrollPos) {
+      effectTrackBank.scrollPosition().set(scrollPos);
+      needsScroll = true;
+   } else if (bankKind === "H" && mainBankScrollOffset !== scrollPos) {
+      mainBankScrollOffset = scrollPos;
+      refreshMainCursors();
+      needsScroll = true;
+   } else if (bankKind === "M" && trackBank.scrollPosition().get() !== scrollPos) {
+      trackBank.scrollPosition().set(scrollPos);
+      refreshMainCursors();
+      needsScroll = true;
+   }
+
+   if (!needsScroll) {
+      applyMixerSnapshotValues(slotIndex, parts);
+      return;
+   }
+   mixerSnapshotRecallGeneration++;
+   var myGeneration = mixerSnapshotRecallGeneration;
+   host.scheduleTask(function () {
+      if (mixerSnapshotRecallGeneration !== myGeneration) {
+         return;
+      }
+      applyMixerSnapshotValues(slotIndex, parts);
+   }, 100);
 }
 
 // Requested directly: Bitwig's own Arranger/Mixer view didn't follow
@@ -2599,6 +2681,10 @@ function init() {
    // handlers below, so they need markInterested() or .get() throws.
    trackBank.itemCount().markInterested();
    effectTrackBank.itemCount().markInterested();
+   // Read on-demand by storeMixerSnapshot()/recallMixerSnapshot() above,
+   // to capture/restore the exact bank window a snapshot was stored in.
+   trackBank.scrollPosition().markInterested();
+   effectTrackBank.scrollPosition().markInterested();
 
    // Mark trackBank's own 8 items' volume()/pan()/arm()/solo()/mute()
    // interested directly (not just mainTrackCursors', see below) - see

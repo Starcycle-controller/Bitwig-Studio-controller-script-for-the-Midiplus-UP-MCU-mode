@@ -2193,12 +2193,24 @@ columns/all-8-SELECT-LEDs "cursor collapse" bug (see "Faders"/git history
 around the `mainTrackCursors` fix) was found and fixed - that bug's
 `mainTrackCursors`/`selectChannel()` unreliability was never ruled out as
 a contributing factor in the original recall failures, so worth a clean
-retest now that it's gone. Scope unchanged: Volume + Pan only, on
-whichever 8 tracks are currently visible in the bank window at
-store/recall time (not the whole project, not mute/solo/sends, and not
-scroll-proof - storing then scrolling to a different window before
-recalling applies the stored values to whatever's now in slots 0-7, not
-the original tracks).
+retest now that it's gone. Confirmed working on hardware, including a
+channel whose fader had been touched earlier in the session.
+
+**Scroll-proof.** An earlier version of this feature applied stored
+values to whatever's currently in bank slots 0-7, so recalling after
+scrolling away applied the snapshot to the wrong tracks. Writes still
+have to go through `directTrackAt(i)` specifically - the exact object
+the fader for that index is bound to (see above); writing through any
+other object was already confirmed a dead end independent of the
+`touch()` fix. So instead, store also captures the active bank's scroll
+position (and whether it was Main/Show All, Main/Hide, or Returns), and
+recall restores that exact window - jumping the visible bank, physical
+faders, and LCD to it, same as the bank-scroll buttons would - before
+writing. Recalling a snapshot stored in a different bank view than the
+one currently active is refused with a popup (`switch to the view it was
+stored in`) rather than guessing which tracks were meant. Scope
+otherwise unchanged: Volume + Pan only, on whichever 8 tracks were
+visible in the bank at store time.
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 
