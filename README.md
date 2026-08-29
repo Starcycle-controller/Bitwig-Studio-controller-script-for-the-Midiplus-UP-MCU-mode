@@ -2174,17 +2174,35 @@ With Hide mode confirmed off (so `directTrackAt()` is the plain
 `trackBank.getItemAt(i)` path - the same one ARM/SOLO/MUTE/Pan Reset use
 successfully), recall on hardware still intermittently failed to move
 some faders, then failed completely for every touched channel on a
-clean, hands-off retest - ruling out a touch/fader-drag race. Working
-hypothesis: `hwFaders` stay natively `setBinding()`-bound to whichever
-parameter they currently control, with `disableTakeOver()` so any
-incoming pitch-bend is applied straight back to the bound parameter -
-the motorized fader's own echo of its position while moving toward the
-recalled value may be landing back through that same live binding and
-clobbering the `.set()` call before the motor settles. Testing a fix
-that clears every fader's binding before writing the recalled values,
-then calls `rebindFaders()` afterwards to resync the hardware - not yet
-confirmed on hardware, diagnostic before/after (immediate and 500ms-
-delayed) volume readbacks are logged to the console alongside it.
+clean, hands-off retest - ruling out a touch/fader-drag race.
+
+First hypothesis tried and **disproven**: that `hwFaders` staying
+natively `setBinding()`-bound (with `disableTakeOver()`) to the same
+parameter lets the motorized fader's own position echo land back
+through that live binding and clobber the `.set()` write. Fix attempted
+- clear every fader's binding before writing, `rebindFaders()`
+afterwards - made no difference on hardware. Crucially, the diagnostic
+before/after readback showed the two channels that failed to recall
+(both recently touched/moved by hand right before store+recall) were
+completely unchanged by `.set()` **immediately**, while bindings were
+still fully cleared - so nothing was bound to "fight" the write at that
+moment, ruling this theory out. The other 6 channels in that same test
+happened to already be at their stored value, so they're not real
+evidence either way - a real test needs the channel's value to actually
+differ at recall time.
+
+Current leads: the failure correlates with how *recently* a fader was
+physically touched, not with anything about the write path itself
+(same `directTrackAt()` pattern that works fine for ARM/SOLO/MUTE/Pan
+Reset, and works for slots that weren't just touched). Possibly a
+touch/gesture cooldown Bitwig applies internally to a Parameter after
+recent live hardware input, independent of our own binding state.
+`faderTouchHeld[i]` (this script's own touch-tracking flag) is now
+logged alongside the before/after readback to check whether our own
+release detection is the one getting stuck. Next hardware test: touch
+and release a fader, wait several full seconds with hands completely
+off everything, confirm the console shows `faderTouchHeld=false`, then
+recall - to see whether a longer cooldown after release resolves it.
 
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 

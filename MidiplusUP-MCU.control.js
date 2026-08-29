@@ -2135,7 +2135,8 @@ function recallMixerSnapshot(slotIndex) {
       recallTrack.pan().set(pan);
       var afterVol = recallTrack.volume().get();
       println("Mixer Snapshot RECALL slot " + i + " - name=\"" + recallTrack.name().get() +
-         "\" target vol=" + vol + " pan=" + pan + " | before=" + beforeVol + " immediate after=" + afterVol);
+         "\" target vol=" + vol + " pan=" + pan + " | before=" + beforeVol + " immediate after=" + afterVol +
+         " | faderTouchHeld=" + faderTouchHeld[i]);
       (function (slotI, slotTrack, targetVol) {
          host.scheduleTask(function () {
             println("Mixer Snapshot RECALL slot " + slotI + " - delayed readback (500ms) vol=" +
