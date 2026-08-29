@@ -1822,6 +1822,7 @@ function safeInvokeAction(actionId, popupText) {
 
 // Host Objects
 var trackBank = null;
+var trackBankItems = []; // trackBank.getItemAt(0..7), cached once - see refreshMainCursors()
 var effectTrackBank = null; // "Returns" bank, shown when isViewingReturns is true
 var sceneBank = null; // MODE_SCENE (BTA): fixed 8-scene window, see sceneCursorIndex below
 
@@ -2258,7 +2259,7 @@ function refreshMainCursors() {
             mainLedState.select[i] = false;
          }
       } else {
-         mainTrackCursors[i].selectChannel(trackBank.getItemAt(i));
+         mainTrackCursors[i].selectChannel(trackBankItems[i]);
          mainCursorHasTrack[i] = true;
       }
    }
@@ -2434,6 +2435,8 @@ function init() {
 
    // Initialize Main Track Bank (8 tracks, 16 sends, 8 scenes)
    trackBank = host.createMainTrackBank(8, MAX_SENDS, 8);
+   // Cache each item once, like Returns already does - see refreshMainCursors()
+   trackBankItems = bankToTrackArray(trackBank);
 
    // Initialize Effect ("Returns") Track Bank - shown via the RETURNS button
    effectTrackBank = host.createEffectTrackBank(8, MAX_SENDS, 8);
