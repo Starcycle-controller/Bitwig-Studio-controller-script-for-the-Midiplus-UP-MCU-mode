@@ -109,7 +109,40 @@ already marks this full set for `mainTrackCursors`/`effectTrackBank`
 items - now mirrored for `trackBank`'s own items too, matching exactly
 (one `markInterested()` call per sub-accessor; there's no "interest
 inherited from the parent Parameter" shortcut - each has to be marked
-individually). **Not yet re-tested on hardware since this second fix.**
+individually). Confirmed working on hardware after this second fix -
+group-nested tracks' faders, encoders, and Fader Snap to Zero all
+behave correctly now.
+
+**Consistency review, requested directly**: asked whether the same bug
+could affect other sections/modes, since REC ARM, SOLO, MUTE, and the
+Mixer-mode encoder-push Pan Reset all read/write a track parameter
+through the exact same `activeTrackAt(i)`-through-`mainTrackCursors`
+pattern that was confirmed broken for volume/pan on a group-nested
+track. Pan Reset (`.pan().reset()`) is essentially the identical
+operation to the fader bug, just triggered by a button press instead of
+physical fader movement - very likely to have the same issue. REC
+ARM/SOLO/MUTE (`.arm()`/`.solo()`/`.mute()`, all `SettableBooleanValue`
+rather than `Parameter`) share the identical cursor mechanism but were
+never separately hardware-confirmed broken - given a wrong-track
+SOLO/MUTE/ARM on a group is a worse silent mistake than a fader glitch,
+all four were switched to the same `directTrackAt(i)` helper
+proactively (renamed from `faderTrackAt()` now that it covers more than
+faders) rather than waiting for each to be reported separately.
+`trackBank`'s own items also got `arm()`/`solo()`/`mute()`
+`markInterested()` in `init()`, alongside the existing volume()/pan()
+set. **Not yet tested on hardware for ARM/SOLO/MUTE/Pan Reset
+specifically.**
+
+Left unchanged, lower risk/lower stakes: SELECT (notes 24-31, including
+its double-press group-fold check), fader-touch select-on-touch, bank-
+scroll's own track selection, and the per-channel track-color LED/LCD
+output - all still go through `activeTrackAt()`. Selection-related ones
+(`selectInMixer()`/`selectInEditor()`/`cursorTrack.selectChannel()`,
+`isGroup()`/`isGroupExpanded()`) got extensive hardware testing earlier
+this session (see "Bank scrolling selects a track" below) with no
+reported misdirection issue, and track color is cosmetic only (wrong
+color, not a wrong control) - both worth keeping an eye on, but not
+proactively changed without evidence they're actually affected.
 
 ### Modes (`currentMode`)
 

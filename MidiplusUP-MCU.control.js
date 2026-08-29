@@ -1940,28 +1940,40 @@ function activeBankItemCount() {
    return hideDeactivatedTracksEnabled ? activeTrackRawIndices.length : trackBank.itemCount().get();
 }
 
-// Used ONLY by getFaderTarget()/getEncoderTarget() below, in place of
-// activeTrackAt(), for the specific volume()/pan() parameter targets a
-// hardware fader/encoder gets bound to. Reported and confirmed on
-// hardware: a group's first CHILD track's fader silently controlled the
-// GROUP's own volume instead of the child's - name/display resolution
-// via activeTrackAt() was correct (the LCD showed the child's real
-// name), only the volume()/pan() *parameter* binding was wrong. Bisected
-// against an earlier confirmed-working version of this script (before
-// the "Deactivated Tracks in Bank" feature existed) and found that the
+// Used in place of activeTrackAt() for every read/write of an actual
+// track PARAMETER (volume/pan/arm/solo/mute) - as opposed to display
+// text, selection, or track color, which stay on activeTrackAt() (the
+// mainTrackCursors indirection) since none of those have been shown to
+// have this problem. Reported and confirmed on hardware: a group's
+// first CHILD track's fader silently controlled the GROUP's own volume
+// instead of the child's - name/display resolution via activeTrackAt()
+// was correct (the LCD showed the child's real name), only the
+// volume()/pan() *parameter* binding was wrong. Bisected against an
+// earlier confirmed-working version of this script (before the
+// "Deactivated Tracks in Bank" feature existed) and found that the
 // working version bound faders straight to trackBank.getItemAt(i)
 // directly - no CursorTrack involved at all - whereas every version
 // since routes it through mainTrackCursors[i] (a persistent CursorTrack
 // re-pointed via selectChannel(), added specifically so Hide mode can
 // skip deactivated slots - see activeTrackAt() above). That CursorTrack
-// indirection is apparently unreliable for volume()/pan() specifically
+// indirection is apparently unreliable for parameter access specifically
 // on a track nested inside a group, even though the exact same cursor's
 // name()/other reads are fine. Fixed by going back to the direct,
 // confirmed-working trackBank.getItemAt(i) binding whenever Hide mode
 // isn't actually active (the common case, and where this was reported) -
 // Hide mode still needs the cursor indirection, since a plain TrackBank
 // can't skip slots the way it does, and hasn't been reported broken.
-function faderTrackAt(i) {
+//
+// Originally added just for getFaderTarget()/getEncoderTarget() (where
+// the bug was first found and confirmed), then extended on general
+// review to REC ARM/SOLO/MUTE toggles and the Mixer-mode encoder-push
+// Pan Reset (see handleButtonPressInner below) - same
+// activeTrackAt(i)-through-a-CursorTrack pattern, same group-adjacent
+// risk, just never separately hardware-confirmed broken the way the
+// fader was. Cheap and safe to cover proactively rather than wait for
+// each one to be reported separately, given a wrong-track SOLO/MUTE/ARM
+// on a group is a much worse mistake to make silently than a fader glitch.
+function directTrackAt(i) {
    if (isViewingReturns) {
       return effectTrackBank.getItemAt(i);
    }
@@ -2266,23 +2278,32 @@ function init() {
    trackBank.itemCount().markInterested();
    effectTrackBank.itemCount().markInterested();
 
-   // Mark trackBank's own 8 items' volume()/pan() interested directly (not
-   // just mainTrackCursors', see below) - see faderTrackAt() further down,
-   // used by getFaderTarget()/getEncoderTarget() to bind hardware faders/
-   // encoders straight to these plain bank items (Show All mode) instead
-   // of through the CursorTrack indirection, restoring the exact binding
-   // an earlier confirmed-working version of this script used. Full set
-   // matches setupChannelStripObservers() below exactly (that function
-   // does the same for mainTrackCursors/effectTrackBank items) - a first
-   // pass here only covered .value(), which was enough for basic fader
-   // motion but crashed on hardware ("Either call markInterested() or add
-   // at least one observer") the moment Fader Snap to Zero's
-   // target.discreteValueCount().get() ran against one of these targets,
-   // since that (and getOrigin()/discreteValueNames()/name(), needed by
-   // applyEncoderStep()/resolveOrigin() for the encoder side) were never
-   // marked. Every sub-value any fader/encoder-target consumer might call
-   // needs its own explicit markInterested() - there's no "interest
-   // inherited from the parent Parameter" shortcut.
+   // Mark trackBank's own 8 items' volume()/pan()/arm()/solo()/mute()
+   // interested directly (not just mainTrackCursors', see below) - see
+   // directTrackAt() further down, used by getFaderTarget()/
+   // getEncoderTarget() (volume/pan - hardware fader/encoder binding) and
+   // by REC ARM/SOLO/MUTE/Mixer-mode Pan Reset in handleButtonPressInner
+   // (arm/solo/mute/pan) to act on these plain bank items (Show All mode)
+   // instead of through the CursorTrack indirection, restoring the exact
+   // binding an earlier confirmed-working version of this script used.
+   // volume()/pan()'s full sub-value set matches setupChannelStripObservers()
+   // below exactly (that function does the same for mainTrackCursors/
+   // effectTrackBank items) - a first pass here only covered .value(),
+   // which was enough for basic fader motion but crashed on hardware
+   // ("Either call markInterested() or add at least one observer") the
+   // moment Fader Snap to Zero's target.discreteValueCount().get() ran
+   // against one of these targets, since that (and getOrigin()/
+   // discreteValueNames()/name(), needed by applyEncoderStep()/
+   // resolveOrigin() for the encoder side) were never marked. Every
+   // sub-value any consumer might call needs its own explicit
+   // markInterested() - there's no "interest inherited from the parent
+   // Parameter" shortcut. arm()/solo()/mute() only need the plain
+   // boolean itself (SOLO/MUTE's handlers call .get() before .set(), REC
+   // ARM only .toggle()s) - marked here too since REC ARM/SOLO/MUTE were
+   // never separately hardware-confirmed broken like the fader was, but
+   // share the exact same activeTrackAt()-through-a-CursorTrack pattern
+   // that WAS confirmed broken for volume/pan on a group-nested track, so
+   // covered proactively rather than waiting for a separate report.
    for (var directTrackIdx = 0; directTrackIdx < 8; directTrackIdx++) {
       var directVolume = trackBank.getItemAt(directTrackIdx).volume();
       directVolume.markInterested();
@@ -2300,6 +2321,9 @@ function init() {
       directPan.getOrigin().markInterested();
       directPan.name().markInterested();
       directPan.displayedValue().markInterested();
+      trackBank.getItemAt(directTrackIdx).arm().markInterested();
+      trackBank.getItemAt(directTrackIdx).solo().markInterested();
+      trackBank.getItemAt(directTrackIdx).mute().markInterested();
    }
 
    // Show All mode's mainTrackCursors only get re-pointed at
@@ -4509,7 +4533,7 @@ function handleButtonPressInner(note) {
    if (note >= 0 && note <= 7) {
       // Rec Arm 1-8
       if (isMainSlotEmpty(note)) { return; }
-      activeTrackAt(note).arm().toggle();
+      directTrackAt(note).arm().toggle();
       return;
    }
    if (note >= 8 && note <= 15) {
@@ -4518,7 +4542,7 @@ function handleButtonPressInner(note) {
       // showBottomRowPopup()).
       var soloIdx = note - 8;
       if (isMainSlotEmpty(soloIdx)) { return; }
-      var soloTrack = activeTrackAt(soloIdx);
+      var soloTrack = directTrackAt(soloIdx);
       var newSoloState = !soloTrack.solo().get();
       soloTrack.solo().set(newSoloState);
       showBottomRowPopup(soloIdx, newSoloState ? "SOLO" : "UNSOLO");
@@ -4529,7 +4553,7 @@ function handleButtonPressInner(note) {
       // momentary MUTE/UNMUTE LCD popup.
       var muteIdx = note - 16;
       if (isMainSlotEmpty(muteIdx)) { return; }
-      var muteTrack = activeTrackAt(muteIdx);
+      var muteTrack = directTrackAt(muteIdx);
       var newMuteState = !muteTrack.mute().get();
       muteTrack.mute().set(newMuteState);
       showBottomRowPopup(muteIdx, newMuteState ? "MUTE" : "UNMUTE");
@@ -4568,7 +4592,7 @@ function handleButtonPressInner(note) {
          // target) caused real problems on hardware across several
          // implementations and was reverted; see git history if revisiting
          // a volume-reset feature here.
-         if (!isMainSlotEmpty(encIdx)) { activeTrackAt(encIdx).pan().reset(); }
+         if (!isMainSlotEmpty(encIdx)) { directTrackAt(encIdx).pan().reset(); }
       } else if (currentMode === MODE_SENDS) {
          var resetSendIdx = (sendBankPage * 8) + encIdx;
          cursorTrack.sendBank().getItemAt(resetSendIdx).reset();
@@ -5344,7 +5368,7 @@ function getFaderTarget(i) {
       if (currentMode === MODE_MIXER && isToolVolumeMode) {
          return getToolParam(i, 0);
       }
-      return faderTrackAt(i).volume();
+      return directTrackAt(i).volume();
    }
    if (currentMode === MODE_DEVICE) {
       return remoteControls.getParameter(i);
@@ -5352,7 +5376,7 @@ function getFaderTarget(i) {
    if (isToolVolumeMode) {
       return getToolParam(i, 1);
    }
-   return faderTrackAt(i).pan();
+   return directTrackAt(i).pan();
 }
 
 // Same as getFaderTarget(), except also covers the master fader (index 8,
@@ -5389,12 +5413,12 @@ function getEncoderTarget(i) {
       if (currentMode === MODE_MIXER && isToolVolumeMode) {
          return getToolParam(i, 1);
       }
-      return faderTrackAt(i).pan();
+      return directTrackAt(i).pan();
    }
    if (currentMode === MODE_MIXER && isToolVolumeMode) {
       return getToolParam(i, 0);
    }
-   return faderTrackAt(i).volume();
+   return directTrackAt(i).volume();
 }
 
 // Re-binds each of the 8 hwFaders to whichever Parameter they should
