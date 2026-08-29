@@ -2259,6 +2259,12 @@ function refreshMainCursors() {
             mainLedState.select[i] = false;
          }
       } else {
+         // TEMPORARY DIAGNOSTIC - logs the real source track's own name
+         // right before selectChannel(), so we can tell apart "the 8
+         // source tracks in trackBankItems are already collapsed" from
+         // "the source is fine but selectChannel()/CursorTrack loses it".
+         println("refreshMainCursors source - index=" + i + " trackBankItems name=\"" +
+            trackBankItems[i].name().get() + "\"");
          mainTrackCursors[i].selectChannel(trackBankItems[i]);
          mainCursorHasTrack[i] = true;
       }
@@ -3330,8 +3336,25 @@ function init() {
    // representation (per isActiveFn) writes to the shared display
    // caches / LEDs.
    var effectTrackBankItems = bankToTrackArray(effectTrackBank);
+   // Show All mode: bypass the mainTrackCursors/CursorTrack indirection
+   // entirely and read straight off trackBankItems (plain trackBank.
+   // getItemAt(i) proxies), matching Returns' own pattern and the same
+   // fix already applied to directTrackAt() for volume/pan/arm/solo/mute
+   // (see directTrackAt() above - a group-adjacent track's *parameter*
+   // access was confirmed unreliable through mainTrackCursors, fixed by
+   // bypassing it whenever Hide mode is off). All 8 LCD columns/SELECT
+   // LEDs collapsing onto whichever track fader 8 pointed at turned out
+   // to be the same CursorTrack unreliability, just showing up in the
+   // *display* path (isSelectedInMixer/volume().displayedValue()) this
+   // time instead of the parameter path - so the same bypass applies here.
+   setupChannelStripObservers(trackBankItems, mainLedState, function (index) {
+      return !isViewingReturns && !hideDeactivatedTracksEnabled;
+   });
+   // Hide mode still needs mainTrackCursors - a plain TrackBank can't
+   // skip/shift slots to hide deactivated tracks the way selectChannel()
+   // -driven cursors do.
    setupChannelStripObservers(mainTrackCursors, mainLedState, function (index) {
-      return !isViewingReturns && (!hideDeactivatedTracksEnabled || mainCursorHasTrack[index]);
+      return !isViewingReturns && hideDeactivatedTracksEnabled && mainCursorHasTrack[index];
    });
    setupChannelStripObservers(effectTrackBankItems, returnsLedState, function () {
       return isViewingReturns;
