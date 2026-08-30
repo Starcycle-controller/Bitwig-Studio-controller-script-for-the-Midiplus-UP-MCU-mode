@@ -45,30 +45,36 @@ Bitwig's native MCU protocol.
 
 ### One-time setup
 
-> **Takeover Mode - there's a real per-controller override, use it instead
-> of the global setting.** Bitwig's **Takeover Mode** preference (Settings
-> -> Controllers, top of the page) - Pick Up (Catch) / Jump (Immediate) /
-> Value Scaling - is the *default* for every connected controller, and
-> changing it there affects all of them at once. **But each controller's
-> own row in that same Settings -> Controllers list has its own small icon
-> row bottom-left, and the one shaped like a fader toggles whether *that*
-> controller follows the global setting at all** - switched off, that one
-> controller unconditionally uses Immediate (Jump) regardless of what the
-> global preference is set to, and every other connected controller is
-> completely unaffected. There's no way to lock a controller to Pick
-> Up/Catch specifically while the global default is Jump (the per-controller
-> toggle only ever forces Immediate, it can't select a different explicit
-> mode) - but for "I want fast/immediate response from this controller's
-> encoders without changing anything about my other gear," this toggle is
-> the right tool, not the global preference. **Recommended setup:** leave
-> the global Takeover Mode on its safer default (Pick Up/Catch), and switch
-> off the per-controller toggle on the Midiplus UP's own row instead - this
-> script's own faders are motorized and always jump immediately regardless
-> of this setting either way (`disableTakeOver()` opts each fader out
+> **Critical: Takeover Mode is (in practice) a Bitwig Studio-wide setting -
+> check it before relying on it.** Bitwig's own documentation describes a
+> per-controller override (an icon on each controller's row in Settings ->
+> Controllers that forces it to Immediate regardless of the global
+> setting) - but **checked directly against a real Bitwig Studio 6.1
+> session, that icon does not appear to exist**: the Midiplus UP's actual
+> icon row there (settings/gear, controller visualizations/speech-bubble, a
+> grid icon, a color-tag icon, and a "scroll GUI to follow controller"
+> crosshair icon) was checked one by one, and none of them toggles Takeover
+> Mode. So for Bitwig 6.1 specifically, the **global** Takeover Mode
+> dropdown (Settings -> Controllers, top of the page) - Pick Up (Catch) /
+> Jump (Immediate) / Value Scaling - appears to be the only lever actually
+> available, and it **applies to every connected controller at once**.
+> This project's own faders are motorized and always jump immediately
+> regardless of this setting (`disableTakeOver()` opts each fader out
 > individually, since the motor physically drives it to match the real
-> value), so the toggle mainly matters for its encoders. See API Feature
-> Request #12 in `BITWIG-API-FEATURE-REQUESTS.md` and `patches/README.md`'s
-> "Follow-up lead" section for the fuller background and retest status.
+> value - there's nothing to catch up on). But **if you switch the global
+> preference to Jump/Immediate for this controller's own encoders, that
+> same change also applies to every other controller you have connected** -
+> most importantly, any **non-motorized** controller's knobs will then jump
+> a parameter instantly to match the knob's physical position the moment
+> it's touched, instead of requiring a catch-up gesture first. If you use
+> more than one MIDI controller with Bitwig (common), check this setting's
+> effect on your *other* gear before changing it for this one - there's no
+> confirmed way to isolate it to just this controller in 6.1. See API
+> Feature Request #12 in `BITWIG-API-FEATURE-REQUESTS.md` for the full
+> back-and-forth on this (an earlier version of this warning, and of that
+> feature request, incorrectly said the per-controller override was
+> confirmed working - it wasn't; this is the corrected version) and
+> `patches/README.md`'s "Follow-up lead" section for background.
 
 1. In Bitwig, go to **Settings -> Controllers**, add this script, and
    confirm the Midiplus UP is switched to standard **MCU mode** (hardware

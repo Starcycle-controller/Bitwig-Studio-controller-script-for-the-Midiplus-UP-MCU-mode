@@ -229,33 +229,38 @@ elsewhere in Bitwig), and a fader position self-test.
 <h2 id="setup">2. One-Time Setup</h2>
 
 <div class="callout warning">
-<span class="label">Takeover Mode - use the per-controller override</span>
+<span class="label">Critical - read before changing this in Bitwig</span>
 <p>
-Bitwig's <strong>Takeover Mode</strong> preference (Settings -&gt;
-Controllers, top of the page) - Pick Up (Catch) / Jump (Immediate) / Value
-Scaling - is the <em>default</em> for every connected controller, and
-changing it there affects all of them at once. But <strong>each
-controller's own row in that same list has a small icon row bottom-left,
-and the fader-shaped icon toggles whether that controller follows the
-global setting at all</strong> - switched off, that one controller
-unconditionally uses Immediate (Jump) regardless of the global value, and
-every other connected controller is completely unaffected.
+Bitwig's own documentation describes a per-controller override for
+<strong>Takeover Mode</strong> - an icon on each controller's row in
+Settings -&gt; Controllers that forces it to Immediate regardless of the
+global setting. <strong>Checked directly against a real Bitwig Studio 6.1
+session, that icon does not appear to exist</strong>: the actual icon row
+there (settings, controller visualizations, a grid icon, a color-tag icon,
+and a "scroll GUI to follow controller" crosshair icon) was checked one by
+one, and none of them toggles Takeover Mode.
 </p>
 <p>
-This script's own faders are motorized and always jump immediately
-regardless of this setting either way - the motor physically drives the
-fader to match the real value, so there is nothing to catch up on - so the
-toggle mainly matters for this controller's encoders.
-<strong>Recommended setup:</strong> leave the global Takeover Mode on its
-safer default (Pick Up/Catch), and switch off the per-controller toggle on
-the Midiplus UP's own row instead of changing the global default - that
-way no other connected controller is affected.
+So for Bitwig 6.1 specifically, the <strong>global</strong> Takeover Mode
+dropdown (Settings -&gt; Controllers, top of the page - Pick Up (Catch) /
+Jump (Immediate) / Value Scaling) appears to be the only lever actually
+available, and it <strong>applies to every connected controller at
+once</strong>. This script's own faders are motorized and always jump
+immediately regardless of this setting - the motor physically drives the
+fader to match the real value, so there is nothing to catch up on. But if
+you switch the global preference to Jump/Immediate for this controller's
+own encoders, that same change also applies to every
+<strong>other</strong> controller you have connected - most importantly,
+any <strong>non-motorized</strong> controller's knobs will then jump a
+parameter instantly to match the knob's physical position the moment it
+is touched, instead of requiring a catch-up gesture first.
 </p>
 <p>
-Note the per-controller toggle can only force Immediate; it can't lock a
-controller to a specific non-default mode (e.g. Pick Up) while the global
-default is something else. See <code>BITWIG-API-FEATURE-REQUESTS.md</code>
-#12 and <code>patches/README.md</code> for the full background.
+If you use more than one MIDI controller with Bitwig - a common setup -
+check this setting's effect on your other gear before changing it for
+this one; there is no confirmed way to isolate it to just this controller
+in 6.1. See <code>BITWIG-API-FEATURE-REQUESTS.md</code> #12 for the full
+back-and-forth on this finding.
 </p>
 </div>
 

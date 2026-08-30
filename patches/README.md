@@ -106,24 +106,21 @@ either way.
 
 **Update: the live Bitwig preference was switched from Pick Up (Catch) to
 Jump (Immediate)** for day-to-day use, not just a throwaway-branch retest.
-Originally documented here (and in an earlier version of API Feature
-Request #12) as a single Bitwig Studio-wide preference with no
-per-controller scoping at all - **that was wrong**, corrected against
-Bitwig's own user guide: Settings -> Controllers' global Takeover Mode
-value is only the *default*; each controller's own row in that list has
-its own icon (the fader-shaped one) that toggles whether that specific
-controller follows the global setting or unconditionally forces Immediate,
-independent of every other connected controller. See the corrected setup
-guidance in the main README's Quick Start section and the corrected API
-Feature Request #12 in `BITWIG-API-FEATURE-REQUESTS.md` - the recommended
-setup is now to leave the *global* default on the safer Pick Up/Catch and
-use this controller's own per-controller toggle to force Immediate just
-for it, rather than changing the global default at all.
+This section (and API Feature Request #12) went through a full round trip
+on whether that switch is Studio-wide or per-controller - see #12 in
+`BITWIG-API-FEATURE-REQUESTS.md` for the whole back-and-forth. Landed on:
+**Studio-wide, confirmed by checking a real Bitwig Studio 6.1 session's
+Controllers panel icon by icon.** Bitwig's own documentation describes a
+per-controller override icon, but it isn't reachable anywhere in the
+actual 6.1 UI tested (the Midiplus UP entry's 5 icons were each clicked
+and identified: settings, visualizations, an unrelated grid icon, a
+color-tag, and a "scroll GUI to follow controller" crosshair - none of
+them toggles Takeover Mode). So the global Settings -> Controllers ->
+Takeover Mode dropdown is, in practice, the only lever available, and
+switching it affects every connected controller.
 
-Retesting this script's own behavior under Jump (whether reached via the
-global default or the per-controller toggle - both produce the same
-Immediate behavior for this controller) is planned but not yet done as of
-this note, including whether the Mixer Snapshot readback/LCD-freeze
-symptoms above still reproduce, or were specific to the diagnostic code
-removed since - update this section with the result once that retest
-happens.
+Retesting this script's own behavior under the live Jump setting -
+including whether the Mixer Snapshot readback/LCD-freeze symptoms above
+still reproduce, or were specific to the diagnostic code removed since -
+is planned but not yet done as of this note - update this section with
+the result once that retest happens.
