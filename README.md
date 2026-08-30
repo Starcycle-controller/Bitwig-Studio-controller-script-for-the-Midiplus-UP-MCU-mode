@@ -369,18 +369,23 @@ popup.
 **Scope limitation, hardware-confirmed:** this only works for values that
 are genuine Bitwig `Parameter` objects (device/mixer knobs, sends, macros,
 and similar) - it does **not** work for every visually-editable field in
-Bitwig's GUI. Confirmed on hardware: clicking a clip's fade-length field in
-the Inspector panel, then using ALT+Wheel, has no effect, and the popup
-comes back completely empty (now shown as "No Parameter" - see above) -
-meaning `host.createLastClickedParameter()` never resolved the click to
-anything at all, not just that the resulting value failed to move. Clip
-fade appears to sit entirely outside Bitwig's generic addressable-parameter
-system (consistent with API Feature Request #11 - there's no `Clip` fade
-API either), unreachable through this "whatever was last clicked" escape
-hatch no matter how reliably the click/ALT themselves are registered. If a
-wheel turn doesn't move something you clicked, this GUI-element scope gap -
-not a modifier detection issue - is the most likely reason; see
-`BITWIG-API-FEATURE-REQUESTS.md` #11.
+Bitwig's GUI. Confirmed on hardware for **both** an audio clip's
+fade-length field **and** its Inspector-panel "Expressions" values (base
+Gain/volume, Tuning/transpose) - clicking either, then using ALT+Wheel, has
+no effect, and the popup comes back completely empty (now shown as "No
+Parameter" - see above) - meaning `host.createLastClickedParameter()`
+never resolved the click to anything at all, not just that the resulting
+value failed to move. The whole family of clip/audio-event-level static
+properties shown in the Inspector appears to sit entirely outside Bitwig's
+generic addressable-parameter system (consistent with API Feature Request
+#11 - there's no audio-event API at all), unreachable through this
+"whatever was last clicked" escape hatch no matter how reliably the
+click/ALT themselves are registered. (This is separate from - and doesn't
+imply anything about - genuine per-note Expression data on individual
+notes within a MIDI/instrument clip's Detail/Note editor, which wasn't
+tested; see Feature Request #11.) If a wheel turn doesn't move something
+you clicked, this GUI-element scope gap - not a modifier detection issue -
+is the most likely reason; see `BITWIG-API-FEATURE-REQUESTS.md` #11.
 
 **ALT + Jog Wheel Press** (push the wheel while holding ALT, note 101)
 attempts to select whatever's at the current GUI focus, via

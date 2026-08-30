@@ -209,7 +209,7 @@ which the API already has enough information to construct) - or at
 minimum, a small helper for "call this when a bound value changes" so
 every script doesn't reimplement the same flush-polling loop.
 
-## 11. No API access to audio clip/event fade in/out at all
+## 11. No API access to audio clip/event properties at all (fade, gain, tuning/Expressions)
 
 **What broke:** unlike every other gap above, this one has no
 workaround in this script at all - there's nothing to work around with,
@@ -259,6 +259,33 @@ user just clicked" escape hatch that normally works for arbitrary GUI
 controls. (This script's own popup now shows a clear "No Parameter" message
 instead of a blank box when this happens, so the failure reads as a known
 limitation rather than looking like a bug.)
+
+**Scope confirmed broader than just fade:** the Inspector panel's
+**Expressions** section for an audio clip (its base **Gain**/volume and
+**Tuning**/transpose values, distinct from the fade handles) was tested
+the identical way - click the field, ALT+Wheel - and produced the exact
+same empty-popup result. So this isn't a fade-specific gap: the whole
+family of clip/audio-event-level static properties shown under
+"Expressions" in the Inspector is equally unreachable, for the same
+underlying reason (no audio-event object exists anywhere in the
+Controller API to read or write any of it from).
+
+**Distinct from real per-note Expressions, which may actually be
+reachable (unverified):** Bitwig also has genuine per-note Expression
+data (MPE-style Gain/Pan/Timbre/Pressure/Transpose on individual notes
+within a MIDI/instrument clip), edited via lanes in the clip's Detail/Note
+editor - a completely different feature from the audio-clip-level
+Expressions above, despite the shared name and adjacent action ids
+(`toggle_edit_note_gain_expression` etc., see `bitwig-actions-reference.txt`).
+Per-note data lives on individual `NoteStep` objects, part of the
+note-grid/step-sequencer domain this write-up already noted **is**
+covered by the Controller API's `Clip` interface (unlike the audio-event
+level). Whether `NoteStep` actually exposes real getters/setters for
+these expression values wasn't confirmed against a current primary source
+this round (the community stub mirrors reachable turned out to predate
+`NoteStep`'s introduction) - worth a fresh, targeted investigation if
+per-note expression control on MIDI/instrument clips becomes an actual
+goal, rather than assuming it shares audio-clip Expressions' dead end.
 
 ## 12. Takeover Mode is one Studio-wide setting, not per-controller - and isn't readable from script
 
