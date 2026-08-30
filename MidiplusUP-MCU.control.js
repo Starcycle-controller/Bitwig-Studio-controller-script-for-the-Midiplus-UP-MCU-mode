@@ -4756,6 +4756,18 @@ function onMidi(status, data1, data2) {
       var backwards = data2 >= 64;
       var rawStep = backwards ? -(data2 - 64) : data2;
 
+      // TEMPORARY DIAGNOSTIC - re-added to get an unconfounded trace for
+      // the CTRL+Wheel clip-selection trial (see the CTRL branch below).
+      // Remove once "Move selection cursor left/right" is confirmed or
+      // reverted. CC60 is normally excluded from the generic raw-CC
+      // logger below to avoid per-tick spam, so this is the only way to
+      // see wheel activity correlated with modifier state at all.
+      debugLog(DEBUG_RAW_MIDI, "RAW Wheel CC60 received - data2=" + data2 +
+         " backwards=" + backwards + " rawStep=" + rawStep +
+         " [SHIFT=" + isShiftPressed + " OPTION=" + isOptionPressed +
+         " CTRL=" + isControlPressed + " ALT=" + isAltPressed +
+         " mode=" + currentMode + "]");
+
       if (currentMode === MODE_SCENE) {
          // BTA / Scene Mode: plain wheel turn moves the selected-scene
          // cursor within the 8-scene bank window (see sceneCursorIndex
@@ -4849,19 +4861,29 @@ function onMidi(status, data1, data2) {
          // move_selection_cursor_to_next_item/_previous_item (a different
          // action family, confirmed to exist via
          // bitwig-actions-reference.txt and independently via a real
-         // third-party extension's action list) DOES do something, but
-         // hardware-confirmed to move the TRACK/channel selection (the
-         // per-channel ORANGE "selected" indicator visibly stepped
-         // between columns) rather than stepping between clips in time on
-         // the current track - not what this is for, so reverted.
-         // "Select next/previous item" remains the only action in this
-         // whole family confirmed to actually move the ARRANGER CLIP
-         // selection on hardware, so it's worth keeping despite its own
-         // quirk: once there's no further item in one direction on the
-         // current track, it jumps to the next/previous track's item
-         // instead of stopping - a working action with an occasional side
-         // effect beats a "correct" one that does the wrong thing
-         // entirely.
+         // third-party extension's action list) DOES do something, and
+         // was ORIGINALLY thought (based on a hardware log showing the
+         // per-channel ORANGE "selected" indicator stepping between
+         // columns while turning the wheel) to move the TRACK/channel
+         // selection rather than stepping between clips in time - but
+         // that conclusion is UNCONFIRMED: a later test session found the
+         // same ORANGE-stepping pattern appearing in a log with no
+         // correlated CTRL/wheel activity at all, traced to unrelated
+         // causes (keyboard track navigation in one case). The diagnostic
+         // logging below (RAW Wheel CC60 received) was re-added
+         // specifically to get a clean, correlated trace before trusting
+         // any conclusion about this action family again - don't treat
+         // the "moves track selection" claim as settled until retested
+         // with it.
+         // "Select next/previous item" is the only action in this whole
+         // family CLEANLY confirmed (LCD channel-strip content changing
+         // in lockstep with wheel turns, no other explanation possible)
+         // to actually move the ARRANGER CLIP selection on hardware, so
+         // it's worth keeping despite its own quirk: once there's no
+         // further item in one direction on the current track, it jumps
+         // to the next/previous track's item instead of stopping - a
+         // working action with an occasional side effect beats a
+         // "correct" one that does the wrong thing entirely.
          //
          // TRIAL - unconfirmed on hardware as of this commit. Trying
          // "Move selection cursor left"/"Move selection cursor right"
@@ -4869,10 +4891,13 @@ function onMidi(status, data1, data2) {
          // bitwig-actions-reference.txt) - untested until now, and the
          // most promising remaining candidate: left/right is a horizontal
          // (time) axis, as opposed to move_selection_cursor_to_next/
-         // previous_item's vertical (track/lane) axis already
-         // disproven above, or "Move cursor to next/previous lane" which
-         // sounds like the same vertical axis by another name. If this
-         // also turns out to move the wrong thing (or nothing), revert to
+         // previous_item's vertical (track/lane) axis discussed above, or
+         // "Move cursor to next/previous lane" which sounds like the same
+         // vertical axis by another name. Needs a clean test (CTRL held
+         // continuously, wheel turned, diagnostic log below correlated
+         // against direct visual observation of the Arranger) before
+         // trusting the result either way. If this also turns out to
+         // move the wrong thing (or nothing), revert to
          // "Select next item"/"Select previous item" (see git history
          // around this commit).
          clipSelectStepAccumulator++;
