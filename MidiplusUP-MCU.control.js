@@ -4835,33 +4835,32 @@ function onMidi(status, data1, data2) {
          }
 
          // CTRL + Jog Wheel (outside Device mode): select the next/
-         // previous arranger clip/item, via Bitwig's real "Select Next
-         // Item"/"Select Previous Item" actions (ids "Select next item"/
-         // "Select previous item", confirmed from
-         // bitwig-actions-reference.txt) - once every
-         // CLIP_SELECT_STEP_MESSAGES messages (its own dedicated,
-         // independently configurable threshold - see above). Briefly
-         // swapped to "Select item to left"/"Select item to right"
-         // (hoping for same-track-only stepping, since these actions
-         // don't stay confined to the current track - see below), but
-         // reverted after confirming on hardware that those two do
-         // nothing at all, even with a clip already selected - same
-         // pattern as select_item_at_cursor and Select item above/below
-         // (all apparently non-functional when invoked via the Controller
-         // API, despite being real, named Bitwig actions). "Select next/
-         // previous item" is the only one of this whole family confirmed
-         // to actually change the selection on hardware, so it's worth
-         // keeping despite its own quirk: once there's no further item in
-         // one direction on the current track, it jumps to the next/
-         // previous track's item instead of stopping - a working action
-         // with an occasional side effect beats a "correct" one that does
-         // nothing. Replaces the previous tempo-nudge behavior per
-         // request; use SHIFT+ALT + Jog Wheel Press/Turn (see below) to
-         // select and then move a clip instead.
+         // previous arranger clip/item - once every CLIP_SELECT_STEP_MESSAGES
+         // messages (its own dedicated, independently configurable
+         // threshold - see above).
+         //
+         // TRIAL - unconfirmed on hardware as of this commit. Previously
+         // used "Select next item"/"Select previous item" (ids "Select
+         // next item"/"Select previous item"), the only action confirmed
+         // to work at all out of a whole family tried - "Select item to
+         // left/right", select_item_at_cursor, and Select item above/
+         // below all confirmed to do nothing via the Controller API
+         // despite being real, named Bitwig actions - but with its own
+         // quirk: once there's no further item in one direction on the
+         // current track, it jumps to the next/previous track's item
+         // instead of stopping. Trying move_selection_cursor_to_next_item/
+         // move_selection_cursor_to_previous_item instead - a DIFFERENT
+         // action family (confirmed to exist via bitwig-actions-reference.txt
+         // and independently via a real third-party extension's action
+         // list) never tried before, on the chance it behaves closer to
+         // track-confined. If this also turns out non-functional or no
+         // better, revert to "Select next item"/"Select previous item"
+         // (see git history around this commit).
          clipSelectStepAccumulator++;
          if (clipSelectStepAccumulator >= CLIP_SELECT_STEP_MESSAGES) {
             clipSelectStepAccumulator = 0;
-            safeInvokeAction(backwards ? "Select previous item" : "Select next item", null);
+            safeInvokeAction(backwards ? "move_selection_cursor_to_previous_item" :
+               "move_selection_cursor_to_next_item", null);
          }
          return;
       }
