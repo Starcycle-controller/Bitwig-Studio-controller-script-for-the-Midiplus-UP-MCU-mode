@@ -1196,7 +1196,7 @@ function scheduleFaderSnapZeroCheck(index, target) {
       if (faderSnapZeroGeneration[index] !== myGeneration) {
          return;
       }
-      if (!faderSnapToZeroEnabled || faderTouchHeld[index]) {
+      if (!faderSnapToZeroEnabled || faderTouchHeld[index] || !target) {
          return;
       }
       if (target.discreteValueCount().get() > 0) {
@@ -1290,7 +1290,7 @@ function scheduleFaderSnapDbMarkCheck(index, target, isVolumeTarget) {
       if (faderSnapDbMarkGeneration[index] !== myGeneration) {
          return;
       }
-      if (!faderSnapToDbMarksEnabled || faderTouchHeld[index] || !isVolumeTarget) {
+      if (!faderSnapToDbMarksEnabled || faderTouchHeld[index] || !isVolumeTarget || !target) {
          return;
       }
       var current = target.get();
