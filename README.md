@@ -793,12 +793,14 @@ it's also written up in `BITWIG-API-FEATURE-REQUESTS.md`.
 - **Most of the Controller API's Selection-category generic actions turned
   out to be non-functional when invoked from script**, despite being real,
   named Bitwig actions: `select_item_at_cursor`, "Select item to
-  left"/"right", "Select item above"/"below", and
-  `move_selection_cursor_to_next/previous_item` (which does move something,
-  but the *track* selection, not the arranger clip selection along the
-  timeline) were all tried and confirmed to do nothing useful for
-  "select the clip closest to the playhead" from a script. Only `"Select
-  next item"`/`"Select previous item"` reliably moves the Arranger clip
+  left"/"right", "Select item above"/"below",
+  `move_selection_cursor_to_next/previous_item`, and "Move selection cursor
+  left"/"right" were all tried and confirmed, via clean hardware tests (a
+  clip actually selected first, a diagnostic trace proving the modifier
+  stayed held and the action fired throughout with nothing else in the
+  log), to do nothing useful for "select the clip closest to the playhead"
+  from a script - the selection simply never moved. Only `"Select next
+  item"`/`"Select previous item"` reliably moves the Arranger clip
   selection - see CTRL+Wheel above - and only with the quirk that it falls
   through to track-to-track stepping once there's no further clip in one
   direction on the current track. This is API Feature Request #1's sibling

@@ -4771,18 +4771,6 @@ function onMidi(status, data1, data2) {
       var backwards = data2 >= 64;
       var rawStep = backwards ? -(data2 - 64) : data2;
 
-      // TEMPORARY DIAGNOSTIC - re-added to get an unconfounded trace for
-      // the CTRL+Wheel clip-selection trial (see the CTRL branch below).
-      // Remove once "Move selection cursor left/right" is confirmed or
-      // reverted. CC60 is normally excluded from the generic raw-CC
-      // logger below to avoid per-tick spam, so this is the only way to
-      // see wheel activity correlated with modifier state at all.
-      debugLog(DEBUG_RAW_MIDI, "RAW Wheel CC60 received - data2=" + data2 +
-         " backwards=" + backwards + " rawStep=" + rawStep +
-         " [SHIFT=" + isShiftPressed + " OPTION=" + isOptionPressed +
-         " CTRL=" + isControlPressed + " ALT=" + isAltPressed +
-         " mode=" + currentMode + "]");
-
       if (currentMode === MODE_SCENE) {
          // BTA / Scene Mode: plain wheel turn moves the selected-scene
          // cursor within the 8-scene bank window (see sceneCursorIndex
@@ -4870,55 +4858,31 @@ function onMidi(status, data1, data2) {
          // independently configurable threshold - see above).
          //
          // Tried and reverted, in order: "Select item to left/right",
-         // select_item_at_cursor, and Select item above/below all
-         // confirmed to do nothing via the Controller API despite being
-         // real, named Bitwig actions.
-         // move_selection_cursor_to_next_item/_previous_item (a different
-         // action family, confirmed to exist via
-         // bitwig-actions-reference.txt and independently via a real
-         // third-party extension's action list) DOES do something, and
-         // was ORIGINALLY thought (based on a hardware log showing the
-         // per-channel ORANGE "selected" indicator stepping between
-         // columns while turning the wheel) to move the TRACK/channel
-         // selection rather than stepping between clips in time - but
-         // that conclusion is UNCONFIRMED: a later test session found the
-         // same ORANGE-stepping pattern appearing in a log with no
-         // correlated CTRL/wheel activity at all, traced to unrelated
-         // causes (keyboard track navigation in one case). The diagnostic
-         // logging below (RAW Wheel CC60 received) was re-added
-         // specifically to get a clean, correlated trace before trusting
-         // any conclusion about this action family again - don't treat
-         // the "moves track selection" claim as settled until retested
-         // with it.
+         // select_item_at_cursor, "Select item above/below", and
+         // move_selection_cursor_to_next_item/_previous_item all confirmed
+         // to do nothing useful via the Controller API despite being real,
+         // named Bitwig actions - the last of those was originally
+         // suspected (from an ambiguous hardware log) to move the TRACK/
+         // channel selection instead of clip selection, but that specific
+         // claim was never cleanly re-confirmed and doesn't matter now
+         // either way, since it's not in use.
+         // "Move selection cursor left"/"Move selection cursor right" was
+         // the most recent trial - cleanly tested with a diagnostic log
+         // proving CTRL stayed held and the wheel fired throughout (no
+         // other confounding activity in the trace), against a clip
+         // actually selected in the Arranger beforehand: confirmed on
+         // hardware that the selection did NOT move at all. Also reverted.
          // "Select next/previous item" is the only action in this whole
-         // family CLEANLY confirmed (LCD channel-strip content changing
-         // in lockstep with wheel turns, no other explanation possible)
-         // to actually move the ARRANGER CLIP selection on hardware, so
-         // it's worth keeping despite its own quirk: once there's no
-         // further item in one direction on the current track, it jumps
-         // to the next/previous track's item instead of stopping - a
-         // working action with an occasional side effect beats a
-         // "correct" one that does the wrong thing entirely.
-         //
-         // TRIAL - unconfirmed on hardware as of this commit. Trying
-         // "Move selection cursor left"/"Move selection cursor right"
-         // instead (ids match their display names exactly, confirmed from
-         // bitwig-actions-reference.txt) - untested until now, and the
-         // most promising remaining candidate: left/right is a horizontal
-         // (time) axis, as opposed to move_selection_cursor_to_next/
-         // previous_item's vertical (track/lane) axis discussed above, or
-         // "Move cursor to next/previous lane" which sounds like the same
-         // vertical axis by another name. Needs a clean test (CTRL held
-         // continuously, wheel turned, diagnostic log below correlated
-         // against direct visual observation of the Arranger) before
-         // trusting the result either way. If this also turns out to
-         // move the wrong thing (or nothing), revert to
-         // "Select next item"/"Select previous item" (see git history
-         // around this commit).
+         // family confirmed to actually move the ARRANGER CLIP selection
+         // on hardware, so it's back in place despite its own quirk: once
+         // there's no further item in one direction on the current track,
+         // it jumps to the next/previous track's item instead of stopping -
+         // a working action with an occasional side effect beats several
+         // "correct"-sounding ones that do nothing at all.
          clipSelectStepAccumulator++;
          if (clipSelectStepAccumulator >= CLIP_SELECT_STEP_MESSAGES) {
             clipSelectStepAccumulator = 0;
-            safeInvokeAction(backwards ? "Move selection cursor left" : "Move selection cursor right", null);
+            safeInvokeAction(backwards ? "Select previous item" : "Select next item", null);
          }
          return;
       }
