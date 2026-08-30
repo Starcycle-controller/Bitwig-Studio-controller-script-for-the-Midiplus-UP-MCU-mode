@@ -232,13 +232,45 @@ settable fade-in and fade-out length (and ideally curve shape), so a
 hardware controller could support hands-free clip editing the same way
 it already does for track volume/pan/sends.
 
----
+## 12. Takeover Mode is one Studio-wide setting, not per-controller - and isn't readable from script
 
-Not included above but worth a mention if this becomes an actual
-submission: Bitwig's global **Takeover Mode** preference (Pick Up /
-Jump / Value Scaling) isn't readable from script at all, and its exact
-interaction with a script's own `.set()` calls on a bound parameter was
-never fully pinned down during this project (see
-`patches/README.md`'s "Follow-up lead" section) - a readable value plus
-clearer documentation of how it composes with scripted writes would
-have saved a full investigation cycle.
+**What broke:** Bitwig Studio's **Takeover Mode** preference (Settings ->
+Controllers -> Pick Up / Jump / Value Scaling) is a single, global,
+Studio-wide setting - it is not scoped per controller script, per output,
+or even per control. Direct, hardware-confirmed consequence: this
+project's own faders are motorized and always want immediate ("Jump")
+behavior (the motor physically drives the fader to match the real value,
+so there's no mismatch to catch up on - `HardwareSlider.disableTakeOver()`
+already opts each fader out of takeover entirely, per-control, exactly for
+this reason). But **encoders/knobs on this same script, and any other
+controller connected to the same Bitwig instance, have no equivalent
+per-control override** - so switching the *global* preference to Jump for
+this controller's convenience also switches it for every other connected
+device. A user running this motorized-fader controller alongside a second,
+non-motorized controller (a very common setup - most users have more than
+one MIDI controller connected) would get every one of that second
+controller's knobs jumping the parameter instantly to match the knob's
+physical position the moment it's touched, rather than requiring a
+catch-up gesture first - a real, surprising behavior change on hardware
+this script has nothing to do with and no way to shield from the switch.
+
+**Workaround we shipped:** none available for the cross-controller case -
+`disableTakeOver()` only covers this script's own faders, which is a
+different, narrower problem (motorized vs. non-motorized) than the global
+setting's actual scope. The only mitigation is documentation: this
+project's own README now carries an explicit setup warning that changing
+this preference for this controller's benefit is a Studio-wide change,
+not a per-controller one, and to check it against every other connected
+controller before relying on it.
+
+**What would have helped:** expose Takeover Mode per controller
+script/output (the same granularity `disableTakeOver()` already proves is
+architecturally possible per-control, just not surfaced as a user-facing
+preference), so tuning it for one controller's needs can't silently change
+behavior for a user's other, unrelated gear. Also: it isn't readable from
+script at all, and its exact interaction with a script's own `.set()`
+calls on a bound parameter was never fully pinned down during this project
+(see `patches/README.md`'s "Follow-up lead" section) - a readable value
+plus clearer documentation of how it composes with scripted writes would
+have saved a full investigation cycle on its own, independent of the
+per-controller-scoping problem above.

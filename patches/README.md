@@ -103,3 +103,20 @@ strip the delayed-scheduleTask diagnostic additions back out first
 core theory), and figure out why the physical/LCD state and this
 script's own `.get()` readback disagreed before concluding anything
 either way.
+
+**Update: the live Bitwig preference has now actually been switched from
+Pick Up (Catch) to Jump (Immediate)** for day-to-day use, not just a
+throwaway-branch retest - see the **critical setup warning** in the main
+README's Quick Start section and API Feature Request #12 in
+`BITWIG-API-FEATURE-REQUESTS.md`. Since this is confirmed to be a single
+Bitwig Studio-wide preference (not scoped to this controller, this
+script, or even one control), the switch also affects every other
+controller connected to the same Bitwig instance - most importantly, any
+**non-motorized** controller's knobs/faders will now jump a parameter
+instantly to match the knob's physical position on touch, instead of
+requiring a catch-up gesture first. Retesting this script's own behavior
+under the live Jump setting (and separately, re-testing with Catch/Pick
+Up re-enabled to see whether the Mixer Snapshot readback/LCD-freeze
+symptoms above still reproduce, or were specific to the diagnostic code
+removed since) is planned but not yet done as of this note - update this
+section with the result once that retest happens.

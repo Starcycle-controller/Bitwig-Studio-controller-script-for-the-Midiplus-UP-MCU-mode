@@ -43,6 +43,29 @@ Bitwig's native MCU protocol.
 
 ### One-time setup
 
+> **Critical: Takeover Mode is a Bitwig Studio-wide setting, not a
+> per-controller one - check it before relying on it.** Bitwig's
+> **Takeover Mode** preference (Settings -> Controllers -> Pick Up (Catch)
+> / Jump (Immediate) / Value Scaling) is a single, global setting that
+> applies to **every controller connected to that Bitwig instance at
+> once** - there is no way to set it separately per controller or per
+> script. This project's own faders are motorized and always jump
+> immediately regardless of this setting (`disableTakeOver()` opts each
+> fader out individually, since the motor physically drives it to match
+> the real value - there's nothing to catch up on). But **if you switch
+> the global preference to Jump/Immediate for this controller's own
+> encoders/knobs, that same change also applies to every other controller
+> you have connected** - most importantly, any **non-motorized**
+> controller's knobs will then jump a parameter instantly to match the
+> knob's physical position the moment it's touched, instead of requiring a
+> catch-up gesture first. If you use more than one MIDI controller with
+> Bitwig (common), check this setting's effect on your *other* gear before
+> changing it for this one. We switched our own live setting from Catch to
+> Immediate and are retesting this script's own behavior under both
+> settings - see `patches/README.md`'s "Follow-up lead" section and API
+> Feature Request #12 in `BITWIG-API-FEATURE-REQUESTS.md` for the details
+> and current status.
+
 1. In Bitwig, go to **Settings -> Controllers**, add this script, and
    confirm the Midiplus UP is switched to standard **MCU mode** (hardware
    manual sections 3.3/8) - not a Live/Cubase/Logic "customized" mode.
