@@ -496,6 +496,19 @@ subsequently turned.
 <div style="page-break-after: always;"></div>
 
 <h2 id="wheel-combos">8. Jog Wheel Modifier Combos</h2>
+<div class="callout warning">
+<span class="label">Critical - the wheel-mode selector must be on SCROLL</span>
+<p>
+Every combo in this section requires the hardware's own wheel-mode
+selector (see Section 7) to be set to <strong>SCROLL</strong>, the
+base/default mode. The physical jog wheel only sends CC 60 - the message
+every combo below is built on - while that local firmware mode is active.
+Switch it to ZOOM, MARKER, BANK, or CHANNEL and the wheel repurposes its
+MIDI output entirely (Note-On messages instead of CC 60), so none of the
+combos below will fire, with no error or feedback to explain why. If a
+wheel combo suddenly "stops working," check the wheel-mode selector first.
+</p>
+</div>
 <p>
 In priority order (each returns before the next is checked, so only one
 applies per turn): Scene mode active (move the scene cursor) &gt;
@@ -537,6 +550,17 @@ between clips on that track; with nothing selected, steps track-to-track
 instead. In Device mode, CTRL + Jog Wheel instead steps through devices on
 the current chain.
 </p>
+<div class="callout setup">
+<p>
+<strong>Click a clip with the mouse first to step between clips with this
+combo.</strong> There is currently no button/wheel gesture on this
+hardware that can select ("anchor") a clip from nothing - every generic
+Bitwig action tried for that was confirmed on hardware to do nothing at
+all (see Section 9). Once a clip is selected by clicking it, CTRL+Wheel
+reliably steps to the next/previous one from there - it just cannot
+establish that starting point on its own.
+</p>
+</div>
 
 <h3>OPTION + Jog Wheel</h3>
 <p>
@@ -551,14 +575,18 @@ knob/slider/fader once in Bitwig, then hold ALT and turn the wheel to dial
 it in without touching the mouse again.
 </p>
 <p>
-<strong>ALT + Jog Wheel Press</strong> selects whatever's at the current GUI
-focus - the wheel press acts as the click.
+<strong>ALT + Jog Wheel Press</strong> attempts to select whatever's at the
+current GUI focus - the same underlying action confirmed non-functional
+for clip selection elsewhere in this guide, so treat this as likely not
+actually selecting anything rather than a reliable click substitute.
 </p>
 <p>
 <strong>SHIFT+ALT + Jog Wheel</strong> nudges whatever's currently selected
-in the arranger left/right by one grid step per message. Full gesture: hold
-SHIFT+ALT, press the wheel to select whatever's at the cursor, then keep
-holding and turn the wheel to "drag" it.
+in the arranger left/right by one grid step per message - this part does
+work once something is already selected. Since the wheel-press "select"
+step above is unreliable, <strong>click the item with the mouse first</strong>
+(same as CTRL+Wheel above), then hold SHIFT+ALT and turn the wheel to
+"drag" it.
 </p>
 <p>
 <strong>OPTION + Jog Wheel Press</strong> toggles a hover-lock: locks the

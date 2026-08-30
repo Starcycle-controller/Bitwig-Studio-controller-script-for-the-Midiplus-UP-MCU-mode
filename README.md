@@ -125,6 +125,10 @@ modify anything else) also has its own configurable standalone action -
 see **Plugin Mode settings** below. Broad strokes (full matrix under **Jog
 Wheel Modifier Combos** and **Confirmed Button Map** below):
 
+> Every SHIFT/OPTION/CTRL/ALT + jog-wheel combo also requires the
+> hardware's own wheel-mode selector to be set to **SCROLL** - see the
+> warning at the top of **Jog Wheel Modifier Combos** below.
+
 - **SHIFT** - stepped/coarser adjustment on encoders; jump-to-start/end on
   bank scrolling; "store" actions (Mixer Snapshots, F-key green state) and
   the automation-write-enable toggle on DRAW.
@@ -260,6 +264,16 @@ sends when subsequently turned. Confirmed behavior per mode:
 
 ## Jog Wheel Modifier Combos
 
+> **All of this requires the hardware's own wheel-mode selector to be set
+> to SCROLL** (the base/default mode - see **Jog-Wheel "Mode" Buttons**
+> above). The physical jog wheel only sends CC 60 (the message every combo
+> below is built on) while that local firmware mode is active - switch it
+> to ZOOM, MARKER, BANK, or CHANNEL and the wheel repurposes its MIDI
+> output entirely (Note-On messages instead of CC 60), so none of the
+> combos below will fire at all, with no error or feedback to explain why.
+> If a wheel combo suddenly "stops working," check the wheel-mode selector
+> first.
+
 In priority order (each returns before the next is checked, so only one
 applies per turn): `MODE_SCENE` active (move the scene cursor) >
 **SHIFT+CTRL** (configurable) > **ALT+CTRL** (configurable) > **CTRL
@@ -315,6 +329,17 @@ only action in the "select next/previous" family confirmed to actually
 move the Arranger clip selection - see **Development Notes & Findings**
 below for the other candidates that were tried and don't work.
 
+> **You have to click a clip with the mouse first to step between clips
+> with this combo.** There is currently no button/wheel gesture on this
+> hardware that can select ("anchor") a clip from nothing - every generic
+> Bitwig action tried for that (`select_item_at_cursor`, "Select item to
+> left/right", "Select item above/below", `move_selection_cursor_to_next/
+> previous_item`, "Move selection cursor left/right") was confirmed on
+> hardware to do nothing at all. Once a clip is selected by clicking it,
+> CTRL+Wheel reliably steps to the next/previous one from there - it just
+> can't establish that starting point on its own. See API Feature Request
+> #1 in `BITWIG-API-FEATURE-REQUESTS.md`.
+
 In `MODE_DEVICE`, CTRL + Jog Wheel instead steps through devices on the
 current chain.
 
@@ -337,15 +362,22 @@ it in without touching the mouse again. Shows the parameter's name as a
 Bitwig popup on every turn.
 
 **ALT + Jog Wheel Press** (push the wheel while holding ALT, note 101)
-selects whatever's at the current GUI focus (`select_item_at_cursor`) - the
-wheel press acts as the click. Works the same whether ALT or SHIFT+ALT is
-held, which lets it double as the first step of the next combo.
+attempts to select whatever's at the current GUI focus, via
+`select_item_at_cursor` - the same action confirmed non-functional for
+clip selection elsewhere in this document (see the CTRL+Wheel warning
+above and **Development Notes & Findings** below), so **treat this as
+likely not actually selecting anything** rather than a reliable click
+substitute, until it's specifically retested and confirmed otherwise.
 
 **SHIFT+ALT + Jog Wheel** nudges whatever's currently selected in the
 arranger (a clip, automation point, etc.) left/right by one grid step per
-message. Full gesture: hold SHIFT+ALT, press the wheel to select whatever's
-at the cursor, then keep holding and turn the wheel to "drag" it - no mouse
-click needed anywhere.
+message. The intended full gesture is: hold SHIFT+ALT, press the wheel to
+select whatever's at the cursor, then keep holding and turn the wheel to
+"drag" it - but given the press step's `select_item_at_cursor` call is
+likely non-functional (see above), **click the item with the mouse first
+to select it, the same as CTRL+Wheel above**, then hold SHIFT+ALT and turn
+the wheel to nudge it - that part (the actual nudging) does work once
+something is already selected.
 
 **OPTION + Jog Wheel Press** toggles `LastClickedParameter.smartToggleLock()`
 - locks the ALT+wheel parameter-adjust combo onto whatever parameter the
