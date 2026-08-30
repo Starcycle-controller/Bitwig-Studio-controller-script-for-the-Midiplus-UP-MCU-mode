@@ -124,3 +124,26 @@ including whether the Mixer Snapshot readback/LCD-freeze symptoms above
 still reproduce, or were specific to the diagnostic code removed since -
 is planned but not yet done as of this note - update this section with
 the result once that retest happens.
+
+**Update: retested with Takeover Mode back on Pick Up (Catch)** - Mixer
+Snapshot recall confirmed working correctly, faders moved to the correct
+position. This leans toward the whole Takeover Mode lead having been a
+red herring from the start, not a real factor - and there's now a
+structural reason to believe that rather than just one clean test: every
+`HardwareSlider` this script binds (all 8 faders + master) calls
+`disableTakeOver()`, which per the Controller API opts that specific
+binding out of Takeover Mode entirely, regardless of the global setting.
+If that holds, Takeover Mode was **never** capable of affecting Mixer
+Snapshot recall's fader writes in the first place, on either Catch or
+Jump - the actual, complete fix was always the `Parameter.touch()` calls
+documented in the main investigation above, and the ambiguous Jump-mode
+retest results earlier in this section were most likely just leftover
+troubleshooting noise (the LCD freeze in particular has a much more
+likely cause already named above - the delayed diagnostic `scheduleTask`
+callbacks from that same retest - independent of Takeover Mode itself).
+**Not fully confirmed yet** - one clean Catch-mode retest doesn't rule
+out every edge case, and this still wants a deliberate side-by-side test
+(Catch vs. Jump, same session, same snapshot, nothing else changed) before
+calling it closed - but the working theory going forward is that Takeover
+Mode was a dead end this project chased unnecessarily, not a real
+variable in the original bug.
