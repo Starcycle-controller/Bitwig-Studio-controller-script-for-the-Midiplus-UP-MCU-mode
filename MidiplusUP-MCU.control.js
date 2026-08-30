@@ -1687,15 +1687,6 @@ var PLUGIN_DEVICE_STEP_MESSAGES = 4;
 // separately from device-stepping.
 var clipSelectStepAccumulator = 0;
 var CLIP_SELECT_STEP_MESSAGES = 4;
-// Requested directly: move_selection_cursor_to_next/previous_item (see
-// the CTRL+Wheel handler in onMidi below) likely needs an existing
-// selection to step from - reset false every time CTRL is freshly
-// pressed (see the CTRL modifier handler below), so the FIRST wheel
-// step of each CTRL-hold anchors to the first/last item (matching the
-// turn direction) instead of trying to move a cursor that isn't
-// pointing at anything yet; every step after that within the same hold
-// just steps next/previous from there.
-var ctrlWheelSelectionAnchored = false;
 
 // "Override Wheel Combo Thresholds" (Timing) - convenience override for
 // anyone who doesn't want to tune CTRL/SHIFT+CTRL/ALT+CTRL's tick
@@ -4765,20 +4756,6 @@ function onMidi(status, data1, data2) {
       var backwards = data2 >= 64;
       var rawStep = backwards ? -(data2 - 64) : data2;
 
-      // TEMPORARY DIAGNOSTIC - CC 60 is deliberately excluded from the
-      // generic "RAW CC received" logger above (would spam one line per
-      // wheel tick), so there was no visibility at all into whether the
-      // wheel really sends CC 60 on this hardware, or whether
-      // isControlPressed is actually true at the moment a CTRL+Wheel
-      // turn is processed. Remove once the CTRL+Wheel clip-selection
-      // trial (move_selection_cursor_to_*) is confirmed working or
-      // reverted.
-      debugLog(DEBUG_RAW_MIDI, "RAW Wheel CC60 received - data2=" + data2 +
-         " backwards=" + backwards + " rawStep=" + rawStep +
-         " [SHIFT=" + isShiftPressed + " OPTION=" + isOptionPressed +
-         " CTRL=" + isControlPressed + " ALT=" + isAltPressed +
-         " mode=" + currentMode + "]");
-
       if (currentMode === MODE_SCENE) {
          // BTA / Scene Mode: plain wheel turn moves the selected-scene
          // cursor within the 8-scene bank window (see sceneCursorIndex
@@ -4858,45 +4835,37 @@ function onMidi(status, data1, data2) {
          }
 
          // CTRL + Jog Wheel (outside Device mode): select the next/
-         // previous arranger clip/item - once every CLIP_SELECT_STEP_MESSAGES
-         // messages (its own dedicated, independently configurable
-         // threshold - see above).
+         // previous arranger clip/item, via Bitwig's real "Select Next
+         // Item"/"Select Previous Item" actions (ids "Select next item"/
+         // "Select previous item", confirmed from
+         // bitwig-actions-reference.txt) - once every
+         // CLIP_SELECT_STEP_MESSAGES messages (its own dedicated,
+         // independently configurable threshold - see above).
          //
-         // TRIAL - unconfirmed on hardware as of this commit. Previously
-         // used "Select next item"/"Select previous item" (ids "Select
-         // next item"/"Select previous item"), the only action confirmed
-         // to work at all out of a whole family tried - "Select item to
-         // left/right", select_item_at_cursor, and Select item above/
-         // below all confirmed to do nothing via the Controller API
-         // despite being real, named Bitwig actions - but with its own
+         // Tried and reverted, in order: "Select item to left/right",
+         // select_item_at_cursor, and Select item above/below all
+         // confirmed to do nothing via the Controller API despite being
+         // real, named Bitwig actions.
+         // move_selection_cursor_to_next_item/_previous_item (a different
+         // action family, confirmed to exist via
+         // bitwig-actions-reference.txt and independently via a real
+         // third-party extension's action list) DOES do something, but
+         // hardware-confirmed to move the TRACK/channel selection (the
+         // per-channel ORANGE "selected" indicator visibly stepped
+         // between columns) rather than stepping between clips in time on
+         // the current track - not what this is for, so reverted.
+         // "Select next/previous item" remains the only action in this
+         // whole family confirmed to actually move the ARRANGER CLIP
+         // selection on hardware, so it's worth keeping despite its own
          // quirk: once there's no further item in one direction on the
          // current track, it jumps to the next/previous track's item
-         // instead of stopping. Trying move_selection_cursor_to_next_item/
-         // move_selection_cursor_to_previous_item instead - a DIFFERENT
-         // action family (confirmed to exist via bitwig-actions-reference.txt
-         // and independently via a real third-party extension's action
-         // list) never tried before, on the chance it behaves closer to
-         // track-confined. If this also turns out non-functional or no
-         // better, revert to "Select next item"/"Select previous item"
-         // (see git history around this commit).
-         //
-         // Requested directly: move_selection_cursor_to_next/previous_item
-         // likely needs an existing selection to move FROM, so the first
-         // step of each fresh CTRL hold (see ctrlWheelSelectionAnchored
-         // above) anchors to the first/last item instead - whichever end
-         // matches the turn direction - and only steps next/previous on
-         // every step after that.
+         // instead of stopping - a working action with an occasional side
+         // effect beats a "correct" one that does the wrong thing
+         // entirely.
          clipSelectStepAccumulator++;
          if (clipSelectStepAccumulator >= CLIP_SELECT_STEP_MESSAGES) {
             clipSelectStepAccumulator = 0;
-            if (!ctrlWheelSelectionAnchored) {
-               ctrlWheelSelectionAnchored = true;
-               safeInvokeAction(backwards ? "move_selection_cursor_to_last_item" :
-                  "move_selection_cursor_to_first_item", null);
-            } else {
-               safeInvokeAction(backwards ? "move_selection_cursor_to_previous_item" :
-                  "move_selection_cursor_to_next_item", null);
-            }
+            safeInvokeAction(backwards ? "Select previous item" : "Select next item", null);
          }
          return;
       }
@@ -5115,13 +5084,7 @@ function onMidi(status, data1, data2) {
       if (data1 === 72) {
          isControlPressed = isPressed;
          midiOut.sendMidi(0x90, 72, isControlPressed ? 127 : 0);
-         if (isPressed) {
-            ctrlUsedForCombo = false;
-            // See ctrlWheelSelectionAnchored above - each fresh CTRL hold
-            // re-anchors on its first wheel step instead of assuming
-            // whatever was left selected from the last gesture.
-            ctrlWheelSelectionAnchored = false;
-         }
+         if (isPressed) { ctrlUsedForCombo = false; }
          handleModifierTap(72, isPressed);
          return;
       }
