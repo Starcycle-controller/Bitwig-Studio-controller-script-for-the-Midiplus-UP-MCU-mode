@@ -4765,6 +4765,20 @@ function onMidi(status, data1, data2) {
       var backwards = data2 >= 64;
       var rawStep = backwards ? -(data2 - 64) : data2;
 
+      // TEMPORARY DIAGNOSTIC - CC 60 is deliberately excluded from the
+      // generic "RAW CC received" logger above (would spam one line per
+      // wheel tick), so there was no visibility at all into whether the
+      // wheel really sends CC 60 on this hardware, or whether
+      // isControlPressed is actually true at the moment a CTRL+Wheel
+      // turn is processed. Remove once the CTRL+Wheel clip-selection
+      // trial (move_selection_cursor_to_*) is confirmed working or
+      // reverted.
+      debugLog(DEBUG_RAW_MIDI, "RAW Wheel CC60 received - data2=" + data2 +
+         " backwards=" + backwards + " rawStep=" + rawStep +
+         " [SHIFT=" + isShiftPressed + " OPTION=" + isOptionPressed +
+         " CTRL=" + isControlPressed + " ALT=" + isAltPressed +
+         " mode=" + currentMode + "]");
+
       if (currentMode === MODE_SCENE) {
          // BTA / Scene Mode: plain wheel turn moves the selected-scene
          // cursor within the 8-scene bank window (see sceneCursorIndex
