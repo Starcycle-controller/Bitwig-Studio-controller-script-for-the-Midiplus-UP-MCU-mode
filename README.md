@@ -28,7 +28,9 @@ for `safeInvokeAction()`/`application.getAction()` instead of a fresh
 diagnostic dump.
 
 A printable PDF version of the Quick Start / usage sections below is at
-`docs/MidiplusUP-User-Guide.pdf`.
+`docs/MidiplusUP-User-Guide.pdf`. A one-page, large-print (16pt minimum)
+cheat sheet meant to sit next to the controller is at
+`docs/MidiplusUP-Quick-Reference.pdf`.
 
 ## Quick Start
 
