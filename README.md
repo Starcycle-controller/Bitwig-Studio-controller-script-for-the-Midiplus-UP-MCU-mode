@@ -1571,6 +1571,39 @@ off: a hardware view that can jump on its own from background mouse
 activity is a big enough behavior change to opt into deliberately.
 Not yet tested on hardware.
 
+### Automation and mode switches
+
+**Usage note, not a bug**: writing automation while switching modes
+(Mixer/Device/Sends/Scene), flipping, or toggling Tool Volume Mode
+mid-pass splits that one recording across multiple lanes, one per
+parameter that was actually bound to the fader/encoder at each moment -
+reported directly as "writing Serum's Macro 3 in Device mode also wrote
+automation onto the TRLVL tool device's Gain." Not a script bug:
+`setBinding()` cleanly replaces the previous target each time the mode/
+flip/tool state changes (see `getFaderTarget()`/`getEncoderTarget()`/
+`rebindFaders()`), so there's never two bindings active on the same
+control at once - Bitwig is just faithfully recording automation for
+whatever was live at each point across a single continuous Write/Latch
+pass that spanned more than one binding state. **Recommended workflow:
+set up the mode/flip/tool state you actually want first, confirm the
+LCD shows the right target, then start the automation pass - don't
+change mode/flip/PAN mid-pass if you want it to land on one lane.**
+
+**Disable Automation Write on Mode Change** (Controller Preferences ->
+"Mixer" category, default off) - an optional safety net for the above:
+when a `currentMode` transition happens (Mixer/Device/Sends/Scene,
+including PAN's forced switch to Mixer for Tool Volume Mode) while
+Automation Write is armed, it's automatically disabled, with feedback on
+both the hardware LCD (`WRITE OFF`) and Bitwig's own screen. Default off
+- disabling automation write out from under someone mid-workflow is a
+meaningful behavior change to opt into deliberately, and the usage note
+above is the actual fix; this is just a backstop for anyone who'd rather
+not rely on remembering it. **Scope**: only covers an actual
+`currentMode` change - a same-mode FLIP toggle (documented in the code
+as deliberately not a mode change) or a bank scroll/RETURNS toggle can
+also re-target the fader onto a different track/parameter and aren't
+covered here. Not yet tested on hardware.
+
 **Per-channel LCD meter bar: confirmed working, and confirmed NOT
 independently paintable for color.** Console-verified: `track idx 7`'s
 Channel Pressure level fluctuated correctly (2-6, tracking real playback)

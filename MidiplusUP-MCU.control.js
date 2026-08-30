@@ -164,6 +164,11 @@ var currentMode = MODE_MIXER;
 var previousMode = MODE_MIXER;
 var sendBankPage = 0; // 0 = Sends 1-8, 1 = Sends 9-16
 
+// "Disable Automation Write on Mode Change" (Controller Preferences ->
+// "Mixer" category, default off) - see applyModeChange() below for the
+// full reasoning. Live from that setting, created in init().
+var disableAutomationWriteOnModeChange = false;
+
 // "Send/Return Bank Size" (Controller Preferences -> "Mixer" category) -
 // "8" (one page, SEND toggles straight between Sends 1-8 and Mixer - less
 // paging for anyone who rarely uses more than 8 sends) or "16" (default,
@@ -1191,7 +1196,7 @@ function scheduleFaderSnapZeroCheck(index, target) {
       if (faderSnapZeroGeneration[index] !== myGeneration) {
          return;
       }
-      if (!faderSnapToZeroEnabled || faderTouchHeld[index]) {
+      if (!faderSnapToZeroEnabled || faderTouchHeld[index] || !target) {
          return;
       }
       if (target.discreteValueCount().get() > 0) {
@@ -1285,7 +1290,7 @@ function scheduleFaderSnapDbMarkCheck(index, target, isVolumeTarget) {
       if (faderSnapDbMarkGeneration[index] !== myGeneration) {
          return;
       }
-      if (!faderSnapToDbMarksEnabled || faderTouchHeld[index] || !isVolumeTarget) {
+      if (!faderSnapToDbMarksEnabled || faderTouchHeld[index] || !isVolumeTarget || !target) {
          return;
       }
       var current = target.get();
@@ -3767,6 +3772,16 @@ function init() {
       autoBankToSelectionEnabled = value;
    });
 
+   // See disableAutomationWriteOnModeChange/applyModeChange() above. No
+   // modifier of its own, so placed last in this category rather than
+   // between an unrelated toggle and its modifier.
+   var disableAutomationWriteOnModeChangeSetting = host.getPreferences().getBooleanSetting(
+      "Disable Automation Write on Mode Change", "Mixer", false);
+   disableAutomationWriteOnModeChangeSetting.markInterested();
+   disableAutomationWriteOnModeChangeSetting.addValueObserver(function(value) {
+      disableAutomationWriteOnModeChange = value;
+   });
+
    // Remote Controls (8 Macros for selected device)
    remoteControls = cursorDevice.createCursorRemoteControlsPage(8);
    // discreteValueCount()/discreteValueNames()/getOrigin() need
@@ -6179,13 +6194,42 @@ function applyModeChange(popupText) {
    if (previousMode === MODE_DEVICE && currentMode !== MODE_DEVICE) {
       cursorDevice.isWindowOpen().set(false);
    }
+   // Safety option, requested directly: a mode change (Mixer/Device/
+   // Sends/Scene, including PAN's forced switch to Mixer) re-binds the
+   // faders/encoders to different parameters (see getFaderTarget()/
+   // getEncoderTarget() above) - if Automation Write is armed across
+   // that switch, whatever's bound before AND after both get automation
+   // written for their own portion of the same continuous pass, landing
+   // on two unrelated lanes in one take. Reported directly: writing
+   // Serum's Macro 3 in Device mode also produced automation on the
+   // TRLVL tool device's Gain, from an earlier Mixer/Tool-Volume-Mode
+   // portion of the same pass - not a binding bug (setBinding() cleanly
+   // replaces the previous target), just Bitwig faithfully recording
+   // automation for whatever was actually live at each moment. Default
+   // off - disabling automation write out from under someone is a
+   // meaningful behavior change to opt into deliberately. Does NOT cover
+   // a same-mode FLIP toggle (documented below as deliberately not a
+   // mode change) or a bank scroll/RETURNS toggle, which can also
+   // re-target the fader - ask if those should be covered too.
+   // "WRITE OFF" takes priority over popupText on the hardware's single
+   // shared LCD popup line when both would fire in the same call (only
+   // the LAST showModePopup() call before the next flush is ever
+   // visible) - the mode itself is still shown via updateModeLEDs()
+   // below regardless.
+   var lcdPopupText = popupText;
+   if (disableAutomationWriteOnModeChange && previousMode !== currentMode &&
+       transport.isArrangerAutomationWriteEnabled().get()) {
+      transport.isArrangerAutomationWriteEnabled().set(false);
+      host.showPopupNotification("Automation Write: DISABLED (mode changed)");
+      lcdPopupText = "WRITE OFF";
+   }
    previousMode = currentMode;
    updateModeLEDs();
    refreshDisplayText();
    refreshChannelStripLEDs();
    rebindFaders();
-   if (popupText) {
-      showModePopup(popupText);
+   if (lcdPopupText) {
+      showModePopup(lcdPopupText);
    }
 }
 
