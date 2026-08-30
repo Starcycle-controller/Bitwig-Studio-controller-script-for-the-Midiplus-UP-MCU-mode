@@ -4862,10 +4862,23 @@ function onMidi(status, data1, data2) {
          // instead of stopping - a working action with an occasional side
          // effect beats a "correct" one that does the wrong thing
          // entirely.
+         //
+         // TRIAL - unconfirmed on hardware as of this commit. Trying
+         // "Move selection cursor left"/"Move selection cursor right"
+         // instead (ids match their display names exactly, confirmed from
+         // bitwig-actions-reference.txt) - untested until now, and the
+         // most promising remaining candidate: left/right is a horizontal
+         // (time) axis, as opposed to move_selection_cursor_to_next/
+         // previous_item's vertical (track/lane) axis already
+         // disproven above, or "Move cursor to next/previous lane" which
+         // sounds like the same vertical axis by another name. If this
+         // also turns out to move the wrong thing (or nothing), revert to
+         // "Select next item"/"Select previous item" (see git history
+         // around this commit).
          clipSelectStepAccumulator++;
          if (clipSelectStepAccumulator >= CLIP_SELECT_STEP_MESSAGES) {
             clipSelectStepAccumulator = 0;
-            safeInvokeAction(backwards ? "Select previous item" : "Select next item", null);
+            safeInvokeAction(backwards ? "Move selection cursor left" : "Move selection cursor right", null);
          }
          return;
       }
