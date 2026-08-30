@@ -31,13 +31,20 @@
 
 loadAPI(25);
 
+// Single source of truth for the version string shown both in Bitwig's
+// Settings -> Controllers list (via defineController() below) and in this
+// script's own Controller Preferences -> About category (see
+// versionInfoSetting in init()) - bump this one place on a real release,
+// not the two places separately.
+var SCRIPT_VERSION = "3.0.0-native-faders";
+
 // Define Controller Metadata
 host.defineController(
    "Midiplus",
    "Midiplus UP (MCU Mode)",
-   "3.0.0-native-faders",
+   SCRIPT_VERSION,
    "6f56e9e0-0871-4623-a178-5e82485a3c10",
-   "Sternenlicht / Claude"
+   "Starcycle + Claude + " + SCRIPT_VERSION
 );
 
 // Define MIDI Ports (1 Input, 1 Output)
@@ -1915,6 +1922,17 @@ var shiftCtrlWheelAction = "Duplicate Clip";
 var altCtrlWheelAction = "Duplicate/Delete Track";
 var wheelComboDeleteEnabled = true;
 
+// Requested directly: while still learning the button/wheel combos, an
+// accidental ALT+CTRL+Wheel (e.g. reaching for plain CTRL+Wheel's clip/
+// track-select stepping and catching ALT too) can duplicate or delete a
+// track unexpectedly. This lets it be turned off entirely without giving
+// up SHIFT+CTRL+Wheel (kept independent - see its own dropdown above).
+// When off, holding ALT+CTRL and turning the wheel falls through to plain
+// CTRL+Wheel's own behavior instead (select next/previous clip, or step
+// devices in Device mode) - ALT is simply not checked for this combo
+// anymore, not a hard no-op - see the onMidi() wheel handler.
+var altCtrlWheelEnabled = true;
+
 // Separate accumulators AND separate, independently configurable
 // thresholds per combo (Controller Preferences -> "Wheel Options"
 // category) - so partial progress on one combo can't spill over and
@@ -3124,6 +3142,14 @@ function init() {
       "Requires", "About", 60, "Bitwig 6.x (Controller API 25)");
    requiresInfoSetting.markInterested();
 
+   // Same string shown in Bitwig's Settings -> Controllers list (see
+   // SCRIPT_VERSION/defineController() near the top of this file) -
+   // duplicated here since the Controllers list isn't always visible while
+   // actually using the controller, but this Preferences panel is.
+   var versionInfoSetting = host.getPreferences().getStringSetting(
+      "Version", "About", 70, "Starcycle + Claude + " + SCRIPT_VERSION);
+   versionInfoSetting.markInterested();
+
    var creditsInfoSetting = host.getPreferences().getStringSetting(
       "Credits", "About", 100,
       "Based on Mossgraber's DrivenByMoss SSL UF8 script, ideas from Sternenlicht, built with Claude Code");
@@ -3249,6 +3275,20 @@ function init() {
    shiftCtrlWheelActionSetting.markInterested();
    shiftCtrlWheelActionSetting.addValueObserver(function (value) {
       shiftCtrlWheelAction = value;
+   });
+
+   // Requested directly: easy to catch ALT along with CTRL by accident
+   // while still learning the combos (e.g. reaching for plain CTRL+Wheel's
+   // clip/track-select stepping) and unexpectedly duplicate or delete a
+   // track. Off leaves SHIFT+CTRL+Wheel (its own independent toggle-free
+   // combo, see above) untouched, and ALT+CTRL+Wheel simply falls through
+   // to plain CTRL+Wheel's own behavior instead - see altCtrlWheelEnabled
+   // in the onMidi() wheel handler.
+   var altCtrlWheelEnabledSetting = host.getPreferences().getBooleanSetting(
+      "Enable ALT+CTRL + Wheel (Duplicate/Delete Track)", "Function Keys", true);
+   altCtrlWheelEnabledSetting.markInterested();
+   altCtrlWheelEnabledSetting.addValueObserver(function (value) {
+      altCtrlWheelEnabled = value;
    });
 
    var altCtrlWheelActionSetting = host.getPreferences().getEnumSetting(
@@ -4792,7 +4832,7 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      if (isControlPressed && isAltPressed) {
+      if (isControlPressed && isAltPressed && altCtrlWheelEnabled) {
          // ALT+CTRL + Jog Wheel: same mechanism as SHIFT+CTRL above, its
          // own independent action setting (altCtrlWheelAction, default
          // "Duplicate/Delete Track") and its own accumulator - so the two
@@ -4800,6 +4840,9 @@ function onMidi(status, data1, data2) {
          // combination (fully invertible via the two separate Controller
          // Preferences dropdowns, no dedicated "swap" needed). Checked
          // before the plain CTRL branch for the same reason as SHIFT+CTRL.
+         // Gated by altCtrlWheelEnabled (Function Keys category, default
+         // ON) - off, this whole branch is skipped and ALT+CTRL+Wheel
+         // falls through to plain CTRL+Wheel's behavior below instead.
          ctrlUsedForCombo = true;
          altUsedForCombo = true;
          altCtrlWheelAccumulator += Math.abs(rawStep);
@@ -4840,24 +4883,30 @@ function onMidi(status, data1, data2) {
          // "Select previous item", confirmed from
          // bitwig-actions-reference.txt) - once every
          // CLIP_SELECT_STEP_MESSAGES messages (its own dedicated,
-         // independently configurable threshold - see above). Briefly
-         // swapped to "Select item to left"/"Select item to right"
-         // (hoping for same-track-only stepping, since these actions
-         // don't stay confined to the current track - see below), but
-         // reverted after confirming on hardware that those two do
-         // nothing at all, even with a clip already selected - same
-         // pattern as select_item_at_cursor and Select item above/below
-         // (all apparently non-functional when invoked via the Controller
-         // API, despite being real, named Bitwig actions). "Select next/
-         // previous item" is the only one of this whole family confirmed
-         // to actually change the selection on hardware, so it's worth
-         // keeping despite its own quirk: once there's no further item in
-         // one direction on the current track, it jumps to the next/
-         // previous track's item instead of stopping - a working action
-         // with an occasional side effect beats a "correct" one that does
-         // nothing. Replaces the previous tempo-nudge behavior per
-         // request; use SHIFT+ALT + Jog Wheel Press/Turn (see below) to
-         // select and then move a clip instead.
+         // independently configurable threshold - see above).
+         //
+         // Tried and reverted, in order: "Select item to left/right",
+         // select_item_at_cursor, "Select item above/below", and
+         // move_selection_cursor_to_next_item/_previous_item all confirmed
+         // to do nothing useful via the Controller API despite being real,
+         // named Bitwig actions - the last of those was originally
+         // suspected (from an ambiguous hardware log) to move the TRACK/
+         // channel selection instead of clip selection, but that specific
+         // claim was never cleanly re-confirmed and doesn't matter now
+         // either way, since it's not in use.
+         // "Move selection cursor left"/"Move selection cursor right" was
+         // the most recent trial - cleanly tested with a diagnostic log
+         // proving CTRL stayed held and the wheel fired throughout (no
+         // other confounding activity in the trace), against a clip
+         // actually selected in the Arranger beforehand: confirmed on
+         // hardware that the selection did NOT move at all. Also reverted.
+         // "Select next/previous item" is the only action in this whole
+         // family confirmed to actually move the ARRANGER CLIP selection
+         // on hardware, so it's back in place despite its own quirk: once
+         // there's no further item in one direction on the current track,
+         // it jumps to the next/previous track's item instead of stopping -
+         // a working action with an occasional side effect beats several
+         // "correct"-sounding ones that do nothing at all.
          clipSelectStepAccumulator++;
          if (clipSelectStepAccumulator >= CLIP_SELECT_STEP_MESSAGES) {
             clipSelectStepAccumulator = 0;
@@ -4906,8 +4955,21 @@ function onMidi(status, data1, data2) {
          // also note 101's press handler for ALT+wheel-press ("Select item
          // at cursor").
          altUsedForCombo = true;
+         var lastClickedParamName = lastClickedParamValue.name().get();
+         if (!lastClickedParamName) {
+            // Confirmed on hardware: clicking some GUI fields (e.g. a
+            // clip's fade length in the Inspector) leaves this blank -
+            // LastClickedParameter never resolved to a real Parameter at
+            // all for those, most likely because they aren't backed by
+            // one in Bitwig's object model in the first place (see
+            // BITWIG-API-FEATURE-REQUESTS.md #11). Previously this still
+            // called .inc() and showed an empty popup box, which just
+            // looked broken - now it's a clear, distinct message instead.
+            host.showPopupNotification("No Parameter (click a Bitwig control first)");
+            return;
+         }
          lastClickedParamValue.inc(rawStep, 128);
-         host.showPopupNotification(lastClickedParamValue.name().get());
+         host.showPopupNotification(lastClickedParamName);
          return;
       }
 

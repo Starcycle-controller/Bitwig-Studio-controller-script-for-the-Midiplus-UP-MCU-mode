@@ -103,3 +103,47 @@ strip the delayed-scheduleTask diagnostic additions back out first
 core theory), and figure out why the physical/LCD state and this
 script's own `.get()` readback disagreed before concluding anything
 either way.
+
+**Update: the live Bitwig preference was switched from Pick Up (Catch) to
+Jump (Immediate)** for day-to-day use, not just a throwaway-branch retest.
+This section (and API Feature Request #12) went through a full round trip
+on whether that switch is Studio-wide or per-controller - see #12 in
+`BITWIG-API-FEATURE-REQUESTS.md` for the whole back-and-forth. Landed on:
+**Studio-wide, confirmed by checking a real Bitwig Studio 6.1 session's
+Controllers panel icon by icon.** Bitwig's own documentation describes a
+per-controller override icon, but it isn't reachable anywhere in the
+actual 6.1 UI tested (the Midiplus UP entry's 5 icons were each clicked
+and identified: settings, visualizations, an unrelated grid icon, a
+color-tag, and a "scroll GUI to follow controller" crosshair - none of
+them toggles Takeover Mode). So the global Settings -> Controllers ->
+Takeover Mode dropdown is, in practice, the only lever available, and
+switching it affects every connected controller.
+
+Retesting this script's own behavior under the live Jump setting -
+including whether the Mixer Snapshot readback/LCD-freeze symptoms above
+still reproduce, or were specific to the diagnostic code removed since -
+is planned but not yet done as of this note - update this section with
+the result once that retest happens.
+
+**Update: retested with Takeover Mode back on Pick Up (Catch)** - Mixer
+Snapshot recall confirmed working correctly, faders moved to the correct
+position. This leans toward the whole Takeover Mode lead having been a
+red herring from the start, not a real factor - and there's now a
+structural reason to believe that rather than just one clean test: every
+`HardwareSlider` this script binds (all 8 faders + master) calls
+`disableTakeOver()`, which per the Controller API opts that specific
+binding out of Takeover Mode entirely, regardless of the global setting.
+If that holds, Takeover Mode was **never** capable of affecting Mixer
+Snapshot recall's fader writes in the first place, on either Catch or
+Jump - the actual, complete fix was always the `Parameter.touch()` calls
+documented in the main investigation above, and the ambiguous Jump-mode
+retest results earlier in this section were most likely just leftover
+troubleshooting noise (the LCD freeze in particular has a much more
+likely cause already named above - the delayed diagnostic `scheduleTask`
+callbacks from that same retest - independent of Takeover Mode itself).
+**Not fully confirmed yet** - one clean Catch-mode retest doesn't rule
+out every edge case, and this still wants a deliberate side-by-side test
+(Catch vs. Jump, same session, same snapshot, nothing else changed) before
+calling it closed - but the working theory going forward is that Takeover
+Mode was a dead end this project chased unnecessarily, not a real
+variable in the original bug.

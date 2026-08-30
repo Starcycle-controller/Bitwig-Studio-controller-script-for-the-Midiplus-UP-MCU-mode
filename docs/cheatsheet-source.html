@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Midiplus UP - Quick Reference</title>
+<style>
+  @page {
+    size: Letter landscape;
+    margin: 8mm 10mm 7mm 10mm;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    color: #14202e;
+    margin: 0;
+  }
+  .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 3px solid #c9722a;
+    padding-bottom: 2mm;
+    margin-bottom: 2.5mm;
+  }
+  .head h1 {
+    font-size: 18pt;
+    margin: 0;
+    color: #14202e;
+  }
+  .head .sub {
+    font-size: 10.5pt;
+    color: #6a7686;
+  }
+  .cols {
+    column-count: 4;
+    column-gap: 6mm;
+    column-rule: 1px solid #e3e7ec;
+  }
+  .group {
+    break-inside: avoid;
+    margin-bottom: 2.5mm;
+  }
+  .group h2 {
+    font-size: 12pt;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #c9722a;
+    margin: 0 0 1mm 0;
+    border-bottom: 1px solid #c9722a;
+    padding-bottom: 0.6mm;
+  }
+  .entry {
+    break-inside: avoid;
+    font-size: 16pt;
+    line-height: 1.08;
+    margin-bottom: 1.1mm;
+  }
+  .entry .k {
+    font-weight: 700;
+    color: #14202e;
+  }
+  .entry .d {
+    color: #3a4654;
+  }
+  .foot {
+    break-inside: avoid;
+    background: #fdecec;
+    border-left: 3px solid #b8332a;
+    padding: 1.5mm 2.5mm;
+    font-size: 11pt;
+    line-height: 1.2;
+    margin-top: 2mm;
+  }
+  .foot b { color: #b8332a; }
+</style>
+</head>
+<body>
+
+<div class="head">
+  <h1>Midiplus UP - Quick Reference</h1>
+  <div class="sub">Full details: README.md / MidiplusUP-User-Guide.pdf - Starcycle + Claude</div>
+</div>
+
+<div class="cols">
+
+  <div class="group">
+    <h2>Modes</h2>
+    <div class="entry"><span class="k">TRACK/IO</span> <span class="d">Mixer - Vol/Pan</span></div>
+    <div class="entry"><span class="k">SEND</span> <span class="d">Sends - send levels (SHIFT = 9-16)</span></div>
+    <div class="entry"><span class="k">PLUG-INS / F1-F8</span> <span class="d">Device - macros (encoders); Vol or macros (faders, FLIP)</span></div>
+    <div class="entry"><span class="k">PAN</span> <span class="d">Gain-Stage - TRLVL device Gain/Pan (needs TRLVL on track!)</span></div>
+    <div class="entry"><span class="k">RETURNS</span> <span class="d">Same modes, on Return tracks</span></div>
+    <div class="entry"><span class="k">B.T.A.</span> <span class="d">Scene - clip launcher, wheel selects/launches</span></div>
+    <div class="entry"><span class="k">FLIP</span> <span class="d">Swap faders/encoders Vol&lt;-&gt;Pan/Macro</span></div>
+  </div>
+
+  <div class="group">
+    <h2>Wheel (needs SCROLL mode)</h2>
+    <div class="entry"><span class="k">(plain)</span> <span class="d">Scrub, whole bars</span></div>
+    <div class="entry"><span class="k">SHIFT</span> <span class="d">Shift loop by a bar</span></div>
+    <div class="entry"><span class="k">OPTION</span> <span class="d">Halve/double loop length</span></div>
+    <div class="entry"><span class="k">CTRL</span> <span class="d">Step to next/prev clip (click one first!) - or step devices in Device mode</span></div>
+    <div class="entry"><span class="k">SHIFT+CTRL</span> <span class="d">Duplicate clip (right); configurable</span></div>
+    <div class="entry"><span class="k">ALT+CTRL</span> <span class="d">Duplicate/delete track; configurable, can disable</span></div>
+    <div class="entry"><span class="k">ALT</span> <span class="d">Adjust last-clicked GUI parameter</span></div>
+    <div class="entry"><span class="k">SHIFT+ALT</span> <span class="d">Nudge selected item (click it first!)</span></div>
+  </div>
+
+  <div class="group">
+    <h2>Other Combos</h2>
+    <div class="entry"><span class="k">SHIFT+PLUG-INS</span> <span class="d">EQ Mode - jump to last EQ in chain</span></div>
+    <div class="entry"><span class="k">DRAW</span> <span class="d">Cycle automation write mode</span></div>
+    <div class="entry"><span class="k">SHIFT+DRAW</span> <span class="d">Toggle automation write arm</span></div>
+    <div class="entry"><span class="k">OPTION+DRAW</span> <span class="d">Show/hide automation lanes</span></div>
+    <div class="entry"><span class="k">SHIFT+F1-F8</span> <span class="d">Store mixer snapshot</span></div>
+    <div class="entry"><span class="k">OPTION+F1-F8</span> <span class="d">Recall mixer snapshot</span></div>
+    <div class="entry"><span class="k">SMPTE/BEATS</span> <span class="d">Toggle F1-F8 green state</span></div>
+    <div class="entry"><span class="k">SELECT x2</span> <span class="d">Fold/unfold group track</span></div>
+  </div>
+
+  <div class="group">
+    <h2>Encoders / Faders</h2>
+    <div class="entry"><span class="k">Push (Mixer)</span> <span class="d">Center pan</span></div>
+    <div class="entry"><span class="k">Push (Device)</span> <span class="d">Fine-turn / reset / open window - see Prefs</span></div>
+    <div class="entry"><span class="k">SHIFT+turn</span> <span class="d">Stepped or fine adjust - see Prefs</span></div>
+    <div class="entry"><span class="k">SHIFT+HOME</span> <span class="d">Add named cue marker ("Bar N")</span></div>
+    <div class="entry"><span class="k">ALT+F8, then F8</span> <span class="d">Fader position self-test</span></div>
+  </div>
+
+</div>
+
+<div class="foot">
+<b>Setup reminders:</b> Gain-Stage mode needs a device named exactly <b>TRLVL</b> on the track (Bitwig's "Tool" device works).
+Wheel combos need the hardware's wheel-mode selector on <b>SCROLL</b>.
+CTRL/SHIFT+ALT clip actions need a clip already <b>clicked/selected with the mouse</b> first - there's no button gesture that can select one from nothing.
+</div>
+
+</body>
+</html>

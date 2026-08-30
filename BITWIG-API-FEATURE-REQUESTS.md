@@ -209,7 +209,7 @@ which the API already has enough information to construct) - or at
 minimum, a small helper for "call this when a bound value changes" so
 every script doesn't reimplement the same flush-polling loop.
 
-## 11. No API access to audio clip/event fade in/out at all
+## 11. No API access to audio clip/event properties at all (fade, gain, tuning/Expressions)
 
 **What broke:** unlike every other gap above, this one has no
 workaround in this script at all - there's nothing to work around with,
@@ -232,13 +232,129 @@ settable fade-in and fade-out length (and ideally curve shape), so a
 hardware controller could support hands-free clip editing the same way
 it already does for track volume/pan/sends.
 
----
+**Follow-up, hardware-confirmed in two stages:** tried the obvious
+workaround anyway - click a clip's fade field in the Inspector panel, then
+use this script's ALT+Wheel combo (`host.createLastClickedParameter()`,
+the same generic "whatever was last clicked" mechanism that reliably works
+for device/mixer knobs elsewhere in this script) to adjust it. Confirmed
+on hardware that this does **not** work - the wheel has no effect on the
+fade value. Ruled out a button-detection problem first (ALT's own Note-On
+registers cleanly and reliably, confirmed via the raw MIDI log), so the
+cause isn't this script failing to read ALT.
 
-Not included above but worth a mention if this becomes an actual
-submission: Bitwig's global **Takeover Mode** preference (Pick Up /
-Jump / Value Scaling) isn't readable from script at all, and its exact
+Confirmed further, definitively: the popup this script shows on every
+ALT+Wheel turn (naming whatever `LastClickedParameter` resolved to) came
+back **completely empty** after clicking the fade field - not a stale or
+wrong name, nothing at all. That means `host.createLastClickedParameter()`
+itself never resolved the click to any `Parameter` object in the first
+place; this isn't a values-don't-move symptom on top of a successful
+resolve, it's a failed resolve from the start. Confirms the explanation
+above: clip fade isn't modeled as a real, addressable `Parameter` in
+Bitwig's object model at all - it's a specialized audio-event edit handle
+entirely outside the generic automation/remote-control `Parameter` system,
+the same architectural gap that keeps it out of the Controller API's
+`Clip` interface too. Not just unexposed to scripts via `Clip` - unreachable
+via *any* generic script-facing mechanism, including the "whatever the
+user just clicked" escape hatch that normally works for arbitrary GUI
+controls. (This script's own popup now shows a clear "No Parameter" message
+instead of a blank box when this happens, so the failure reads as a known
+limitation rather than looking like a bug.)
+
+**Scope confirmed broader than just fade:** the Inspector panel's
+**Expressions** section for an audio clip (its base **Gain**/volume and
+**Tuning**/transpose values, distinct from the fade handles) was tested
+the identical way - click the field, ALT+Wheel - and produced the exact
+same empty-popup result. So this isn't a fade-specific gap: the whole
+family of clip/audio-event-level static properties shown under
+"Expressions" in the Inspector is equally unreachable, for the same
+underlying reason (no audio-event object exists anywhere in the
+Controller API to read or write any of it from).
+
+**Distinct from real per-note Expressions, which may actually be
+reachable (unverified):** Bitwig also has genuine per-note Expression
+data (MPE-style Gain/Pan/Timbre/Pressure/Transpose on individual notes
+within a MIDI/instrument clip), edited via lanes in the clip's Detail/Note
+editor - a completely different feature from the audio-clip-level
+Expressions above, despite the shared name and adjacent action ids
+(`toggle_edit_note_gain_expression` etc., see `bitwig-actions-reference.txt`).
+Per-note data lives on individual `NoteStep` objects, part of the
+note-grid/step-sequencer domain this write-up already noted **is**
+covered by the Controller API's `Clip` interface (unlike the audio-event
+level). Whether `NoteStep` actually exposes real getters/setters for
+these expression values wasn't confirmed against a current primary source
+this round (the community stub mirrors reachable turned out to predate
+`NoteStep`'s introduction) - worth a fresh, targeted investigation if
+per-note expression control on MIDI/instrument clips becomes an actual
+goal, rather than assuming it shares audio-clip Expressions' dead end.
+
+## 12. Takeover Mode is a single Studio-wide setting - a documented per-controller override could not be found in the actual 6.1 UI
+
+**This item went through two revisions before landing here - the full
+back-and-forth is worth keeping, since it's itself a finding.**
+
+**Round 1 (original):** written up as "Takeover Mode is a single Studio-
+wide setting with no per-controller scoping at all," based purely on this
+project's own investigation, without checking Bitwig's own documentation
+first.
+
+**Round 2 (correction, then itself corrected):** a screenshot from
+Bitwig's own (German) official user guide surfaced, describing a real
+per-controller override - each controller's row in Settings -> Controllers
+supposedly has an icon (described as fader-shaped) that toggles whether
+that specific controller follows the global Takeover Mode setting or
+unconditionally forces Immediate. Item #12 and this project's README were
+both rewritten around that as the recommended setup.
+
+**Round 3 (hardware-confirmed, final):** checked directly against a real
+Bitwig Studio **6.1** session's Settings -> Controllers panel, screenshot
+in hand. The Midiplus UP controller entry's actual icon row has 5 icons,
+each checked one at a time by clicking it and observing the result: a gear
+(opens the settings panel below, confirmed unrelated), a speech bubble
+(controller visualizations, confirmed unrelated), a grid/dots icon
+(unrelated), a colored square with a dropdown (confirmed: tags the
+controller entry with a color for visual distinction, unrelated), and a
+small round crosshair/target icon (confirmed: scrolls Bitwig's own GUI to
+follow whatever the controller currently points at, unrelated). **None of
+them toggles Takeover Mode.** So in Bitwig Studio 6.1 specifically, the
+per-controller override Bitwig's own documentation describes does not
+appear to be reachable anywhere in the actual Controllers panel - possibly
+removed in a later version than the docs were illustrated with, relocated
+somewhere not yet found, or a genuine documentation/product mismatch.
+
+**What broke:** Bitwig Studio's **Takeover Mode** preference (Settings ->
+Controllers -> Pick Up (Catch) / Jump (Immediate) / Value Scaling, top of
+the page) is - in the actual 6.1 UI tested, regardless of what the
+documentation says - a single, global, Studio-wide setting with no
+confirmed way to scope it to one controller. Direct, hardware-confirmed
+consequence: this project's own faders are motorized and always want
+Immediate (the motor physically drives the fader to match the real value,
+so there's no mismatch to catch up on - `HardwareSlider.disableTakeOver()`
+already opts each fader out of takeover entirely, per-control, exactly for
+this reason). But encoders/knobs on this same script, and any other
+controller connected to the same Bitwig instance, have no confirmed
+equivalent override - so switching the *global* preference to Jump for
+this controller's convenience also switches it for every other connected
+device. A user running this motorized-fader controller alongside a second,
+non-motorized controller (a very common setup) would get every one of
+that second controller's knobs jumping the parameter instantly to match
+the knob's physical position the moment it's touched, rather than
+requiring a catch-up gesture first.
+
+**Workaround we shipped:** none available for the cross-controller case -
+`disableTakeOver()` only covers this script's own faders. The only
+mitigation is documentation: this project's README carries the corrected
+warning that changing this preference for this controller's benefit is
+(as far as could actually be confirmed in 6.1) a Studio-wide change, not
+a per-controller one.
+
+**What would have helped:** either fix the documentation to match the
+actual 6.1 UI (remove the per-controller override description if it no
+longer exists), or actually ship the per-controller override the
+documentation describes, exposed with the same granularity
+`disableTakeOver()` already proves is architecturally possible per
+individual control. Also still true: even if a per-controller UI toggle
+existed, Takeover Mode isn't readable from script at all, and its exact
 interaction with a script's own `.set()` calls on a bound parameter was
-never fully pinned down during this project (see
-`patches/README.md`'s "Follow-up lead" section) - a readable value plus
-clearer documentation of how it composes with scripted writes would
-have saved a full investigation cycle.
+never fully pinned down during this project (see `patches/README.md`'s
+"Follow-up lead" section) - a readable value plus accurate documentation
+would have saved a full investigation cycle on its own.
