@@ -474,6 +474,17 @@ stands in the way of a script-invoked action.
 **SHIFT+CTRL Wheel Action** and **ALT+CTRL Wheel Action** (also in this
 category) - see **Jog Wheel Modifier Combos** above.
 
+**Enable ALT+CTRL + Wheel (Duplicate/Delete Track)** (on/off, default ON) -
+turns the whole ALT+CTRL+Wheel combo on or off. Off while still learning
+the button/wheel combos and prone to catching ALT along with CTRL by
+accident (e.g. reaching for plain CTRL+Wheel's clip/track-select stepping)
+and unexpectedly duplicating or deleting a track. SHIFT+CTRL+Wheel is
+unaffected either way (its own independent combo, no shared toggle). Off,
+holding ALT+CTRL and turning the wheel simply falls through to plain
+CTRL+Wheel's own behavior instead (select next/previous clip, or step
+devices in Device mode) - ALT is just not checked for this combo anymore,
+not a hard no-op.
+
 **Wheel Combos: Allow Delete (Turn Left)** (on/off, default ON) - see
 **Jog Wheel Modifier Combos** above.
 

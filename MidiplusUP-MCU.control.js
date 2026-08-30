@@ -1922,6 +1922,17 @@ var shiftCtrlWheelAction = "Duplicate Clip";
 var altCtrlWheelAction = "Duplicate/Delete Track";
 var wheelComboDeleteEnabled = true;
 
+// Requested directly: while still learning the button/wheel combos, an
+// accidental ALT+CTRL+Wheel (e.g. reaching for plain CTRL+Wheel's clip/
+// track-select stepping and catching ALT too) can duplicate or delete a
+// track unexpectedly. This lets it be turned off entirely without giving
+// up SHIFT+CTRL+Wheel (kept independent - see its own dropdown above).
+// When off, holding ALT+CTRL and turning the wheel falls through to plain
+// CTRL+Wheel's own behavior instead (select next/previous clip, or step
+// devices in Device mode) - ALT is simply not checked for this combo
+// anymore, not a hard no-op - see the onMidi() wheel handler.
+var altCtrlWheelEnabled = true;
+
 // Separate accumulators AND separate, independently configurable
 // thresholds per combo (Controller Preferences -> "Wheel Options"
 // category) - so partial progress on one combo can't spill over and
@@ -3264,6 +3275,20 @@ function init() {
    shiftCtrlWheelActionSetting.markInterested();
    shiftCtrlWheelActionSetting.addValueObserver(function (value) {
       shiftCtrlWheelAction = value;
+   });
+
+   // Requested directly: easy to catch ALT along with CTRL by accident
+   // while still learning the combos (e.g. reaching for plain CTRL+Wheel's
+   // clip/track-select stepping) and unexpectedly duplicate or delete a
+   // track. Off leaves SHIFT+CTRL+Wheel (its own independent toggle-free
+   // combo, see above) untouched, and ALT+CTRL+Wheel simply falls through
+   // to plain CTRL+Wheel's own behavior instead - see altCtrlWheelEnabled
+   // in the onMidi() wheel handler.
+   var altCtrlWheelEnabledSetting = host.getPreferences().getBooleanSetting(
+      "Enable ALT+CTRL + Wheel (Duplicate/Delete Track)", "Function Keys", true);
+   altCtrlWheelEnabledSetting.markInterested();
+   altCtrlWheelEnabledSetting.addValueObserver(function (value) {
+      altCtrlWheelEnabled = value;
    });
 
    var altCtrlWheelActionSetting = host.getPreferences().getEnumSetting(
@@ -4807,7 +4832,7 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      if (isControlPressed && isAltPressed) {
+      if (isControlPressed && isAltPressed && altCtrlWheelEnabled) {
          // ALT+CTRL + Jog Wheel: same mechanism as SHIFT+CTRL above, its
          // own independent action setting (altCtrlWheelAction, default
          // "Duplicate/Delete Track") and its own accumulator - so the two
@@ -4815,6 +4840,9 @@ function onMidi(status, data1, data2) {
          // combination (fully invertible via the two separate Controller
          // Preferences dropdowns, no dedicated "swap" needed). Checked
          // before the plain CTRL branch for the same reason as SHIFT+CTRL.
+         // Gated by altCtrlWheelEnabled (Function Keys category, default
+         // ON) - off, this whole branch is skipped and ALT+CTRL+Wheel
+         // falls through to plain CTRL+Wheel's behavior below instead.
          ctrlUsedForCombo = true;
          altUsedForCombo = true;
          altCtrlWheelAccumulator += Math.abs(rawStep);
