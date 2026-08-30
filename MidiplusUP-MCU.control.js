@@ -1687,6 +1687,15 @@ var PLUGIN_DEVICE_STEP_MESSAGES = 4;
 // separately from device-stepping.
 var clipSelectStepAccumulator = 0;
 var CLIP_SELECT_STEP_MESSAGES = 4;
+// Requested directly: move_selection_cursor_to_next/previous_item (see
+// the CTRL+Wheel handler in onMidi below) likely needs an existing
+// selection to step from - reset false every time CTRL is freshly
+// pressed (see the CTRL modifier handler below), so the FIRST wheel
+// step of each CTRL-hold anchors to the first/last item (matching the
+// turn direction) instead of trying to move a cursor that isn't
+// pointing at anything yet; every step after that within the same hold
+// just steps next/previous from there.
+var ctrlWheelSelectionAnchored = false;
 
 // "Override Wheel Combo Thresholds" (Timing) - convenience override for
 // anyone who doesn't want to tune CTRL/SHIFT+CTRL/ALT+CTRL's tick
@@ -4856,11 +4865,24 @@ function onMidi(status, data1, data2) {
          // track-confined. If this also turns out non-functional or no
          // better, revert to "Select next item"/"Select previous item"
          // (see git history around this commit).
+         //
+         // Requested directly: move_selection_cursor_to_next/previous_item
+         // likely needs an existing selection to move FROM, so the first
+         // step of each fresh CTRL hold (see ctrlWheelSelectionAnchored
+         // above) anchors to the first/last item instead - whichever end
+         // matches the turn direction - and only steps next/previous on
+         // every step after that.
          clipSelectStepAccumulator++;
          if (clipSelectStepAccumulator >= CLIP_SELECT_STEP_MESSAGES) {
             clipSelectStepAccumulator = 0;
-            safeInvokeAction(backwards ? "move_selection_cursor_to_previous_item" :
-               "move_selection_cursor_to_next_item", null);
+            if (!ctrlWheelSelectionAnchored) {
+               ctrlWheelSelectionAnchored = true;
+               safeInvokeAction(backwards ? "move_selection_cursor_to_last_item" :
+                  "move_selection_cursor_to_first_item", null);
+            } else {
+               safeInvokeAction(backwards ? "move_selection_cursor_to_previous_item" :
+                  "move_selection_cursor_to_next_item", null);
+            }
          }
          return;
       }
@@ -5079,7 +5101,13 @@ function onMidi(status, data1, data2) {
       if (data1 === 72) {
          isControlPressed = isPressed;
          midiOut.sendMidi(0x90, 72, isControlPressed ? 127 : 0);
-         if (isPressed) { ctrlUsedForCombo = false; }
+         if (isPressed) {
+            ctrlUsedForCombo = false;
+            // See ctrlWheelSelectionAnchored above - each fresh CTRL hold
+            // re-anchors on its first wheel step instead of assuming
+            // whatever was left selected from the last gesture.
+            ctrlWheelSelectionAnchored = false;
+         }
          handleModifierTap(72, isPressed);
          return;
       }
