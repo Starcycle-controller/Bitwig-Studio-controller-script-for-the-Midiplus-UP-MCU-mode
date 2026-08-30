@@ -1797,7 +1797,8 @@ function cycleAutomationWriteMode() {
 // containing "automat" (same technique the tool cycle's ids were found
 // with) and swap in whatever the real id turns out to be.
 function toggleAutomationLanesVisible() {
-   safeInvokeAction("toggle_automation_lanes", "Automation Lanes");
+   var succeeded = safeInvokeAction("toggle_automation_lanes", "Automation Lanes");
+   showModePopup(succeeded ? "AUTO LANE" : "NO ACTION");
 }
 
 // Default (no modifier) Jog Wheel scrub - how many WHOLE BARS the
@@ -5834,7 +5835,9 @@ function handleButtonPressInner(note) {
             // correct regardless of whether the value updates synchronously.
             var newAutomationWriteState = !transport.isArrangerAutomationWriteEnabled().get();
             transport.isArrangerAutomationWriteEnabled().toggle();
-            host.showPopupNotification("Automation Write: " + (newAutomationWriteState ? "ENABLED" : "DISABLED"));
+            var automationWriteStateText = "Automation Write: " + (newAutomationWriteState ? "ENABLED" : "DISABLED");
+            host.showPopupNotification(automationWriteStateText);
+            showModePopup(newAutomationWriteState ? "WRITE ON" : "WRITE OFF");
          } else if (isOptionPressed) {
             optionUsedForCombo = true;
             toggleAutomationLanesVisible();
