@@ -104,19 +104,26 @@ core theory), and figure out why the physical/LCD state and this
 script's own `.get()` readback disagreed before concluding anything
 either way.
 
-**Update: the live Bitwig preference has now actually been switched from
-Pick Up (Catch) to Jump (Immediate)** for day-to-day use, not just a
-throwaway-branch retest - see the **critical setup warning** in the main
-README's Quick Start section and API Feature Request #12 in
-`BITWIG-API-FEATURE-REQUESTS.md`. Since this is confirmed to be a single
-Bitwig Studio-wide preference (not scoped to this controller, this
-script, or even one control), the switch also affects every other
-controller connected to the same Bitwig instance - most importantly, any
-**non-motorized** controller's knobs/faders will now jump a parameter
-instantly to match the knob's physical position on touch, instead of
-requiring a catch-up gesture first. Retesting this script's own behavior
-under the live Jump setting (and separately, re-testing with Catch/Pick
-Up re-enabled to see whether the Mixer Snapshot readback/LCD-freeze
+**Update: the live Bitwig preference was switched from Pick Up (Catch) to
+Jump (Immediate)** for day-to-day use, not just a throwaway-branch retest.
+Originally documented here (and in an earlier version of API Feature
+Request #12) as a single Bitwig Studio-wide preference with no
+per-controller scoping at all - **that was wrong**, corrected against
+Bitwig's own user guide: Settings -> Controllers' global Takeover Mode
+value is only the *default*; each controller's own row in that list has
+its own icon (the fader-shaped one) that toggles whether that specific
+controller follows the global setting or unconditionally forces Immediate,
+independent of every other connected controller. See the corrected setup
+guidance in the main README's Quick Start section and the corrected API
+Feature Request #12 in `BITWIG-API-FEATURE-REQUESTS.md` - the recommended
+setup is now to leave the *global* default on the safer Pick Up/Catch and
+use this controller's own per-controller toggle to force Immediate just
+for it, rather than changing the global default at all.
+
+Retesting this script's own behavior under Jump (whether reached via the
+global default or the per-controller toggle - both produce the same
+Immediate behavior for this controller) is planned but not yet done as of
+this note, including whether the Mixer Snapshot readback/LCD-freeze
 symptoms above still reproduce, or were specific to the diagnostic code
-removed since) is planned but not yet done as of this note - update this
-section with the result once that retest happens.
+removed since - update this section with the result once that retest
+happens.

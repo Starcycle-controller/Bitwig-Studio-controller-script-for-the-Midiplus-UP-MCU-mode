@@ -287,45 +287,56 @@ this round (the community stub mirrors reachable turned out to predate
 per-note expression control on MIDI/instrument clips becomes an actual
 goal, rather than assuming it shares audio-clip Expressions' dead end.
 
-## 12. Takeover Mode is one Studio-wide setting, not per-controller - and isn't readable from script
+## 12. Takeover Mode's per-controller override is binary (Immediate-or-global), not a real per-controller mode - and isn't readable from script
 
-**What broke:** Bitwig Studio's **Takeover Mode** preference (Settings ->
-Controllers -> Pick Up / Jump / Value Scaling) is a single, global,
-Studio-wide setting - it is not scoped per controller script, per output,
-or even per control. Direct, hardware-confirmed consequence: this
-project's own faders are motorized and always want immediate ("Jump")
-behavior (the motor physically drives the fader to match the real value,
-so there's no mismatch to catch up on - `HardwareSlider.disableTakeOver()`
-already opts each fader out of takeover entirely, per-control, exactly for
-this reason). But **encoders/knobs on this same script, and any other
-controller connected to the same Bitwig instance, have no equivalent
-per-control override** - so switching the *global* preference to Jump for
-this controller's convenience also switches it for every other connected
-device. A user running this motorized-fader controller alongside a second,
-non-motorized controller (a very common setup - most users have more than
-one MIDI controller connected) would get every one of that second
-controller's knobs jumping the parameter instantly to match the knob's
-physical position the moment it's touched, rather than requiring a
-catch-up gesture first - a real, surprising behavior change on hardware
-this script has nothing to do with and no way to shield from the switch.
+**Corrected from an earlier version of this item:** this was originally
+written up as "Takeover Mode is a single Studio-wide setting with no
+per-controller scoping at all," based on this project's own investigation
+alone. That was wrong - confirmed directly against Bitwig's own (German)
+user guide: Settings -> Controllers' global **Takeover Mode** preference
+(Pick Up (Catch) / Jump (Immediate) / Value Scaling, top of the page) is
+only the *default*. Each controller's own row in that same list has a
+small icon row bottom-left, and the icon shaped like a fader toggles
+whether *that specific controller* follows the global setting at all -
+switched off, that one controller unconditionally uses Immediate
+regardless of the global value, and no other connected controller is
+affected. Left as a real gap below (a true per-controller mode selector),
+but the "no way to isolate one controller's behavior at all" framing this
+item originally had was simply incorrect.
 
-**Workaround we shipped:** none available for the cross-controller case -
-`disableTakeOver()` only covers this script's own faders, which is a
-different, narrower problem (motorized vs. non-motorized) than the global
-setting's actual scope. The only mitigation is documentation: this
-project's own README now carries an explicit setup warning that changing
-this preference for this controller's benefit is a Studio-wide change,
-not a per-controller one, and to check it against every other connected
-controller before relying on it.
+**What's still a real gap:** the per-controller toggle is binary, not a
+mode selector - it can only force a controller to Immediate, or make it
+follow whatever the global default currently is. There is **no way to
+pin a specific controller to Pick Up/Catch while the global default is
+Jump** (or to Value Scaling while the global default is something else) -
+only "follow the global setting" or "force Immediate," never an
+independent explicit choice per controller. For this project specifically,
+that gap doesn't end up mattering much in practice: this script's own
+faders are motorized and always want Immediate regardless of any of this
+(the motor physically drives the fader to match the real value, so
+there's nothing to catch up on - `HardwareSlider.disableTakeOver()`
+already opts each fader out of takeover entirely, per-control), and the
+per-controller "force Immediate" toggle covers its encoders' equivalent
+need cleanly - leave the global default on the safer Pick Up/Catch, flip
+this controller's own toggle to Immediate, done, no other connected
+controller is touched. The gap would only bite a setup that specifically
+wanted a *non-default, non-Immediate* mode (e.g. Value Scaling) isolated
+to just one controller while the global default is something else -
+narrower and lower-priority than originally described here.
 
-**What would have helped:** expose Takeover Mode per controller
-script/output (the same granularity `disableTakeOver()` already proves is
-architecturally possible per-control, just not surfaced as a user-facing
-preference), so tuning it for one controller's needs can't silently change
-behavior for a user's other, unrelated gear. Also: it isn't readable from
-script at all, and its exact interaction with a script's own `.set()`
-calls on a bound parameter was never fully pinned down during this project
-(see `patches/README.md`'s "Follow-up lead" section) - a readable value
-plus clearer documentation of how it composes with scripted writes would
-have saved a full investigation cycle on its own, independent of the
-per-controller-scoping problem above.
+**Workaround we shipped:** documentation only, now corrected - this
+project's own README points to the real per-controller toggle described
+above as the recommended setup, instead of warning users away from
+Takeover Mode entirely.
+
+**What would have helped:** expose Takeover Mode as a real per-controller
+*mode* selector (Pick Up/Jump/Value Scaling independently, not just an
+Immediate-or-global toggle), matching the granularity
+`disableTakeOver()` already proves is architecturally possible per
+individual control. Also still true: it isn't readable from script at
+all, and its exact interaction with a script's own `.set()` calls on a
+bound parameter was never fully pinned down during this project (see
+`patches/README.md`'s "Follow-up lead" section) - a readable value plus
+clearer documentation of how it composes with scripted writes would have
+saved a full investigation cycle on its own, independent of the
+mode-selector gap above.
