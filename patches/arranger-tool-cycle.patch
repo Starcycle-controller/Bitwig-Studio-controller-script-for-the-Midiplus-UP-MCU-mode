@@ -1,0 +1,39 @@
+diff --git a/MidiplusUP-MCU.control.js b/MidiplusUP-MCU.control.js
+index 43d57cf..b45156d 100644
+--- a/MidiplusUP-MCU.control.js
++++ b/MidiplusUP-MCU.control.js
+@@ -1800,6 +1800,34 @@ function toggleAutomationLanesVisible() {
+    safeInvokeAction("toggle_automation_lanes", "Automation Lanes");
+ }
+
++// SHELVED (see patches/arranger-tool-cycle.patch and its own README
++// note) - this used to live on plain DRAW (note 76), cycling through
++// the 6 arranger edit tools one per press (Bitwig's own keyboard
++// shortcuts 1-6), wrapping back to the first after the sixth press.
++// DRAW is now fully claimed by automation (see cycleAutomationWriteMode()/
++// toggleAutomationLanesVisible() above) - reapplying this means picking
++// a different button/combo to call cycleArrangerTool() from, in
++// handleButtonPressInner() below or wherever makes sense on whichever
++// controller this ends up on. Real action ids confirmed via a DRAW-
++// button diagnostic dump (application.getActions(), filtered to names
++// containing "tool") back when this still lived there - should still be
++// valid; re-confirm if this has been a few major Bitwig versions.
++var ARRANGER_TOOL_ACTIONS = [
++   { id: "select_object_selection_tool", name: "Pointer Tool" },
++   { id: "select_time_selection_tool", name: "Time Selection Tool" },
++   { id: "select_create_tool", name: "Pencil Tool" },
++   { id: "select_spray_tool", name: "Spray Can Tool" },
++   { id: "select_erase_tool", name: "Eraser Tool" },
++   { id: "select_cut_tool", name: "Knife Tool" }
++];
++var arrangerToolCycleIndex = 0;
++
++function cycleArrangerTool() {
++   var nextTool = ARRANGER_TOOL_ACTIONS[arrangerToolCycleIndex];
++   safeInvokeAction(nextTool.id, nextTool.name);
++   arrangerToolCycleIndex = (arrangerToolCycleIndex + 1) % ARRANGER_TOOL_ACTIONS.length;
++}
++
+ // Default (no modifier) Jog Wheel scrub - how many WHOLE BARS the
+ // playhead jumps per wheel message, always landing exactly on a bar
+ // start. Originally beat-based (reported as too slow at a fixed 1

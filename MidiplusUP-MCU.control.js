@@ -1,11 +1,14 @@
 // Midiplus UP Bitwig Controller Script (Standard MCU Mode)
-// Author: Antigravity
+// Author: Sternenlicht / Claude
 // API Version: 25
 //
 // This hardware is run in the Up/Up+'s standard "MCU" control mode (not one
 // of the Logic/Cubase/Live "customized" modes - see the manual, section 3.3
-// and section 8), with the plastic Ableton Live overlay removed, so the
-// buttons show their real printed labels. Note numbers below match the
+// and section 8), with the plastic Ableton Live overlay's top piece
+// removed - the left and right pieces are still in place, so only the
+// buttons under the top piece show their real printed labels; buttons
+// under the left/right pieces still show their Live-overlay labels.
+// Note numbers below match the
 // standard Mackie Control Universal protocol (cross-checked against both
 // Ableton's own shipped "MackieControl" remote script and Jurgen
 // Mossgraber's open-source DrivenByMoss MCU driver - both land on identical
@@ -34,7 +37,7 @@ host.defineController(
    "Midiplus UP (MCU Mode)",
    "3.0.0-native-faders",
    "6f56e9e0-0871-4623-a178-5e82485a3c10",
-   "Antigravity"
+   "Sternenlicht / Claude"
 );
 
 // Define MIDI Ports (1 Input, 1 Output)
@@ -58,9 +61,13 @@ var MAX_SENDS = 16;
 // exact - rename your Tool device instances to this if you change it.
 var TOOL_DEVICE_NAME = "TRLVL";
 // How many devices deep into each track's chain to search for a device
-// named TOOL_DEVICE_NAME. Raise if you nest it deeper than this in your
-// chains.
-var TOOL_DEVICE_SCAN_DEPTH = 4;
+// named TOOL_DEVICE_NAME. Was 4, raised to match EQ_DEVICE_SCAN_DEPTH's
+// 32 (per request) - gain staging (this Tool device) is typically done
+// AFTER EQ and other corrective processing, right before the track's own
+// level, so a gain-staging utility commonly sits deep in the chain, not
+// near the front. Raise further if your chains routinely run deeper
+// than this.
+var TOOL_DEVICE_SCAN_DEPTH = 32;
 // How many devices deep into the SELECTED track's chain "EQ Mode"
 // (SHIFT+PLUG-INS - see findLastEqDeviceIndex()/case 44 below) searches
 // for the LAST device whose name matches EQ_DEVICE_NAME_KEYWORDS. Raise
@@ -71,6 +78,86 @@ var EQ_DEVICE_SCAN_DEPTH = 32;
 // marker it just created. Raise if a project routinely has more markers
 // than this before the point you're adding new ones.
 var CUE_MARKER_SCAN_DEPTH = 128;
+
+// Mixer Snapshots - SHIFT+F1-F8 stores the current 8-track bank window's
+// Volume+Pan into slot N, OPTION+F1-F8 recalls it back, restoring that
+// same bank window first if you've scrolled away since (see
+// storeMixerSnapshot()/recallMixerSnapshot() near directTrackAt() below,
+// and the note 62-69 handler in onMidi()). See the header comment on
+// storeMixerSnapshot() below for the full history: why writes have to go
+// through directTrackAt() specifically, and why that means recall has to
+// scroll back to the original window rather than writing to it in place.
+//
+// Persisted via host.getDocumentState() rather than host.getPreferences()
+// - Document State settings are saved INSIDE the Bitwig project file
+// itself (normally shown in its Studio I/O panel, hidden here via
+// Setting.hide() since these are raw serialized data, not meant for
+// hand-editing), so a snapshot travels with the song and survives
+// closing/reopening it, unlike Preferences which are global to this
+// controller across every project. Deliberately scoped to just
+// Volume + Pan on whichever 8 tracks were visible in the bank at store
+// time (not the whole project, not mute/solo/sends) - the simplest
+// version of "recall a mix balance", easy to extend later if that scope
+// turns out to be too narrow.
+var MIXER_SNAPSHOT_SLOTS = 8;
+var mixerSnapshotSettings = []; // SettableStringValue per slot, filled in init()
+
+// ---------------------------------------------------------------------
+// DEBUG / Diagnostics hub (Controller Preferences panel -> "Debug"
+// category) - every println() used purely for development/diagnostic
+// logging (not a genuine error) is routed through debugLog() below and
+// gated by one of these flags, instead of being unconditionally on or
+// manually commented out. All default to true for now, matching this
+// project's current maturity - it's still being actively wired up and
+// verified against real hardware, so seeing everything by default makes
+// that easier. DEBUG_ENABLED is the master switch: turning it off in
+// Bitwig's Controller Preferences both silences every category below
+// regardless of its own setting AND hides their individual checkboxes
+// from the panel entirely (via Setting.hide()/show(), see init()) - a
+// preview of fully retiring this section once the project is more
+// mature and end users shouldn't see it at all. Genuine error logging
+// (caught exceptions, invalid action ids, duplicate F-key assignments,
+// etc.) is intentionally NOT gated by any of this - those stay
+// unconditional so real problems are never accidentally silenced by a
+// debug setting.
+var DEBUG_ENABLED = true;
+// Raw incoming MIDI dump straight from the controller - every CC not
+// otherwise handled, and every Note-On (which also carries the current
+// SHIFT/OPTION/CTRL/ALT/ZOOM/SCRUB modifier state, gated separately by
+// DEBUG_MODIFIER_STATE below) - the main "verify what a physical
+// button/wheel actually sends" tool.
+var DEBUG_RAW_MIDI = true;
+// "Button pressed - Note:" - logged once a Note-On has passed modifier
+// filtering and actually reached handleButtonPress(), so it's easy to
+// tell "the hardware sent something" (DEBUG_RAW_MIDI above) apart from
+// "the script recognized and dispatched it" (this one).
+var DEBUG_BUTTON_DISPATCH = true;
+// Whether the RAW Note-On line above includes the live modifier/toggle
+// state suffix ("[SHIFT=... OPTION=... CTRL=... ALT=... ZOOM=...
+// SCRUB=...]"). Its own flag since that suffix is the noisiest part of
+// an already-noisy line - useful when chasing a modifier-dependent bug,
+// unnecessary clutter otherwise.
+var DEBUG_MODIFIER_STATE = true;
+// Text sent to the two-row MCU LCD display via sendMCUSysex() - lets a
+// display formatting bug be read straight from the console instead of
+// having to eyeball tiny hardware LCD characters.
+var DEBUG_LCD = true;
+// Encoder-target classification (applyEncoderStep()) - reports a
+// pointed-at parameter's real discreteValueCount() when it exceeds
+// MAX_NATIVE_SWITCH_STEPS, for calibrating that constant against real
+// hardware/device values.
+var DEBUG_ENCODER = true;
+
+// Central gate for every diagnostic println() in this script - pass one
+// of the category flags above (not a literal true/false) so both the
+// per-category setting AND the DEBUG_ENABLED master switch are honored
+// in one place. Real error logging bypasses this entirely (see above).
+function debugLog(categoryEnabled, message) {
+   if (DEBUG_ENABLED && categoryEnabled) {
+      println(message);
+   }
+}
+
 var currentMode = MODE_MIXER;
 // Tracks currentMode as of the last applyModeChange() call - see there for
 // why this is how leaving MODE_DEVICE closes the plugin window centrally.
@@ -111,6 +198,16 @@ var isAltPressed = false;     // Note 73
 var lastClickedParam = null;
 var lastClickedParamValue = null;
 
+// OPTION + Jog Wheel Push (note 101) toggles this: LastClickedParameter's
+// own smartToggleLock() locks ALT+wheel onto whatever parameter the mouse
+// is currently hovering, without needing an exact click - and if already
+// locked and the mouse has moved to a different parameter, re-locks to
+// that one instead of unlocking (Bitwig's own "smart" behavior, see its
+// Javadoc). isLocked() mirrors that locked/unlocked state so the popup
+// notification below can report it. See the wheel-push handler in
+// onMidi() and its init() setup.
+var lastClickedParamLocked = null;
+
 // Each of the 4 modifier buttons above also tracks whether it was "used"
 // to modify another action (a jog-wheel combo, mostly) while held - see
 // setUsedForCombo()/wasUsedForCombo() below. This gates the *standalone
@@ -143,11 +240,17 @@ function wasUsedForCombo(note) {
 // long press, whether that also opens the plugin window (jumping into
 // Device mode from anywhere, not just toggling the view while already
 // there), and which modifier button cycles the selected device's macro
-// bank. -1 means "None" (disabled). Defaults: CTRL long-press for
-// expanded view (also opening the plugin window), ALT tap for macro
-// bank.
+// bank. -1 means "None" (disabled). Defaults: Expanded Device View off
+// (requested directly - CTRL is the most ergonomic modifier and is
+// already heavily used for wheel combos; a long-press mode-switch/window
+// -open living on the same button was reported as confusing and prone
+// to firing unintentionally while just trying to use CTRL+wheel. F1-F8
+// already covers device select + open-window, so nothing is lost by
+// disabling this by default - still available on any modifier via the
+// "Expanded Device View Button" dropdown for anyone who wants it), ALT
+// tap for macro bank.
 var MODIFIER_NAME_TO_NOTE = { "SHIFT": 70, "OPTION": 71, "CTRL": 72, "ALT": 73, "None": -1 };
-var EXPANDED_VIEW_BUTTON = 72;
+var EXPANDED_VIEW_BUTTON = -1;
 var EXPANDED_VIEW_INSTANT = false; // false = long press, true = instant tap
 // Whether the Expanded Device View action also opens (and, on the next
 // press, closes) the plugin window - so the button both expands AND shows
@@ -644,11 +747,12 @@ function applyEncoderStep(target, rawDelta, encoderIndex) {
       return;
    }
    if (discreteCount > MAX_NATIVE_SWITCH_STEPS) {
-      // DEBUG: confirms the discreteCount actually reported for whatever
-      // this encoder is currently pointed at - helps verify/calibrate
+      // Confirms the discreteCount actually reported for whatever this
+      // encoder is currently pointed at - helps verify/calibrate
       // MAX_NATIVE_SWITCH_STEPS against real hardware/device values if a
-      // parameter still doesn't land where expected in Stepped mode.
-      println("Encoder target has discreteValueCount() " + discreteCount +
+      // parameter still doesn't land where expected in Stepped mode. See
+      // DEBUG_ENCODER above.
+      debugLog(DEBUG_ENCODER, "Encoder target has discreteValueCount() " + discreteCount +
          " (> " + MAX_NATIVE_SWITCH_STEPS + ") - treated as continuous, native grid ignored");
    }
 
@@ -967,9 +1071,25 @@ var selectChannelOnFaderTouch = true;
 var SELECT_ON_TOUCH_DELAY_MS = 0;
 var selectOnTouchGeneration = 0;
 
+// selectInMixer() alone (the only one ever called here before) only sets
+// Mixer-panel selection - confirmed on hardware that a track selected
+// this way shows no visible change in the Arranger at all (no "white
+// circle" around the track header, unlike a real mouse click there) and
+// doesn't establish whatever anchor select_item_at_cursor/"Select item
+// above"/"Select item below" need to navigate clips. Channel.select()
+// is deprecated specifically in favor of two separate calls -
+// selectInMixer() and selectInEditor() ("Selects the device chain in
+// Bitwig Studio [Arranger/editors]") - so selectInEditor() is very
+// likely the missing piece: added alongside selectInMixer() at every
+// track-selection call site in this script (here, selectBankSlot() and
+// the SELECT button handler below) to also set the Arranger's own
+// selection/focus state a real mouse click would. Not yet confirmed on
+// hardware whether this actually produces the white circle or unblocks
+// the wheel-press clip-navigation experiments.
 function scheduleSelectChannelOnTouch(track) {
    if (SELECT_ON_TOUCH_DELAY_MS <= 0) {
       track.selectInMixer();
+      track.selectInEditor();
       cursorTrack.selectChannel(track);
       return;
    }
@@ -980,6 +1100,7 @@ function scheduleSelectChannelOnTouch(track) {
          return;
       }
       track.selectInMixer();
+      track.selectInEditor();
       cursorTrack.selectChannel(track);
    }, SELECT_ON_TOUCH_DELAY_MS);
 }
@@ -1003,6 +1124,24 @@ function scheduleSelectChannelOnTouch(track) {
 // hand or a hardware/touch-sense quirk on this particular unit, the
 // fix is the same either way.
 var faderTouchHeld = [false, false, false, false, false, false, false, false, false];
+
+// Root cause of Mixer Snapshot recall silently failing to write volume/
+// pan on channels that had recently received live hardware fader input
+// (confirmed on hardware - see README "Mixer Snapshots"): we never told
+// Bitwig's Parameter API when a hardware touch gesture starts/ends.
+// Bitwig's own Parameter interface has touch(isBeingTouched) exactly for
+// this (confirmed present via Mossgraber's DrivenByMoss - ParameterImpl.
+// touchValue() calls parameter.touch()) - real MCU-style controller
+// drivers call it on every fader touch/release so Bitwig knows when a
+// hardware gesture owns a parameter vs. when it's free again. We were
+// never calling it at all, so once a fader had sent any live input,
+// Bitwig had no signal that the gesture ever ended and kept ignoring
+// subsequent script .set() calls on that parameter indefinitely - not a
+// binding, touch-debounce, or track-access-path issue as earlier
+// theories assumed. Captured per-index (not re-resolved at release)
+// so a mode change mid-touch still releases the SAME parameter that got
+// touched, never leaving one stuck touched forever.
+var faderTouchedTarget = [null, null, null, null, null, null, null, null, null];
 
 function isFaderTouchLocked(faderTouchIndex) {
    for (var i = 0; i < faderTouchHeld.length; i++) {
@@ -1062,6 +1201,242 @@ function scheduleFaderSnapZeroCheck(index, target) {
          target.set(0);
       }
    }, FADER_SNAP_ZERO_DELAY_MS);
+}
+
+// "Fader Snap to dB Marks" (Mixer category) - requested directly:
+// landing a motorized fader exactly on a specific dB value (e.g.
+// -10.0 dB) by hand is hard because Bitwig's own volume curve
+// compresses more heavily the further a level sits from unity (0 dB) -
+// the same physical fader travel covers a much bigger dB range down
+// around -10/-12 dB than it does near the top. Deliberately a separate
+// toggle from Fader Snap to Zero above, not folded into it - someone
+// may want -inf snapping without every other round number grabbing the
+// fader too. Same release-triggered/re-touch-cancels design as Snap to
+// Zero (own generation counter, not shared with it), just against a
+// fixed list of dB marks (see FADER_SNAP_DB_MARKS_MUSICAL/_HARDWARE and
+// faderSnapDbMarkLayout below) instead of a single target. When enabled
+// (default OFF - opt-in), releasing within FADER_SNAP_DB_MARK_RANGE of
+// one of the active layout's marks schedules a check
+// FADER_SNAP_DB_MARK_DELAY_MS later; if the fader is still untouched
+// and still in range, it snaps to that mark's exact value.
+//
+// Two selectable mark layouts (Fader Snap to dB Marks Layout below),
+// since which set of numbers is "the round ones" depends on context:
+// - Musical (Standard): 0, -6, -12, -18, -24, -30, -36 dB - the classic
+//   halving series (every -6dB is half the amplitude) used across audio
+//   engineering generally, requested directly.
+// - Hardware Scale: 5, 0, -10, -20, -30, -50, -60 dB - matches the
+//   marks actually printed on this hardware's own fader scale (read
+//   directly off the unit: 10, 5, 0, -10, -20, -30, -50, -60, -Infinity
+//   top to bottom). The printed "10" is deliberately excluded - Bitwig's
+//   volume curve tops out around +6.02dB at full fader travel (see the
+//   curve fit below, evaluated at normalized=1.0), so a literal +10dB
+//   target is never actually reachable; dbMarkToNormalized() clamps
+//   defensively regardless. -Infinity isn't included in either list -
+//   Fader Snap to Zero above already owns that endpoint.
+//
+// Scoped to plain Track Volume only (see isFaderVolumeTarget() below) -
+// not Send level or device macros under FLIP, which may use a
+// different curve or an arbitrary (often percentage) scale entirely
+// where "snap to -10 dB" would be meaningless or wrong.
+//
+// Converting a target dB value to the normalized value Bitwig will
+// actually display as that dB figure uses dB = 60*log10(normalized) +
+// 6.0206 - Bitwig's volume curve, fit against this hardware's own
+// console-logged normalized-value/dB pairs from earlier this session
+// (0.7939->0.0dB, 0.6257->-6.2dB, 0.6182->-6.5dB) and accurate to
+// within ~0.02dB across that range - inverted to
+// normalized = 10^((dB - 6.0206) / 60).
+var faderSnapToDbMarksEnabled = false;
+var FADER_SNAP_DB_MARK_RANGE = 0.03;
+var FADER_SNAP_DB_MARK_DELAY_MS = 500;
+var FADER_SNAP_DB_MARKS_MUSICAL = [0, -6, -12, -18, -24, -30, -36];
+var FADER_SNAP_DB_MARKS_HARDWARE = [5, 0, -10, -20, -30, -50, -60];
+var faderSnapDbMarkLayout = "Hardware Scale";
+var FADER_SNAP_DB_CURVE_SLOPE = 60;
+var FADER_SNAP_DB_CURVE_OFFSET = 6.0206;
+
+function dbMarkToNormalized(db) {
+   return Math.max(0, Math.min(1, Math.pow(10, (db - FADER_SNAP_DB_CURVE_OFFSET) / FADER_SNAP_DB_CURVE_SLOPE)));
+}
+
+function activeFaderSnapDbMarks() {
+   return faderSnapDbMarkLayout === "Hardware Scale" ? FADER_SNAP_DB_MARKS_HARDWARE : FADER_SNAP_DB_MARKS_MUSICAL;
+}
+
+// True for whichever fader index/mode combination is plain Track Volume
+// (master always is; channel 0-7 only when in Mixer mode, unflipped,
+// and not showing a TOOL_DEVICE_NAME parameter instead) - see
+// getFaderTarget() above for the same mode logic applied to resolving
+// the target itself.
+function isFaderVolumeTarget(index) {
+   if (index === 8) {
+      return true;
+   }
+   return currentMode === MODE_MIXER && !isFlipped && !isToolVolumeMode;
+}
+
+var faderSnapDbMarkGeneration = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+function scheduleFaderSnapDbMarkCheck(index, target, isVolumeTarget) {
+   faderSnapDbMarkGeneration[index]++;
+   var myGeneration = faderSnapDbMarkGeneration[index];
+   host.scheduleTask(function () {
+      if (faderSnapDbMarkGeneration[index] !== myGeneration) {
+         return;
+      }
+      if (!faderSnapToDbMarksEnabled || faderTouchHeld[index] || !isVolumeTarget) {
+         return;
+      }
+      var current = target.get();
+      var marks = activeFaderSnapDbMarks();
+      for (var i = 0; i < marks.length; i++) {
+         var markValue = dbMarkToNormalized(marks[i]);
+         if (Math.abs(current - markValue) <= FADER_SNAP_DB_MARK_RANGE) {
+            target.set(markValue);
+            return;
+         }
+      }
+   }, FADER_SNAP_DB_MARK_DELAY_MS);
+}
+
+// Fader Position Test (Debug feature, requested directly) - a way to
+// verify every motorized fader actually drives to the correct physical
+// position for each printed hardware dB label. Gated behind the "Fader
+// Position Test Mode" Debug setting below so ALT+F8/F8 can't trigger it
+// by accident; wired into the F1-F8 handler in onMidi() (notes 62-69).
+// ALT+F8 starts it (or cancels an already-running one - same button
+// toggles); it drives all 8 channel faders to FADER_SNAP_DB_MARKS_HARDWARE's
+// values one at a time, bottom-to-top (-60 up to +5, matching how this
+// was originally described: "the fader moves to -60 ... then we move to
+// -50 ..."). Plain F8 (no ALT) confirms the CURRENT position once the
+// user has visually checked it against the hardware's printed scale, and
+// advances to the next mark - or ends the test after the last one.
+// Recommended setup: a throwaway project with 8 real tracks, so every
+// channel actually has something to drive.
+//
+// IMPORTANT CAVEAT, logged and worth repeating here: volume().get()
+// right after volume().set() can only confirm Bitwig's own parameter
+// model holds the value this script itself just wrote - it is NOT an
+// independent physical-position readback. This hardware's motorized
+// fader input is handled entirely through the native setBinding()/
+// setAdjustValueMatcher() plumbing (see the "Motorized Pitchbend
+// Faders" comment in onMidi() above), with no raw pitch-bend byte ever
+// reaching this script's own code - there is no software-visible signal
+// distinct from "what we told Bitwig the value is" to compare a
+// physical motor position against. The .get() readback below is still
+// worth logging - it would catch a write silently failing to take
+// effect in Bitwig's model at all, exactly what an earlier Mixer
+// Snapshot bug turned out to be (see storeMixerSnapshot() above) - but
+// the human visually confirming the physical fader position via the F8
+// press is the actual ground-truth check this feature is built around,
+// not something software can substitute for here.
+var faderPositionTestModeEnabled = false;
+var faderPositionTestActive = false;
+// Index into FADER_SNAP_DB_MARKS_HARDWARE - counts down from the last
+// entry (-60) to the first (+5) to test bottom-to-top.
+var faderPositionTestMarkIndex = -1;
+
+function faderPositionTestLabel(db) {
+   return (db > 0 ? "+" : "") + db + "dB";
+}
+
+// Same gating logic as isFaderVolumeTarget(0) above (only meaningful
+// while the physical faders are actually bound to plain track volume),
+// plus isMixerSnapshotBankSupported() (see storeMixerSnapshot() below) -
+// this test backs up/restores via Mixer Snapshot slot 8, which only
+// works in Main/Show All.
+function faderPositionTestGateOk() {
+   return currentMode === MODE_MIXER && !isFlipped && !isToolVolumeMode &&
+      isMixerSnapshotBankSupported();
+}
+
+function driveFaderPositionTestMark() {
+   var db = FADER_SNAP_DB_MARKS_HARDWARE[faderPositionTestMarkIndex];
+   var target = dbMarkToNormalized(db);
+   println("Fader Position Test - driving all faders to " + db +
+      " dB (normalized " + target.toFixed(4) + ")");
+   for (var i = 0; i < 8; i++) {
+      if (isMainSlotEmpty(i)) {
+         continue;
+      }
+      var track = directTrackAt(i);
+      track.volume().set(target);
+      println("Fader Position Test - channel " + (i + 1) + " target=" + target.toFixed(4) +
+         " immediate readback=" + track.volume().get().toFixed(4));
+   }
+   host.showPopupNotification("Fader Position Test: " + faderPositionTestLabel(db) +
+      " - press F8 once confirmed");
+   showModePopup(faderPositionTestLabel(db));
+}
+
+function startFaderPositionTest() {
+   if (!faderPositionTestModeEnabled) {
+      return;
+   }
+   if (faderPositionTestActive) {
+      faderPositionTestActive = false;
+      faderPositionTestMarkIndex = -1;
+      println("Fader Position Test - cancelled, restoring pre-test mixer state from Mixer Snapshot slot 8");
+      host.showPopupNotification("Fader Position Test Cancelled");
+      recallMixerSnapshot(7);
+      return;
+   }
+   if (!faderPositionTestGateOk()) {
+      host.showPopupNotification("Fader Position Test: switch to Mixer mode, Show All (not Flipped/Tool Volume)");
+      showModePopup("SWITCH MIX");
+      return;
+   }
+   // Requested directly: back up the current mix into Mixer Snapshot
+   // slot 8 before driving any faders, then restore it automatically
+   // once the test ends (cancelled, aborted, or completed) - see the
+   // recallMixerSnapshot(7) calls below. Only happens while this test
+   // mode is actually running; slot 8 (SHIFT+F8/OPTION+F8) is otherwise
+   // a completely normal, independent Mixer Snapshot slot the rest of
+   // the time - starting the test simply overwrites whatever was in it.
+   println("Fader Position Test - backing up current mixer state to Mixer Snapshot slot 8");
+   storeMixerSnapshot(7);
+   faderPositionTestActive = true;
+   faderPositionTestMarkIndex = FADER_SNAP_DB_MARKS_HARDWARE.length - 1;
+   println("Fader Position Test - started (bottom to top)");
+   driveFaderPositionTestMark();
+}
+
+function confirmFaderPositionTest() {
+   if (!faderPositionTestActive) {
+      return;
+   }
+   var db = FADER_SNAP_DB_MARKS_HARDWARE[faderPositionTestMarkIndex];
+   println("Fader Position Test - confirmed " + db + " dB, settled readback:");
+   for (var i = 0; i < 8; i++) {
+      if (isMainSlotEmpty(i)) {
+         continue;
+      }
+      println("Fader Position Test - channel " + (i + 1) + " settled=" +
+         directTrackAt(i).volume().get().toFixed(4));
+   }
+   if (!faderPositionTestGateOk()) {
+      faderPositionTestActive = false;
+      faderPositionTestMarkIndex = -1;
+      println("Fader Position Test - aborted (mode changed mid-test), restoring pre-test mixer state " +
+         "from Mixer Snapshot slot 8");
+      host.showPopupNotification("Fader Position Test Aborted (mode changed)");
+      // If the mode change was itself a move away from Main/Show All,
+      // this recall will refuse (same guard as above) rather than
+      // silently restoring the wrong bank - switch back to Main/Show
+      // All and use OPTION+F8 to recall slot 8 manually in that case.
+      recallMixerSnapshot(7);
+      return;
+   }
+   faderPositionTestMarkIndex--;
+   if (faderPositionTestMarkIndex < 0) {
+      faderPositionTestActive = false;
+      println("Fader Position Test - complete, restoring pre-test mixer state from Mixer Snapshot slot 8");
+      host.showPopupNotification("Fader Position Test Complete");
+      recallMixerSnapshot(7);
+      return;
+   }
+   driveFaderPositionTestMark();
 }
 
 // "Mixer Mode PAGE: Loop Behavior" - see findAdjacentMarkerPosition()/
@@ -1353,9 +1728,19 @@ var isBankHeld = false;
 var bankPageStepAccumulator = 0;
 var BANK_PAGE_STEP_MESSAGES = 4;
 
-// ZOOM (100) and SCRUB (101) are TOGGLE buttons in the real protocol (press
-// to flip state, not held-while-down like SHIFT/OPTION/CTRL/ALT).
+// ZOOM (100) is a TOGGLE button in the real protocol (press to flip
+// state, not held-while-down like SHIFT/OPTION/CTRL/ALT).
 var isZoomToggled = false;
+
+// Currently dead/unreachable: note 101 (originally assumed to be a
+// dedicated "SCRUB Button" toggling this) turned out to actually be the
+// Jog Wheel's own click note instead - confirmed via systematic testing
+// of every wheel-assignment button, see the Jog Wheel Push handler and
+// README. The real SCRUB control sends no MIDI at all when pressed, so
+// there's currently no known way to set this to true. Left in place
+// (rather than removed) since the Pan Mode branch below still checks it
+// alongside isWheelPressed, and it's harmless as a permanently-false
+// value - ready to wire up again if a real SCRUB note is ever found.
 var isScrubToggled = false;
 
 // ZOOM+LEFT/RIGHT (case 98/99 - LEFT/RIGHT send notes 98/99 on this
@@ -1379,19 +1764,42 @@ var isScrubToggled = false;
 // created in init() below.
 var ZOOM_ARROW_STEP = 1;
 
-// DRAW (note 81): cycles through the 6 arranger edit tools (Bitwig's own
-// keyboard shortcuts 1-6), wrapping back to the first after the sixth
-// press. Real action ids confirmed via the DRAW-button diagnostic dump
-// (application.getActions(), filtered to names containing "tool").
-var ARRANGER_TOOL_ACTIONS = [
-   { id: "select_object_selection_tool", name: "Pointer Tool" },
-   { id: "select_time_selection_tool", name: "Time Selection Tool" },
-   { id: "select_create_tool", name: "Pencil Tool" },
-   { id: "select_spray_tool", name: "Spray Can Tool" },
-   { id: "select_erase_tool", name: "Eraser Tool" },
-   { id: "select_cut_tool", name: "Knife Tool" }
-];
-var arrangerToolCycleIndex = 0;
+// DRAW (note 76) - fully automation-centric, see the case 76 handler in
+// handleButtonPressInner() below for the full SHIFT/OPTION breakdown.
+//
+// Transport has no readable getAutomationWriteMode() - only
+// setAutomationWriteMode(mode)/addAutomationWriteModeObserver(callback)
+// (confirmed against the Controller API stubs: setAutomationWriteMode()
+// takes a plain string, no enum constant exposed to script) - so the
+// current mode has to be tracked locally via the observer (registered
+// in init() below), same pattern as every other live Controller
+// Preferences value in this file. "latch"/"touch"/"write" are Bitwig's
+// own lowercase mode identifiers.
+var AUTOMATION_WRITE_MODES = ["latch", "touch", "write"];
+var currentAutomationWriteMode = "latch";
+
+function cycleAutomationWriteMode() {
+   var idx = AUTOMATION_WRITE_MODES.indexOf(currentAutomationWriteMode);
+   var nextMode = AUTOMATION_WRITE_MODES[(idx + 1) % AUTOMATION_WRITE_MODES.length];
+   transport.setAutomationWriteMode(nextMode);
+   host.showPopupNotification("Automation Write Mode: " + nextMode.toUpperCase());
+   showModePopup(nextMode.toUpperCase());
+}
+
+// UNCONFIRMED action id - Bitwig's generic action system doesn't expose
+// automation-lane visibility via a dedicated method the way
+// isArrangerAutomationWriteEnabled() does for the write-arm, so this
+// goes through the same application.getAction(id)/safeInvokeAction()
+// path the (now-shelved, see patches/arranger-tool-cycle.patch) arranger
+// tool cycle used - same reasoning, id not yet confirmed against a real
+// application.getActions() dump on this hardware. If "Automation Lanes"
+// never shows up, dump application.getActions() filtered to names
+// containing "automat" (same technique the tool cycle's ids were found
+// with) and swap in whatever the real id turns out to be.
+function toggleAutomationLanesVisible() {
+   var succeeded = safeInvokeAction("toggle_automation_lanes", "Automation Lanes");
+   showModePopup(succeeded ? "AUTO LANE" : "NO ACTION");
+}
 
 // Default (no modifier) Jog Wheel scrub - how many WHOLE BARS the
 // playhead jumps per wheel message, always landing exactly on a bar
@@ -1617,6 +2025,7 @@ function safeInvokeAction(actionId, popupText) {
 
 // Host Objects
 var trackBank = null;
+var trackBankItems = []; // trackBank.getItemAt(0..7), cached once - see refreshMainCursors()
 var effectTrackBank = null; // "Returns" bank, shown when isViewingReturns is true
 var sceneBank = null; // MODE_SCENE (BTA): fixed 8-scene window, see sceneCursorIndex below
 
@@ -1659,6 +2068,21 @@ var mainBankScrollOffset = 0; // logical scroll position into activeTrackRawIndi
 var mainCursorHasTrack = [true, true, true, true, true, true, true, true]; // Hide mode: does slot i have a track?
 var hideDeactivatedTracksEnabled = false; // live from the "Deactivated Tracks in Bank" Controller Preferences setting
 var mainMappingDirty = true; // set by any scan-bank exists()/isActivated()/name() change; consumed by mainMappingTick()
+// Debounce token for the delayed LCD-text re-read scheduled by
+// recomputeActiveTrackIndices() below - see there for why a one-shot
+// synchronous refreshDisplayText() right after a Hide-mode shift isn't
+// always enough on its own.
+var displayRefreshRetryGeneration = 0;
+
+// 0-based slot indices selectFirstTrackOfBank()/selectLastTrackOfBank()
+// (see below) select after a bank scroll - live from the "Bank Scroll
+// Left/Right: Select Track #" Controller Preferences settings ("None" or
+// 1-8 in the UI, converted to -1/0-7 here). -1 ("None") means don't
+// select anything on that scroll direction at all, leaving whatever was
+// already selected untouched. Defaults 0/7 match the original hardcoded
+// first-slot/last-slot behavior.
+var bankScrollLeftSelectIndex = 0;
+var bankScrollRightSelectIndex = 7;
 var masterTrack = null;
 var cursorTrack = null;
 var cursorDevice = null;
@@ -1737,6 +2161,21 @@ var mainLedState = { arm: [false, false, false, false, false, false, false, fals
                       solo: [false, false, false, false, false, false, false, false],
                       mute: [false, false, false, false, false, false, false, false],
                       select: [false, false, false, false, false, false, false, false] };
+// Hide mode's own copy - kept separate from mainLedState (Show All) so
+// mainTrackCursors' observers (still Hide-mode only, see
+// setupChannelStripObservers() below) never cross-write into Show All's
+// state. They used to share one object; since mainTrackCursors is no
+// longer repositioned at all while Show All is active (see the all-8-
+// collapse fix), it sits in its default state and its isSelectedInMixer
+// observer can still fire for whatever that default happens to be,
+// silently overwriting an already-correct Show All value with stale
+// data - confirmed on hardware as all 8 SELECT LEDs sticking on after a
+// bank scroll, clearing one slot at a time as each one's real (Show All)
+// observer happened to fire again.
+var mainHideLedState = { arm: [false, false, false, false, false, false, false, false],
+                          solo: [false, false, false, false, false, false, false, false],
+                          mute: [false, false, false, false, false, false, false, false],
+                          select: [false, false, false, false, false, false, false, false] };
 var returnsLedState = { arm: [false, false, false, false, false, false, false, false],
                          solo: [false, false, false, false, false, false, false, false],
                          mute: [false, false, false, false, false, false, false, false],
@@ -1782,6 +2221,11 @@ var mainToolSlot = [-1, -1, -1, -1, -1, -1, -1, -1];
 var returnsToolSlot = [-1, -1, -1, -1, -1, -1, -1, -1];
 var mainToolRemote = [];
 var returnsToolRemote = [];
+// Hide mode's own copies - same reason as mainHideLedState above:
+// mainTrackCursors is never repositioned while Show All is active, so
+// its device-tracking observer must not write into Show All's arrays.
+var mainHideToolSlot = [-1, -1, -1, -1, -1, -1, -1, -1];
+var mainHideToolRemote = [];
 
 // Same tracking, but for the single arranger-selected cursorTrack rather
 // than a bank slot - used by PAN (case 42) to decide whether it needs to
@@ -1790,9 +2234,17 @@ var returnsToolRemote = [];
 var cursorToolSlot = -1;
 var cursorToolRemote = [];
 
-// Display State Caches (8 channels x 7 chars)
+// Display State Caches (8 channels x 7 chars). topRowText is always
+// whichever text every other part of this script treats as "the name"
+// (track/send/parameter name), bottomRowText always "the value"
+// (level/displayedValue) - the swapLcdRows setting only affects which
+// physical LCD row each one is rendered to, in renderLCDDisplays()
+// below, not which array anything is written into. Requested directly:
+// this hardware's rotary encoders can physically block the row above
+// them, and the value is what gets watched more often than the name.
 var topRowText = ["       ", "       ", "       ", "       ", "       ", "       ", "       ", "       "];
 var bottomRowText = ["       ", "       ", "       ", "       ", "       ", "       ", "       ", "       "];
+var swapLcdRows = false;
 
 // Display Refresh Throttle Flag
 var displayNeedsUpdate = true;
@@ -1800,11 +2252,21 @@ var displayNeedsUpdate = true;
 // Replaces every trackBank.getItemAt(i)/activeTrackBank().getItemAt(i)
 // call site - see the Deactivated Tracks in Bank comment above
 // mainTrackScanBank for why. Returns unchanged (effectTrackBank
-// directly); Main always goes through mainTrackCursors, whichever real
-// track each one currently points to (kept in sync by
-// refreshMainCursors() below) regardless of Show All/Hide mode.
+// directly). Main: Show All mode bypasses mainTrackCursors entirely and
+// reads trackBankItems directly - see refreshMainCursors() below and the
+// all-8-columns-collapse investigation there for why calling
+// selectChannel() 8 times per tick turned out to be the actual problem,
+// not just a display-vs-parameter distinction like directTrackAt()'s own
+// earlier group-track fix assumed. Hide mode still needs the cursor
+// indirection, since a plain TrackBank can't skip/shift slots.
 function activeTrackAt(index) {
-   return isViewingReturns ? effectTrackBank.getItemAt(index) : mainTrackCursors[index];
+   if (isViewingReturns) {
+      return effectTrackBank.getItemAt(index);
+   }
+   if (hideDeactivatedTracksEnabled) {
+      return mainTrackCursors[index];
+   }
+   return trackBankItems[index];
 }
 
 // True only for a Main-bank, Hide-mode slot with no activated track left
@@ -1824,6 +2286,214 @@ function activeBankItemCount() {
    return hideDeactivatedTracksEnabled ? activeTrackRawIndices.length : trackBank.itemCount().get();
 }
 
+// Used in place of activeTrackAt() for every read/write of an actual
+// track PARAMETER (volume/pan/arm/solo/mute) - as opposed to display
+// text, selection, or track color, which stay on activeTrackAt() (the
+// mainTrackCursors indirection) since none of those have been shown to
+// have this problem. Reported and confirmed on hardware: a group's
+// first CHILD track's fader silently controlled the GROUP's own volume
+// instead of the child's - name/display resolution via activeTrackAt()
+// was correct (the LCD showed the child's real name), only the
+// volume()/pan() *parameter* binding was wrong. Bisected against an
+// earlier confirmed-working version of this script (before the
+// "Deactivated Tracks in Bank" feature existed) and found that the
+// working version bound faders straight to trackBank.getItemAt(i)
+// directly - no CursorTrack involved at all - whereas every version
+// since routes it through mainTrackCursors[i] (a persistent CursorTrack
+// re-pointed via selectChannel(), added specifically so Hide mode can
+// skip deactivated slots - see activeTrackAt() above). That CursorTrack
+// indirection is apparently unreliable for parameter access specifically
+// on a track nested inside a group, even though the exact same cursor's
+// name()/other reads are fine. Fixed by going back to the direct,
+// confirmed-working trackBank.getItemAt(i) binding whenever Hide mode
+// isn't actually active (the common case, and where this was reported) -
+// Hide mode still needs the cursor indirection, since a plain TrackBank
+// can't skip slots the way it does, and hasn't been reported broken.
+//
+// Originally added just for getFaderTarget()/getEncoderTarget() (where
+// the bug was first found and confirmed), then extended on general
+// review to REC ARM/SOLO/MUTE toggles and the Mixer-mode encoder-push
+// Pan Reset (see handleButtonPressInner below) - same
+// activeTrackAt(i)-through-a-CursorTrack pattern, same group-adjacent
+// risk, just never separately hardware-confirmed broken the way the
+// fader was. Cheap and safe to cover proactively rather than wait for
+// each one to be reported separately, given a wrong-track SOLO/MUTE/ARM
+// on a group is a much worse mistake to make silently than a fader glitch.
+function directTrackAt(i) {
+   if (isViewingReturns) {
+      return effectTrackBank.getItemAt(i);
+   }
+   if (hideDeactivatedTracksEnabled) {
+      return mainTrackCursors[i];
+   }
+   return trackBank.getItemAt(i);
+}
+
+// Mixer Snapshots - see MIXER_SNAPSHOT_SLOTS/mixerSnapshotSettings above.
+//
+// Whole-project, not just the visible 8-track window - captures every
+// existing Main track (any position, via mainTrackScanBank, which
+// already exists for the "Deactivated Tracks in Bank" scan and is never
+// scrolled) and can restore all of them, not just whichever 8 happen to
+// be on screen. Main tracks only - Hide mode and Returns are refused
+// with a popup; see below for why.
+//
+// Writes still have to go through directTrackAt(i) - the exact object
+// the fader for that index is setBinding()-bound to - since writing
+// through any other object (a separate, unscrolled scan bank included)
+// was confirmed a dead end independent of the Parameter.touch() fix (see
+// faderTouchedTarget above and the README's "Mixer Snapshots" section).
+// So a track that isn't currently sitting in one of the 8 fader-bound
+// slots can't be updated in place - recall has to scroll it into slot 0
+// first. Tracks already visible in the CURRENT window update immediately,
+// with no scroll at all, so the fader you're looking at responds right
+// away; every other stored track is handled afterward, one bank window
+// at a time (batching any that land in the same window together) - each
+// one briefly scrolling trackBank there, writing, and moving on - before
+// finally scrolling back to the window you started at. This does mean
+// the bank window/faders/LCD will visibly jump through each affected
+// window in turn for anything off-screen; there is no way to update a
+// track's volume/pan without it briefly becoming the one bound to
+// hardware, given the constraint above.
+//
+// Hide mode is refused (rather than silently reinterpreted) because its
+// "slot i" mapping (activeTrackRawIndices, built from live isActivated()
+// state) isn't a stable absolute position the way trackBank.scrollPosition()
+// is - a captured position could mean a different track by recall time
+// if tracks were (de)activated in between. Returns is refused because
+// this whole feature is built on mainTrackScanBank, which only scans
+// Main tracks. Both keep whatever their own single-window scope was
+// before this feature existed - not currently implemented, given the
+// added complexity for a case that hasn't been reported needed.
+//
+// One slot's serialized text is "<pos>,<vol>,<pan>|<pos>,<vol>,<pan>|..."
+// - one entry per EXISTING track at store time (absolute
+// mainTrackScanBank position, not bank-relative slot), vol/pan 4-decimal
+// normalized 0..1 (the same range track.volume()/pan() already use
+// everywhere else in this file). Deactivated tracks are still captured/
+// restored (matches "revert previous mixer settings" - not everything
+// meant to come back is necessarily active). Deliberately plain
+// delimited text, not JSON - Bitwig's Controller API has no JSON parser
+// built in and this format is trivial to split by hand.
+function isMixerSnapshotBankSupported() {
+   return !isViewingReturns && !hideDeactivatedTracksEnabled;
+}
+
+function storeMixerSnapshot(slotIndex) {
+   if (!isMixerSnapshotBankSupported()) {
+      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + ": switch to Main / Show All view");
+      showModePopup("WRONG VIEW");
+      return;
+   }
+   var parts = [];
+   for (var i = 0; i < MAIN_TRACK_SCAN_DEPTH; i++) {
+      var scanTrack = mainTrackScanBank.getItemAt(i);
+      if (!scanTrack.exists().get()) {
+         continue;
+      }
+      parts.push(i + "," + scanTrack.volume().get().toFixed(4) + "," + scanTrack.pan().get().toFixed(4));
+   }
+   mixerSnapshotSettings[slotIndex].set(parts.join("|"));
+   host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Stored");
+   showModePopup("STORE " + (slotIndex + 1));
+}
+
+var mixerSnapshotRecallGeneration = 0;
+
+function recallMixerSnapshot(slotIndex) {
+   if (!isMixerSnapshotBankSupported()) {
+      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + ": switch to Main / Show All view");
+      showModePopup("WRONG VIEW");
+      return;
+   }
+   var serialized = mixerSnapshotSettings[slotIndex].get();
+   if (!serialized) {
+      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " is Empty");
+      showModePopup("EMPTY " + (slotIndex + 1));
+      return;
+   }
+   var entries = [];
+   var rawEntries = serialized.split("|");
+   for (var e = 0; e < rawEntries.length; e++) {
+      var fields = rawEntries[e].split(",");
+      var pos = parseInt(fields[0], 10);
+      var vol = parseFloat(fields[1]);
+      var pan = parseFloat(fields[2]);
+      if (isNaN(pos) || isNaN(vol) || isNaN(pan)) {
+         continue;
+      }
+      entries.push({ pos: pos, vol: vol, pan: pan });
+   }
+   if (entries.length === 0) {
+      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " is Empty");
+      showModePopup("EMPTY " + (slotIndex + 1));
+      return;
+   }
+
+   // Split into whatever's already visible (updates right away, live,
+   // with no scroll at all) and everything else (handled afterward -
+   // see applyMixerSnapshotOffscreen() below).
+   var originalScrollPos = trackBank.scrollPosition().get();
+   var offScreen = [];
+   for (var i = 0; i < entries.length; i++) {
+      var slotInWindow = entries[i].pos - originalScrollPos;
+      if (slotInWindow >= 0 && slotInWindow <= 7) {
+         var visTrack = directTrackAt(slotInWindow);
+         visTrack.volume().set(entries[i].vol);
+         visTrack.pan().set(entries[i].pan);
+      } else {
+         offScreen.push(entries[i]);
+      }
+   }
+   offScreen.sort(function (a, b) { return a.pos - b.pos; });
+
+   mixerSnapshotRecallGeneration++;
+   applyMixerSnapshotOffscreen(offScreen, 0, originalScrollPos, mixerSnapshotRecallGeneration, slotIndex);
+}
+
+// Walks the off-screen entries (sorted by position) one bank window at a
+// time: scrolls trackBank so the next unhandled entry lands at slot 0,
+// batches every other still-unhandled entry that falls within that same
+// 8-wide window, writes them all after a short settle delay (same
+// reasoning as the fresh-cursor-reposition delay used elsewhere in this
+// file), then moves on. Once everything's applied, scrolls back to
+// wherever the user started (if we ever moved away from it) so they land
+// back on the window they were actually looking at.
+function applyMixerSnapshotOffscreen(offScreen, index, originalScrollPos, myGeneration, slotIndex) {
+   if (myGeneration !== mixerSnapshotRecallGeneration) {
+      return;
+   }
+   if (index >= offScreen.length) {
+      if (trackBank.scrollPosition().get() !== originalScrollPos) {
+         trackBank.scrollPosition().set(originalScrollPos);
+         refreshMainCursors();
+      }
+      host.showPopupNotification("Mixer Snapshot " + (slotIndex + 1) + " Recalled");
+      showModePopup("RECALL" + (slotIndex + 1));
+      return;
+   }
+   var windowStart = offScreen[index].pos;
+   var batch = [];
+   var nextIndex = index;
+   while (nextIndex < offScreen.length && offScreen[nextIndex].pos - windowStart <= 7) {
+      batch.push(offScreen[nextIndex]);
+      nextIndex++;
+   }
+   trackBank.scrollPosition().set(windowStart);
+   refreshMainCursors();
+   host.scheduleTask(function () {
+      if (myGeneration !== mixerSnapshotRecallGeneration) {
+         return;
+      }
+      for (var b = 0; b < batch.length; b++) {
+         var track = directTrackAt(batch[b].pos - windowStart);
+         track.volume().set(batch[b].vol);
+         track.pan().set(batch[b].pan);
+      }
+      applyMixerSnapshotOffscreen(offScreen, nextIndex, originalScrollPos, myGeneration, slotIndex);
+   }, 100);
+}
+
 // Requested directly: Bitwig's own Arranger/Mixer view didn't follow
 // when scrolling the bank here, so the hardware and Bitwig's own screen
 // could show completely different tracks. Selecting a track in the new
@@ -1834,40 +2504,55 @@ function activeBankItemCount() {
 // view to keep a newly selected track visible, the same as clicking it
 // would.
 //
-// Which slot to select depends on scroll direction, per direct feedback:
-// scrolling left/backward selects slot 0 (the new window's first/
-// leftmost track), scrolling right/forward selects slot 7 (its
-// last/rightmost track) - selecting the edge in the direction just
-// scrolled *toward* keeps Bitwig's view following the newly-revealed
-// tracks, rather than always snapping back to the window's left edge
-// regardless of which way it just moved.
+// Which slot to select depends on scroll direction and is configurable -
+// bankScrollLeftSelectIndex/bankScrollRightSelectIndex below, live from
+// the "Bank Scroll Left/Right: Select Track #" Controller Preferences
+// settings (default 1/8, i.e. slots 0/7 - the original hardcoded
+// first/last-slot behavior). Requested directly: selecting a slot nearer
+// the window's center (e.g. track 3 on a left scroll, track 6 on a right
+// one) rather than always the extreme edge might make Bitwig's own view
+// feel less jarring/more centered - worth experimenting with on
+// hardware, hence configurable rather than a fixed redesign.
 function selectBankSlot(index) {
    if (isMainSlotEmpty(index)) {
       return;
    }
    var track = activeTrackAt(index);
    track.selectInMixer();
+   track.selectInEditor();
    cursorTrack.selectChannel(track);
 }
 
-function selectFirstTrackOfBank() {
-   selectBankSlot(0);
-}
-
 // Hide mode can leave fewer than 8 activated tracks in the window
-// (trailing slots empty) - scans backward from 7 so scrolling right
-// still selects the actual last populated track instead of silently
-// selecting nothing if slot 7 itself happens to be empty. Show All mode
-// and Returns never hit the empty-slot case at all (isMainSlotEmpty()
-// is always false there), so this is effectively just "select slot 7"
-// for those.
-function selectLastTrackOfBank() {
-   for (var i = 7; i >= 0; i--) {
+// (trailing slots empty) - scans backward from the configured index
+// toward 0 so a scroll still selects the nearest actual populated track
+// instead of silently selecting nothing if that exact slot happens to be
+// empty (empty slots only ever trail towards slot 7 in Hide mode, never
+// lead, so scanning backward/toward 0 is always the correct direction to
+// search in either case). Show All mode and Returns never hit the
+// empty-slot case at all (isMainSlotEmpty() is always false there), so
+// this is effectively just "select the configured slot" for those.
+function selectBankSlotNear(index) {
+   for (var i = index; i >= 0; i--) {
       if (!isMainSlotEmpty(i)) {
          selectBankSlot(i);
          return;
       }
    }
+}
+
+function selectFirstTrackOfBank() {
+   if (bankScrollLeftSelectIndex < 0) {
+      return;
+   }
+   selectBankSlotNear(bankScrollLeftSelectIndex);
+}
+
+function selectLastTrackOfBank() {
+   if (bankScrollRightSelectIndex < 0) {
+      return;
+   }
+   selectBankSlotNear(bankScrollRightSelectIndex);
 }
 
 // The 6 scroll operations activeTrackBank() used to expose directly
@@ -1962,14 +2647,73 @@ function scrollActiveBankStepForward() {
    selectLastTrackOfBank();
 }
 
+// Auto-Banking (Follow Track Selection) - requested directly, modeled on
+// the SSL UF8's autobanking: when the user selects a different track by
+// any means outside this hardware (mouse click, keyboard, etc.), scroll
+// the visible bank window just enough to bring it into view - the same
+// minimal-scroll behavior a text editor uses to keep the cursor line
+// visible, not always resetting to the window's left edge. Live from the
+// "Auto-Banking (Bank Follows Track Selection)" Controller Preferences
+// setting below (default off - a hardware view that can jump on its own
+// from background mouse activity is a big enough behavior change to
+// opt into deliberately, matching this project's usual default for
+// anything similarly invasive-if-unwanted).
+//
+// A selection this hardware itself caused (SELECT button, Select
+// Channel on Fader Touch, a Bank Scroll Left/Right edge-select) always
+// lands on an already-visible slot, so the "already visible" checks
+// below make this naturally a no-op for those - no separate "was this a
+// mouse click" detection needed.
+//
+// Main tracks only: mainTrackScanBank (see its own
+// addIsSelectedInMixerObserver() registration above, which calls this
+// with the scanned track's absolute position) only scans Main tracks,
+// so this can't tell where a newly-selected Return track sits - skipped
+// entirely while viewing Returns.
+var autoBankToSelectionEnabled = false;
+
+function handleAutoBankSelectionChanged(rawIndex, isSelected) {
+   if (!isSelected || !autoBankToSelectionEnabled || isViewingReturns) {
+      return;
+   }
+   if (hideDeactivatedTracksEnabled) {
+      var filteredIndex = activeTrackRawIndices.indexOf(rawIndex);
+      if (filteredIndex < 0) {
+         return; // Deactivated/hidden - not a visible slot at all in Hide mode.
+      }
+      if (filteredIndex < mainBankScrollOffset) {
+         mainBankScrollOffset = filteredIndex;
+      } else if (filteredIndex > mainBankScrollOffset + 7) {
+         mainBankScrollOffset = filteredIndex - 7;
+      } else {
+         return; // Already visible.
+      }
+   } else {
+      var currentScrollPos = trackBank.scrollPosition().get();
+      if (rawIndex >= currentScrollPos && rawIndex <= currentScrollPos + 7) {
+         return; // Already visible.
+      }
+      var maxOffset = Math.max(0, activeBankItemCount() - 8);
+      var newScrollPos = rawIndex < currentScrollPos ? rawIndex : rawIndex - 7;
+      trackBank.scrollPosition().set(Math.max(0, Math.min(maxOffset, newScrollPos)));
+   }
+   refreshMainCursors();
+}
+
 // Keeps mainTrackCursors[0-7] pointed at the correct real tracks for
-// whichever Main-bank mode is active - the native trackBank window (Show
-// All) or the filtered activeTrackRawIndices list (Hide, see
-// recomputeActiveTrackIndices() below) - and, Hide mode only, blanks any
-// trailing slot that has no activated track left to show (Show All mode
-// never needs this: a slot beyond the real track count already reads
-// back as Bitwig's own empty-track defaults, same as before this
-// feature existed). Called on every Main-bank scroll operation above,
+// Hide mode's filtered activeTrackRawIndices list (see
+// recomputeActiveTrackIndices() below), and blanks any trailing slot
+// that has no activated track left to show. Show All mode no longer
+// touches mainTrackCursors at all - calling selectChannel() 8 times
+// back-to-back in one synchronous tick turned out to be exactly what
+// caused the all-8-LCD-columns/all-8-SELECT-LEDs collapse bug (confirmed
+// via diagnostic logging: trackBankItems - the plain, never-repointed
+// source array - stayed correct and distinct throughout, while the
+// cursors themselves collapsed), so Show All reads trackBankItems
+// directly via activeTrackAt()/directTrackAt() instead. A slot beyond
+// the real track count already reads back as Bitwig's own empty-track
+// defaults there, same as before the "Deactivated Tracks in Bank"
+// feature existed. Called on every Main-bank scroll operation above,
 // every mapping recompute, and on every Show All/Hide toggle.
 function refreshMainCursors() {
    for (var i = 0; i < 8; i++) {
@@ -1982,13 +2726,12 @@ function refreshMainCursors() {
             mainCursorHasTrack[i] = false;
             topRowText[i] = "       ";
             bottomRowText[i] = "       ";
-            mainLedState.arm[i] = false;
-            mainLedState.solo[i] = false;
-            mainLedState.mute[i] = false;
-            mainLedState.select[i] = false;
+            mainHideLedState.arm[i] = false;
+            mainHideLedState.solo[i] = false;
+            mainHideLedState.mute[i] = false;
+            mainHideLedState.select[i] = false;
          }
       } else {
-         mainTrackCursors[i].selectChannel(trackBank.getItemAt(i));
          mainCursorHasTrack[i] = true;
       }
    }
@@ -2018,6 +2761,57 @@ function recomputeActiveTrackIndices() {
    }
    if (hideDeactivatedTracksEnabled) {
       refreshMainCursors();
+      // Bug found and fixed: if "Deactivated Tracks in Bank" is already
+      // set to "Hide" when the script starts (persisted from a previous
+      // session), the Controller Preferences setting's own
+      // addValueObserver() fires immediately during init() - Bitwig
+      // convention, before this function has ever run even once - with
+      // activeTrackRawIndices still its initial empty array. Every slot
+      // looks like Hide mode's "no track left to fill this slot" case
+      // (see isMainSlotEmpty()), so that premature rebindFaders() call
+      // clears every one of the 8 fader bindings. This function running
+      // for real (via mainMappingTick(), ~100ms after init()) is what
+      // actually populates activeTrackRawIndices correctly for the first
+      // time - previously it only re-pointed the display cursors
+      // (refreshMainCursors()) and left the faders cleared from that
+      // earlier premature call, with nothing else to ever re-bind them.
+      // Reported as faders working fine if Hide mode is off at startup,
+      // or toggled on manually mid-session (activeTrackRawIndices is
+      // already populated by either point), but never moving Bitwig's
+      // volume if Hide mode was already on when the script started.
+      if (currentMode === MODE_MIXER) {
+         refreshDisplayText();
+         rebindFaders();
+         // Second bug found and fixed, same session: reported as the LCD
+         // showing the PREVIOUS track's stale name/level after a
+         // hide-triggered shift moved a different track into a slot -
+         // correcting itself only once you manually click/select that
+         // channel (a different code path that forces its own fresh
+         // read later). refreshMainCursors() above re-points
+         // mainTrackCursors[i] via selectChannel(), but the newly
+         // selected track's name()/displayedValue() aren't reliably
+         // available to a synchronous .get() in the very same tick -
+         // the immediate refreshDisplayText() call right above can read
+         // the OLD track's still-cached data before Bitwig has actually
+         // delivered the new one. The fader/motor output doesn't have
+         // this problem since updateFaderOutputs() re-polls continuously
+         // via flush() rather than reading once, but refreshDisplayText()
+         // is exactly that kind of one-shot read. A short delayed
+         // follow-up catches the case where the immediate read landed
+         // too early, using the same debounce-generation-token pattern
+         // used elsewhere in this file so hiding/showing several tracks
+         // in quick succession doesn't pile up stale scheduled calls.
+         displayRefreshRetryGeneration++;
+         var myDisplayRefreshGeneration = displayRefreshRetryGeneration;
+         host.scheduleTask(function () {
+            if (displayRefreshRetryGeneration !== myDisplayRefreshGeneration) {
+               return;
+            }
+            if (currentMode === MODE_MIXER) {
+               refreshDisplayText();
+            }
+         }, 75);
+      }
    }
 }
 
@@ -2064,7 +2858,10 @@ function setTransportPosition(beats) {
 }
 
 function activeLedState() {
-   return isViewingReturns ? returnsLedState : mainLedState;
+   if (isViewingReturns) {
+      return returnsLedState;
+   }
+   return hideDeactivatedTracksEnabled ? mainHideLedState : mainLedState;
 }
 
 // Returns the Gain (paramIndex 0) or Pan (paramIndex 1) parameter of the
@@ -2078,11 +2875,20 @@ function getToolParam(trackIndex, paramIndex) {
    if (isMainSlotEmpty(trackIndex)) {
       return null;
    }
-   var slot = isViewingReturns ? returnsToolSlot[trackIndex] : mainToolSlot[trackIndex];
+   var slot, remotesForTrack;
+   if (isViewingReturns) {
+      slot = returnsToolSlot[trackIndex];
+      remotesForTrack = returnsToolRemote[trackIndex];
+   } else if (hideDeactivatedTracksEnabled) {
+      slot = mainHideToolSlot[trackIndex];
+      remotesForTrack = mainHideToolRemote[trackIndex];
+   } else {
+      slot = mainToolSlot[trackIndex];
+      remotesForTrack = mainToolRemote[trackIndex];
+   }
    if (slot < 0) {
       return null;
    }
-   var remotesForTrack = isViewingReturns ? returnsToolRemote[trackIndex] : mainToolRemote[trackIndex];
    return remotesForTrack[slot].getParameter(paramIndex);
 }
 
@@ -2101,6 +2907,8 @@ function init() {
 
    // Initialize Main Track Bank (8 tracks, 16 sends, 8 scenes)
    trackBank = host.createMainTrackBank(8, MAX_SENDS, 8);
+   // Cache each item once, like Returns already does - see refreshMainCursors()
+   trackBankItems = bankToTrackArray(trackBank);
 
    // Initialize Effect ("Returns") Track Bank - shown via the RETURNS button
    effectTrackBank = host.createEffectTrackBank(8, MAX_SENDS, 8);
@@ -2109,6 +2917,58 @@ function init() {
    // handlers below, so they need markInterested() or .get() throws.
    trackBank.itemCount().markInterested();
    effectTrackBank.itemCount().markInterested();
+   // Read on-demand by storeMixerSnapshot()/recallMixerSnapshot() above,
+   // to capture/restore the exact bank window a snapshot was stored in.
+   trackBank.scrollPosition().markInterested();
+   effectTrackBank.scrollPosition().markInterested();
+
+   // Mark trackBank's own 8 items' volume()/pan()/arm()/solo()/mute()
+   // interested directly (not just mainTrackCursors', see below) - see
+   // directTrackAt() further down, used by getFaderTarget()/
+   // getEncoderTarget() (volume/pan - hardware fader/encoder binding) and
+   // by REC ARM/SOLO/MUTE/Mixer-mode Pan Reset in handleButtonPressInner
+   // (arm/solo/mute/pan) to act on these plain bank items (Show All mode)
+   // instead of through the CursorTrack indirection, restoring the exact
+   // binding an earlier confirmed-working version of this script used.
+   // volume()/pan()'s full sub-value set matches setupChannelStripObservers()
+   // below exactly (that function does the same for mainTrackCursors/
+   // effectTrackBank items) - a first pass here only covered .value(),
+   // which was enough for basic fader motion but crashed on hardware
+   // ("Either call markInterested() or add at least one observer") the
+   // moment Fader Snap to Zero's target.discreteValueCount().get() ran
+   // against one of these targets, since that (and getOrigin()/
+   // discreteValueNames()/name(), needed by applyEncoderStep()/
+   // resolveOrigin() for the encoder side) were never marked. Every
+   // sub-value any consumer might call needs its own explicit
+   // markInterested() - there's no "interest inherited from the parent
+   // Parameter" shortcut. arm()/solo()/mute() only need the plain
+   // boolean itself (SOLO/MUTE's handlers call .get() before .set(), REC
+   // ARM only .toggle()s) - marked here too since REC ARM/SOLO/MUTE were
+   // never separately hardware-confirmed broken like the fader was, but
+   // share the exact same activeTrackAt()-through-a-CursorTrack pattern
+   // that WAS confirmed broken for volume/pan on a group-nested track, so
+   // covered proactively rather than waiting for a separate report.
+   for (var directTrackIdx = 0; directTrackIdx < 8; directTrackIdx++) {
+      var directVolume = trackBank.getItemAt(directTrackIdx).volume();
+      directVolume.markInterested();
+      directVolume.value().markInterested();
+      directVolume.discreteValueCount().markInterested();
+      directVolume.discreteValueNames().markInterested();
+      directVolume.getOrigin().markInterested();
+      directVolume.name().markInterested();
+      directVolume.displayedValue().markInterested();
+      var directPan = trackBank.getItemAt(directTrackIdx).pan();
+      directPan.markInterested();
+      directPan.value().markInterested();
+      directPan.discreteValueCount().markInterested();
+      directPan.discreteValueNames().markInterested();
+      directPan.getOrigin().markInterested();
+      directPan.name().markInterested();
+      directPan.displayedValue().markInterested();
+      trackBank.getItemAt(directTrackIdx).arm().markInterested();
+      trackBank.getItemAt(directTrackIdx).solo().markInterested();
+      trackBank.getItemAt(directTrackIdx).mute().markInterested();
+   }
 
    // Show All mode's mainTrackCursors only get re-pointed at
    // trackBank.getItemAt(i) at explicit trigger points (scroll, RETURNS
@@ -2136,15 +2996,23 @@ function init() {
    // Deactivated Tracks in Bank ("Hide" mode) - see mainTrackScanBank/
    // mainTrackCursors above. Scan bank: 0 sends/0 scenes, only ever used
    // for exists()/isActivated()/name(), never displayed or bound to
-   // hardware directly. Never scrolled - stays pinned at position 0 so
-   // raw slot i always means "track at position i in the document" for
-   // as long as the script runs.
+   // hardware directly (its volume()/pan() are deliberately never
+   // markInterested()/touched - a Mixer Snapshot recall rebuild that
+   // tried writing through this bank turned out to be a dead end, see
+   // the README "Mixer Snapshots" section). Never scrolled - stays
+   // pinned at position 0 so raw slot i always means "track at position
+   // i in the document" for as long as the script runs.
    mainTrackScanBank = host.createMainTrackBank(MAIN_TRACK_SCAN_DEPTH, 0, 0);
    for (var scanIdx = 0; scanIdx < MAIN_TRACK_SCAN_DEPTH; scanIdx++) {
       (function (si) {
          var scanTrack = mainTrackScanBank.getItemAt(si);
          scanTrack.exists().markInterested();
          scanTrack.isActivated().markInterested();
+         // Read on-demand (not observed) by storeMixerSnapshot() above,
+         // to capture every existing track's level regardless of which
+         // bank window is currently visible.
+         scanTrack.volume().markInterested();
+         scanTrack.pan().markInterested();
          scanTrack.exists().addValueObserver(function () { mainMappingDirty = true; });
          scanTrack.isActivated().addValueObserver(function () { mainMappingDirty = true; });
          // Catches a track at this raw slot being replaced by a different
@@ -2153,6 +3021,11 @@ function init() {
          // alone wouldn't fire a recompute in that case.
          scanTrack.name().markInterested();
          scanTrack.name().addValueObserver(function () { mainMappingDirty = true; });
+         // Auto-Banking (Follow Track Selection) - see
+         // handleAutoBankSelectionChanged() above.
+         scanTrack.addIsSelectedInMixerObserver(function (isSelected) {
+            handleAutoBankSelectionChanged(si, isSelected);
+         });
       })(scanIdx);
    }
 
@@ -2248,7 +3121,7 @@ function init() {
 
    var creditsInfoSetting = host.getPreferences().getStringSetting(
       "Credits", "About", 100,
-      "Based on Mossgraber's DrivenByMoss, ideas from Sternenlicht, built with Claude Code");
+      "Based on Mossgraber's DrivenByMoss SSL UF8 script, ideas from Sternenlicht, built with Claude Code");
    creditsInfoSetting.markInterested();
 
    // See ZOOM_ARROW_STEP above - how big a jump ZOOM+LEFT/RIGHT's
@@ -2268,10 +3141,11 @@ function init() {
    // observers fire immediately with the initial value and again any time
    // the user edits it live, so the corresponding globals (see
    // EXPANDED_VIEW_BUTTON etc. above) always reflect the current setting
-   // without needing a restart. Defaults match this session's original
-   // hardcoded behavior.
+   // without needing a restart. Default is now "None" (off) - see
+   // EXPANDED_VIEW_BUTTON's comment above for why; still fully available
+   // by picking any modifier here.
    var expandedViewButtonSetting = host.getPreferences().getEnumSetting(
-      "Expanded Device View Button", "Plugin Mode", ["CTRL", "ALT", "OPTION", "SHIFT", "None"], "CTRL");
+      "Expanded Device View Button", "Plugin Mode", ["CTRL", "ALT", "OPTION", "SHIFT", "None"], "None");
    expandedViewButtonSetting.markInterested();
    expandedViewButtonSetting.addValueObserver(function (value) {
       EXPANDED_VIEW_BUTTON = MODIFIER_NAME_TO_NOTE[value];
@@ -2341,6 +3215,23 @@ function init() {
             warnIfDuplicateFKeyFunctions();
          });
       })(fkIdx);
+   }
+
+   // Mixer Snapshots (SHIFT+F1-F8 store / OPTION+F1-F8 recall - see
+   // storeMixerSnapshot()/recallMixerSnapshot() above) - persisted via
+   // host.getDocumentState() rather than host.getPreferences(), so each
+   // slot's serialized text is saved inside the Bitwig project itself and
+   // survives closing/reopening it, unlike a Preferences setting (global
+   // to this controller across every project - wrong scope for a
+   // per-song mix version). Hidden immediately via Setting.hide() - these
+   // are raw internal storage, not meant to be seen or hand-edited in
+   // the Studio I/O panel.
+   for (var snapshotIdx = 0; snapshotIdx < MIXER_SNAPSHOT_SLOTS; snapshotIdx++) {
+      var snapshotSetting = host.getDocumentState().getStringSetting(
+         "Mixer Snapshot " + (snapshotIdx + 1), "Mixer Snapshots (Internal)", 256, "");
+      snapshotSetting.markInterested();
+      snapshotSetting.hide();
+      mixerSnapshotSettings.push(snapshotSetting);
    }
 
    // What SHIFT+CTRL and ALT+CTRL + Jog Wheel each do - independent
@@ -2721,6 +3612,46 @@ function init() {
       FADER_SNAP_ZERO_DELAY_MS = value;
    });
 
+   // Fader Snap to dB Marks - see faderSnapToDbMarksEnabled/
+   // FADER_SNAP_DB_MARK_RANGE/FADER_SNAP_DB_MARK_DELAY_MS and
+   // scheduleFaderSnapDbMarkCheck() above. Independent toggle from Fader
+   // Snap to Zero above (default OFF - opt-in) - someone may want -inf
+   // snapping without every round dB number grabbing the fader too.
+   var faderSnapToDbMarksSetting = host.getPreferences().getBooleanSetting(
+      "Fader Snap to dB Marks", "Mixer", false);
+   faderSnapToDbMarksSetting.markInterested();
+   faderSnapToDbMarksSetting.addValueObserver(function(value) {
+      faderSnapToDbMarksEnabled = value;
+   });
+
+   var faderSnapDbMarkRangeSetting = host.getPreferences().getNumberSetting(
+      "Fader Snap to dB Marks Range (%)", "Mixer", 0, 10, 0.5, "%", 3);
+   faderSnapDbMarkRangeSetting.markInterested();
+   faderSnapDbMarkRangeSetting.addRawValueObserver(function(value) {
+      FADER_SNAP_DB_MARK_RANGE = value / 100;
+   });
+
+   var faderSnapDbMarkDelaySetting = host.getPreferences().getNumberSetting(
+      "Fader Snap to dB Marks Delay (ms)", "Mixer", 100, 3000, 50, "ms", 500);
+   faderSnapDbMarkDelaySetting.markInterested();
+   faderSnapDbMarkDelaySetting.addRawValueObserver(function(value) {
+      FADER_SNAP_DB_MARK_DELAY_MS = value;
+   });
+
+   // Which set of marks Fader Snap to dB Marks snaps to - see
+   // FADER_SNAP_DB_MARKS_MUSICAL/_HARDWARE and activeFaderSnapDbMarks()
+   // above. Defaults to Hardware Scale - matches what's actually printed
+   // on this controller's own fader, so the snap lands where the label
+   // says by default; advanced users who want the standard audio-
+   // engineering halving series instead can switch to Musical.
+   var faderSnapDbMarkLayoutSetting = host.getPreferences().getEnumSetting(
+      "Fader Snap to dB Marks Layout", "Mixer",
+      ["Hardware Scale", "Musical (Standard)"], "Hardware Scale");
+   faderSnapDbMarkLayoutSetting.markInterested();
+   faderSnapDbMarkLayoutSetting.addValueObserver(function(value) {
+      faderSnapDbMarkLayout = value;
+   });
+
    // See sendBankConfiguredPages above - how many pages a normal SEND
    // press cycles through before exiting to Mixer. The underlying send
    // bank stays sized at MAX_SENDS (16) regardless, so this only affects
@@ -2764,6 +3695,33 @@ function init() {
       }
    });
 
+   // See bankScrollLeftSelectIndex/bankScrollRightSelectIndex and
+   // selectFirstTrackOfBank()/selectLastTrackOfBank() above - which track
+   // (1-8) a left/right bank scroll selects, so Bitwig's own view follows
+   // along, or "None" to leave whatever was already selected untouched
+   // instead (requested directly - some workflows would rather scroll
+   // the bank without disturbing the current selection at all).
+   // Requested directly, separately: the original first-slot/last-slot
+   // (1/8) behavior can feel like it always jumps to the window's
+   // extreme edge - a slot nearer the center (e.g. 3 on the left, 6 on
+   // the right) might make Bitwig's own scrolled-into-view result feel
+   // less jarring. Worth experimenting with on hardware, hence
+   // configurable rather than a fixed redesign either way.
+   var BANK_SCROLL_SELECT_OPTIONS = ["None", "1", "2", "3", "4", "5", "6", "7", "8"];
+   var bankScrollLeftSelectSetting = host.getPreferences().getEnumSetting(
+      "Bank Scroll Left: Select Track #", "Mixer", BANK_SCROLL_SELECT_OPTIONS, "1");
+   bankScrollLeftSelectSetting.markInterested();
+   bankScrollLeftSelectSetting.addValueObserver(function (value) {
+      bankScrollLeftSelectIndex = value === "None" ? -1 : (parseInt(value, 10) - 1);
+   });
+
+   var bankScrollRightSelectSetting = host.getPreferences().getEnumSetting(
+      "Bank Scroll Right: Select Track #", "Mixer", BANK_SCROLL_SELECT_OPTIONS, "8");
+   bankScrollRightSelectSetting.markInterested();
+   bankScrollRightSelectSetting.addValueObserver(function (value) {
+      bankScrollRightSelectIndex = value === "None" ? -1 : (parseInt(value, 10) - 1);
+   });
+
    // See selectLedVelocityFor()/armedLedBlinkTick() above. Turning this
    // off immediately restores every SELECT LED to its plain isSelected
    // state via refreshChannelStripLEDs() (selectLedVelocityFor() checks
@@ -2783,6 +3741,30 @@ function init() {
    armedLedBlinkIntervalSetting.markInterested();
    armedLedBlinkIntervalSetting.addRawValueObserver(function(value) {
       ARMED_LED_BLINK_INTERVAL_MS = value;
+   });
+
+   // See swapLcdRows/renderLCDDisplays() above - purely which physical
+   // row each channel strip's name/value text renders to, everywhere
+   // (Mixer, Sends, Device), since the encoder blocking a row is a
+   // hardware-layout issue independent of mode. No modifier of its own,
+   // so it's placed last in this category rather than between an
+   // unrelated on/off toggle and its own modifier.
+   var swapLcdRowsSetting = host.getPreferences().getBooleanSetting(
+      "Swap LCD Rows (Value on Top)", "Mixer", false);
+   swapLcdRowsSetting.markInterested();
+   swapLcdRowsSetting.addValueObserver(function(value) {
+      swapLcdRows = value;
+      displayNeedsUpdate = true;
+   });
+
+   // See autoBankToSelectionEnabled/handleAutoBankSelectionChanged()
+   // above. No modifier of its own, so placed last in this category
+   // rather than between an unrelated toggle and its modifier.
+   var autoBankToSelectionSetting = host.getPreferences().getBooleanSetting(
+      "Auto-Banking (Bank Follows Track Selection)", "Mixer", false);
+   autoBankToSelectionSetting.markInterested();
+   autoBankToSelectionSetting.addValueObserver(function(value) {
+      autoBankToSelectionEnabled = value;
    });
 
    // Remote Controls (8 Macros for selected device)
@@ -2806,6 +3788,11 @@ function init() {
    lastClickedParam = host.createLastClickedParameter("lastClickedParam", "Mouseover Parameter");
    lastClickedParamValue = lastClickedParam.parameter();
    lastClickedParamValue.name().markInterested();
+   lastClickedParamLocked = lastClickedParam.isLocked();
+   lastClickedParamLocked.markInterested();
+   lastClickedParamLocked.addValueObserver(function (locked) {
+      host.showPopupNotification((locked ? "Locked to: " : "Unlocked: ") + lastClickedParamValue.name().get());
+   });
 
    // Transport & Application Controls
    transport = host.createTransport();
@@ -2858,9 +3845,16 @@ function init() {
    transport.arrangerLoopDuration().markInterested();
    transport.timeSignature().numerator().markInterested();
    transport.timeSignature().denominator().markInterested();
-   // Read on-demand by SHIFT+DRAW (case 81) to show the resulting ON/OFF
+   // Read on-demand by SHIFT+DRAW (case 76) to show the resulting ON/OFF
    // state in its popup, rather than a generic "toggled" message.
    transport.isArrangerAutomationWriteEnabled().markInterested();
+   // Keeps currentAutomationWriteMode (see cycleAutomationWriteMode()
+   // above) in sync with the real current mode, including a change made
+   // from Bitwig's own UI rather than plain DRAW - no getter exists, so
+   // this observer is the only way to know the current value at all.
+   transport.addAutomationWriteModeObserver(function (mode) {
+      currentAutomationWriteMode = mode;
+   });
 
    // Segment display (the separate "BEATS" transport-position display,
    // notes 40-53 are NOT it - this is CC 0x40-0x49, 10 digit cells,
@@ -2877,8 +3871,25 @@ function init() {
    // representation (per isActiveFn) writes to the shared display
    // caches / LEDs.
    var effectTrackBankItems = bankToTrackArray(effectTrackBank);
-   setupChannelStripObservers(mainTrackCursors, mainLedState, function (index) {
-      return !isViewingReturns && (!hideDeactivatedTracksEnabled || mainCursorHasTrack[index]);
+   // Show All mode: bypass the mainTrackCursors/CursorTrack indirection
+   // entirely and read straight off trackBankItems (plain trackBank.
+   // getItemAt(i) proxies), matching Returns' own pattern and the same
+   // fix already applied to directTrackAt() for volume/pan/arm/solo/mute
+   // (see directTrackAt() above - a group-adjacent track's *parameter*
+   // access was confirmed unreliable through mainTrackCursors, fixed by
+   // bypassing it whenever Hide mode is off). All 8 LCD columns/SELECT
+   // LEDs collapsing onto whichever track fader 8 pointed at turned out
+   // to be the same CursorTrack unreliability, just showing up in the
+   // *display* path (isSelectedInMixer/volume().displayedValue()) this
+   // time instead of the parameter path - so the same bypass applies here.
+   setupChannelStripObservers(trackBankItems, mainLedState, function (index) {
+      return !isViewingReturns && !hideDeactivatedTracksEnabled;
+   });
+   // Hide mode still needs mainTrackCursors - a plain TrackBank can't
+   // skip/shift slots to hide deactivated tracks the way selectChannel()
+   // -driven cursors do.
+   setupChannelStripObservers(mainTrackCursors, mainHideLedState, function (index) {
+      return !isViewingReturns && hideDeactivatedTracksEnabled && mainCursorHasTrack[index];
    });
    setupChannelStripObservers(effectTrackBankItems, returnsLedState, function () {
       return isViewingReturns;
@@ -2893,14 +3904,60 @@ function init() {
       midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, meterStripIdx, 3, 0xF7]);
    }
 
-   // Diagnostics: live-testable meter mode for channel 8 only (the other 7
-   // strips stay on the confirmed mode=3 above) - lets us try each of the
-   // 4 real MCU VU-meter modes (confirmed against Mossgraber's
-   // switchVuMode()/VUMODE_* in MCUControlSurface.java, not guessed) from
-   // the Controller Preferences panel and see the result on hardware
-   // immediately, no redeploy needed, while investigating what channel 8's
-   // LCD bar graph actually shows and whether it can be repurposed to
-   // display track color instead of level.
+   // Debug / diagnostics hub (Controller Preferences panel -> "Debug"
+   // category) - see the DEBUG_ENABLED/DEBUG_* globals and debugLog()
+   // near the top of this file for what each category actually gates.
+   // All default to true, matching this project's current maturity.
+   // "Enable Debug Logging" is the master switch: besides silencing
+   // every category below via DEBUG_ENABLED, it also hide()/show()s
+   // their individual checkboxes in this panel - unchecking it collapses
+   // the whole hub down to just itself, a preview of retiring debug
+   // logging altogether once this project is more mature and end users
+   // shouldn't see any of this.
+   var debugEnabledSetting = host.getPreferences().getBooleanSetting(
+      "Enable Debug Logging", "Debug", true);
+   debugEnabledSetting.markInterested();
+
+   var debugRawMidiSetting = host.getPreferences().getBooleanSetting(
+      "Log Raw MIDI (Controller Input)", "Debug", true);
+   debugRawMidiSetting.markInterested();
+   debugRawMidiSetting.addValueObserver(function (value) { DEBUG_RAW_MIDI = value; });
+
+   var debugButtonDispatchSetting = host.getPreferences().getBooleanSetting(
+      "Log Button Dispatch", "Debug", true);
+   debugButtonDispatchSetting.markInterested();
+   debugButtonDispatchSetting.addValueObserver(function (value) { DEBUG_BUTTON_DISPATCH = value; });
+
+   var debugModifierStateSetting = host.getPreferences().getBooleanSetting(
+      "Log Modifier State (SHIFT/OPTION/CTRL/ALT) in Raw MIDI", "Debug", true);
+   debugModifierStateSetting.markInterested();
+   debugModifierStateSetting.addValueObserver(function (value) { DEBUG_MODIFIER_STATE = value; });
+
+   var debugLcdSetting = host.getPreferences().getBooleanSetting(
+      "Log LCD Display SysEx", "Debug", true);
+   debugLcdSetting.markInterested();
+   debugLcdSetting.addValueObserver(function (value) { DEBUG_LCD = value; });
+
+   var debugEncoderSetting = host.getPreferences().getBooleanSetting(
+      "Log Encoder Target Classification", "Debug", true);
+   debugEncoderSetting.markInterested();
+   debugEncoderSetting.addValueObserver(function (value) { DEBUG_ENCODER = value; });
+
+   // Moved here from its own former "Diagnostics" category, per request,
+   // for consistency - it's a live hardware-experimentation control same
+   // as everything else in this hub, so it belongs alongside it rather
+   // than off on its own. Live-testable meter mode for channel 8 only
+   // (the other 7 strips stay on the confirmed mode=3 elsewhere) - lets
+   // us try each of the 4 real MCU VU-meter modes (confirmed against
+   // Mossgraber's switchVuMode()/VUMODE_* in MCUControlSurface.java, not
+   // guessed) from the Controller Preferences panel and see the result on
+   // hardware immediately, no redeploy needed. Result so far: every mode
+   // (including "Off") produced the same live level bar on this unit's
+   // LCD, so it doesn't look like this hardware distinguishes between the
+   // mode byte values the way genuine Mackie hardware does - didn't
+   // reveal anything new, but left in as a live knob in case that's worth
+   // revisiting (e.g. after other LCD experiments) rather than concluding
+   // this hardware categorically can't do anything more with it.
    var meterTestModeValues = {
       "LED + LCD (default, mode 3)": 3,
       "Off (mode 0)": 0,
@@ -2908,7 +3965,7 @@ function init() {
       "LCD Only (mode 6)": 6
    };
    var meterTestModeSetting = host.getPreferences().getEnumSetting(
-      "Channel 8 Meter Test Mode", "Diagnostics",
+      "Channel 8 Meter Test Mode", "Debug",
       ["LED + LCD (default, mode 3)", "Off (mode 0)", "LED Only (mode 1)", "LCD Only (mode 6)"],
       "LED + LCD (default, mode 3)");
    meterTestModeSetting.markInterested();
@@ -2916,12 +3973,46 @@ function init() {
       midiOut.sendSysexBytes([0xF0, 0x00, 0x00, 0x66, 0x14, 0x20, 7, meterTestModeValues[value], 0xF7]);
    });
 
+   // See faderPositionTestModeEnabled/startFaderPositionTest() above -
+   // gates ALT+F8/F8 so the test can't be triggered by accident. Default
+   // off, unlike this category's logging toggles, since it actively
+   // drives every fader's motor rather than just printing to console.
+   var faderPositionTestModeSetting = host.getPreferences().getBooleanSetting(
+      "Fader Position Test Mode (ALT+F8 start/cancel, F8 confirm)", "Debug", false);
+   faderPositionTestModeSetting.markInterested();
+   faderPositionTestModeSetting.addValueObserver(function (value) {
+      faderPositionTestModeEnabled = value;
+   });
+
+   var debugCategorySettings = [
+      debugRawMidiSetting, debugButtonDispatchSetting,
+      debugModifierStateSetting, debugLcdSetting, debugEncoderSetting,
+      meterTestModeSetting, faderPositionTestModeSetting
+   ];
+   debugEnabledSetting.addValueObserver(function (value) {
+      DEBUG_ENABLED = value;
+      for (var debugSettingIdx = 0; debugSettingIdx < debugCategorySettings.length; debugSettingIdx++) {
+         if (value) {
+            debugCategorySettings[debugSettingIdx].show();
+         } else {
+            debugCategorySettings[debugSettingIdx].hide();
+         }
+      }
+   });
+
    // Track each bank's per-track TOOL_DEVICE_NAME device, if any (see
    // isToolVolumeMode). mainTrackCursors' own createDeviceBank() calls
    // (inside scanTrackForToolDevice()) automatically follow each cursor
    // as it's re-pointed via selectChannel() - same cursor-relative-bank
    // behavior cursorTrack's own device tracking below already relies on.
-   setupToolDeviceTracking(mainTrackCursors, mainToolSlot, mainToolRemote);
+   // Show All mode: track straight off trackBankItems, same reasoning as
+   // setupChannelStripObservers() above (mainTrackCursors is Hide-mode
+   // only now). Separate mainHideToolSlot/mainHideToolRemote arrays for
+   // the Hide-mode registration, same reason as mainHideLedState above -
+   // mainTrackCursors is never repositioned while Show All is active, so
+   // its device-tracking observer must not write into Show All's arrays.
+   setupToolDeviceTracking(trackBankItems, mainToolSlot, mainToolRemote);
+   setupToolDeviceTracking(mainTrackCursors, mainHideToolSlot, mainHideToolRemote);
    setupToolDeviceTracking(effectTrackBankItems, returnsToolSlot, returnsToolRemote);
    cursorToolRemote = scanTrackForToolDevice(
       cursorTrack,
@@ -3583,7 +4674,7 @@ function onMidi(status, data1, data2) {
    // nothing, or sends a CC instead of the expected Note-On. Still actively
    // used for verifying remaining button assignments - leave in for now.
    if (msgType === 0xB0 && data1 !== 60 && !(data1 >= 16 && data1 <= 23)) {
-      println("RAW CC received - CC#: " + data1 + ", Value: " + data2);
+      debugLog(DEBUG_RAW_MIDI, "RAW CC received - CC#: " + data1 + ", Value: " + data2);
    }
 
    // 1. Motorized Pitchbend Faders - handled entirely by the native
@@ -3638,10 +4729,13 @@ function onMidi(status, data1, data2) {
    // CTRL held = select next/previous arranger clip/item instead (device
    // stepping in MODE_DEVICE); SHIFT+ALT = nudge the selected item left/
    // right; ALT alone = adjust the last-clicked GUI parameter; SHIFT held
-   // = shift the arranger loop by whole bars; SCRUB toggle (note 101) =
-   // jump the playhead by whole bars instead of scrubbing smoothly. See
-   // the full priority-ordered writeup in README.md's "Jog wheel modifier
-   // combos" section.
+   // = shift the arranger loop by whole bars; holding the wheel down
+   // (isWheelPressed, note 101 - see the Jog Wheel Push handler above) =
+   // jump the playhead by whole bars instead of scrubbing smoothly.
+   // isScrubToggled is currently dead (see its declaration above) - no
+   // known hardware SCRUB note exists to set it. See the full
+   // priority-ordered writeup in README.md's "Jog wheel modifier combos"
+   // section.
    if (msgType === 0xB0 && data1 === 60) {
       // Same sign-magnitude fix as the encoders above
       var backwards = data2 >= 64;
@@ -3652,7 +4746,7 @@ function onMidi(status, data1, data2) {
          // cursor within the 8-scene bank window (see sceneCursorIndex
          // above) - takes priority over every other modifier combo below,
          // since none of them make sense while browsing scenes. Launching
-         // is done separately by note 87's press handler.
+         // is done separately by note 101's press handler.
          sceneStepAccumulator += Math.abs(rawStep);
          if (sceneStepAccumulator >= SCENE_STEP_MESSAGES) {
             sceneStepAccumulator -= SCENE_STEP_MESSAGES;
@@ -3731,10 +4825,24 @@ function onMidi(status, data1, data2) {
          // "Select previous item", confirmed from
          // bitwig-actions-reference.txt) - once every
          // CLIP_SELECT_STEP_MESSAGES messages (its own dedicated,
-         // independently configurable threshold - see above). Replaces
-         // the previous tempo-nudge behavior per request; use SHIFT+ALT +
-         // Jog Wheel Press/Turn (see below) to select and then move a
-         // clip instead.
+         // independently configurable threshold - see above). Briefly
+         // swapped to "Select item to left"/"Select item to right"
+         // (hoping for same-track-only stepping, since these actions
+         // don't stay confined to the current track - see below), but
+         // reverted after confirming on hardware that those two do
+         // nothing at all, even with a clip already selected - same
+         // pattern as select_item_at_cursor and Select item above/below
+         // (all apparently non-functional when invoked via the Controller
+         // API, despite being real, named Bitwig actions). "Select next/
+         // previous item" is the only one of this whole family confirmed
+         // to actually change the selection on hardware, so it's worth
+         // keeping despite its own quirk: once there's no further item in
+         // one direction on the current track, it jumps to the next/
+         // previous track's item instead of stopping - a working action
+         // with an occasional side effect beats a "correct" one that does
+         // nothing. Replaces the previous tempo-nudge behavior per
+         // request; use SHIFT+ALT + Jog Wheel Press/Turn (see below) to
+         // select and then move a clip instead.
          clipSelectStepAccumulator++;
          if (clipSelectStepAccumulator >= CLIP_SELECT_STEP_MESSAGES) {
             clipSelectStepAccumulator = 0;
@@ -3780,7 +4888,7 @@ function onMidi(status, data1, data2) {
          // ALT's old role of halving the default scrub step (see the
          // default branch below, which no longer checks ALT) - was
          // originally SHIFT+OPTION, moved to plain ALT per request. See
-         // also note 87's press handler for ALT+wheel-press ("Select item
+         // also note 101's press handler for ALT+wheel-press ("Select item
          // at cursor").
          altUsedForCombo = true;
          lastClickedParamValue.inc(rawStep, 128);
@@ -3831,10 +4939,16 @@ function onMidi(status, data1, data2) {
             loopScaleAccumulator -= LOOP_SCALE_THRESHOLD;
             var oldLoopDuration = transport.arrangerLoopDuration().get();
             var newLoopDuration = backwards ? oldLoopDuration / 2.0 : oldLoopDuration * 2.0;
-            // Floor at a 64th note so repeated halving can't reach zero/negative,
-            // and cap at 256 bars so repeated doubling can't run away forever.
-            var maxLoopDuration = 256 * getBeatsPerBar();
-            transport.arrangerLoopDuration().set(Math.max(0.0625, Math.min(maxLoopDuration, newLoopDuration)));
+            // Floor at 1 whole bar (not a fixed tiny note value like a
+            // 64th note) so repeated halving can't reach zero/negative -
+            // requested directly: starting from a non-power-of-2 length
+            // (e.g. 3 bars) used to keep halving straight past whole-bar
+            // lengths into awkward fractional-bar ones instead of
+            // stopping at a clean 1-bar floor. Cap at 256 bars so
+            // repeated doubling can't run away forever.
+            var loopScaleBeatsPerBar = getBeatsPerBar();
+            var maxLoopDuration = 256 * loopScaleBeatsPerBar;
+            transport.arrangerLoopDuration().set(Math.max(loopScaleBeatsPerBar, Math.min(maxLoopDuration, newLoopDuration)));
          }
          return;
       }
@@ -3901,7 +5015,19 @@ function onMidi(status, data1, data2) {
    if (msgType === 0x90 || msgType === 0x80) {
       var isPressed = (msgType === 0x90 && data2 > 0);
       if (isPressed) {
-         println("RAW Note-On received - Note: " + data1); // DEBUG: catches modifier buttons too
+         // Catches modifier buttons too. Optionally includes live
+         // modifier/toggle state so a note that varies by what's
+         // currently held (reported: the jog wheel's own click reportedly
+         // sends different notes depending on modifier state, similar to
+         // the already-documented CHANNEL PREV/NEXT wheel-assignment
+         // quirk) can be fully characterized from one round of testing
+         // instead of many back-and-forth single-note reports. See
+         // DEBUG_RAW_MIDI/DEBUG_MODIFIER_STATE above.
+         var debugModifierSuffix = DEBUG_MODIFIER_STATE ?
+            (" [SHIFT=" + isShiftPressed + " OPTION=" + isOptionPressed +
+            " CTRL=" + isControlPressed + " ALT=" + isAltPressed +
+            " ZOOM=" + isZoomToggled + " SCRUB=" + isScrubToggled + "]") : "";
+         debugLog(DEBUG_RAW_MIDI, "RAW Note-On received - Note: " + data1 + debugModifierSuffix);
       }
 
       // SHIFT Button (Note 70) - held modifier for other actions (fine
@@ -3928,9 +5054,14 @@ function onMidi(status, data1, data2) {
 
       // CTRL Button (Note 72) - held modifier for other combos (tempo
       // nudge, CTRL+PUNCH IN/OUT, CTRL+jog device navigation); standalone
-      // tap can be assigned to a Plugin Mode action - see
-      // handleModifierTap(). Defaults to toggling the expanded device
-      // view on a long press, per the Plugin Mode settings in init().
+      // tap can optionally be assigned to a Plugin Mode action (expanded
+      // device view) via the "Expanded Device View Button" Controller
+      // Preferences dropdown - see handleModifierTap(). Off by default
+      // now (requested directly - CTRL is the most ergonomic modifier and
+      // already heavily used for wheel combos; F1-F8 already covers
+      // device select + open-window, so a long-press mode-switch on the
+      // same button was reported as confusing and prone to firing
+      // unintentionally while just trying to use CTRL+wheel).
       if (data1 === 72) {
          isControlPressed = isPressed;
          midiOut.sendMidi(0x90, 72, isControlPressed ? 127 : 0);
@@ -3951,16 +5082,28 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // Jog Wheel Push / Pan Mode (Note 87 - see isWheelPressed above).
-      // ALT held + press runs Bitwig's real "Select item at cursor" action
-      // (same one the F-key function list offers, see FKEY_FUNCTIONS) -
-      // takes priority over the MODE_SCENE scene-launch behavior below,
-      // since holding ALT is a deliberate, distinct gesture. Without ALT,
-      // in MODE_SCENE a press launches the currently selected scene
-      // instead - Pan Mode's bar-jump branch is unreachable in that mode
-      // anyway (the wheel handler's MODE_SCENE branch takes priority), so
-      // there's no conflict between the two (non-ALT) uses of this note.
-      if (data1 === 87) {
+      // Jog Wheel Push / Pan Mode (Note 101, not 87 - see isWheelPressed
+      // above). Moved here after systematically testing every wheel-
+      // assignment button (ZOOM/SCRUB/MARKER/BANK/CHANNEL) with the wheel
+      // click: confirmed the click is always note 101, but ONLY fires in
+      // the base/idle assignment state - it's silent under ZOOM, MARKER,
+      // BANK, and CHANNEL. Note 87 never actually fires at all; wherever
+      // that assumption came from, it was wrong from the start. Note 101
+      // was ALSO wrongly assumed to be a dedicated "SCRUB Button" (see the
+      // removed toggle handler that used to intercept it, below where the
+      // BANK/ZOOM toggle handlers still live) - confirmed the real SCRUB
+      // control sends no MIDI at all when pressed, so that handler was
+      // actually hijacking every wheel click into a spurious fine-scrub
+      // toggle instead of ever reaching this code. ALT held + press runs
+      // Bitwig's real "Select item at cursor" action (same one the F-key
+      // function list offers, see FKEY_FUNCTIONS) - takes priority over
+      // the MODE_SCENE scene-launch behavior below, since holding ALT is
+      // a deliberate, distinct gesture. Without ALT, in MODE_SCENE a press
+      // launches the currently selected scene instead - Pan Mode's
+      // bar-jump branch is unreachable in that mode anyway (the wheel
+      // handler's MODE_SCENE branch takes priority), so there's no
+      // conflict between the two (non-ALT) uses of this note.
+      if (data1 === 101) {
          isWheelPressed = isPressed;
          if (isPressed && isAltPressed) {
             // Fires on ALT+press regardless of SHIFT, so this doubles as
@@ -3974,23 +5117,23 @@ function onMidi(status, data1, data2) {
                shiftUsedForCombo = true;
             }
             safeInvokeAction("select_item_at_cursor", "Select item at cursor");
-         } else if (isPressed && isControlPressed && isShiftPressed) {
-            // SHIFT+CTRL + press: select whichever clip/item is closest to
-            // the playhead - requested as a one-shot "jump to it" gesture
-            // (unlike CTRL alone's step-through-sequentially turn combo
-            // above), so bound to the press, not the turn. Reuses the same
-            // real "select_item_at_cursor" action as the ALT combo above -
-            // NOT confirmed whether "cursor" here means the arranger edit
-            // cursor/playhead (what's wanted) or a generic UI focus
-            // position (what it's used for above, activating whatever
-            // element currently has keyboard focus) - both readings are
-            // plausible from the action's name alone; needs a hardware
-            // test to know which. If it turns out to just repeat the
-            // ALT-press behavior rather than actually jumping to the
-            // playhead, that's the answer.
-            ctrlUsedForCombo = true;
-            shiftUsedForCombo = true;
-            safeInvokeAction("select_item_at_cursor", "Select item at cursor");
+         } else if (isPressed && isOptionPressed) {
+            // OPTION + press: toggle the ALT+wheel "lock" via
+            // LastClickedParameter.smartToggleLock() (see
+            // lastClickedParamLocked above) - locks ALT+wheel onto
+            // whatever parameter the mouse is currently hovering, no
+            // exact click required, and if already locked and the mouse
+            // has since moved to a different parameter, re-locks to that
+            // one instead of unlocking (Bitwig's own "smart" behavior).
+            // Replaces an earlier SHIFT+CTRL/OPTION experiment that tried
+            // "Select item below"/"Select item above" here to make clip
+            // selection follow a track switch - confirmed on hardware
+            // that neither of those two actions does anything at all
+            // (same dead end as select_item_at_cursor and "Select item
+            // to left/right" - see CTRL+wheel above), so both bindings
+            // were retired in favor of this.
+            optionUsedForCombo = true;
+            lastClickedParam.smartToggleLock();
          } else if (isPressed && currentMode === MODE_SCENE) {
             sceneBank.getScene(sceneCursorIndex).launch();
             host.showPopupNotification("Launch Scene " + (sceneCursorIndex + 1));
@@ -4031,15 +5174,23 @@ function onMidi(status, data1, data2) {
          return;
       }
 
-      // SCRUB Button (Note 101) - toggles fine-scrub mode for the Jog Wheel;
-      // also not a held modifier.
-      if (data1 === 101) {
-         if (isPressed) {
-            isScrubToggled = !isScrubToggled;
-            midiOut.sendMidi(0x90, 101, isScrubToggled ? 127 : 0);
-         }
-         return;
-      }
+      // Note 87 - previously (wrongly) assumed to be Jog Wheel Push/Pan
+      // Mode; that binding is now at note 101 above, after systematically
+      // testing every wheel-assignment button with the wheel click and
+      // confirming it's always 101, never 87. Deliberately left unbound
+      // until it's confirmed what, if anything, this note actually is -
+      // press it (or whatever key/gesture used to send it) and check the
+      // console for "RAW Note-On received".
+      //
+      // Note 101 was ALSO wrongly assumed to be a dedicated "SCRUB
+      // Button" here (there used to be a toggle handler on this exact
+      // note, hijacking every wheel click into a spurious fine-scrub
+      // toggle instead of ever letting it reach the Jog Wheel Push
+      // handler above) - confirmed the real SCRUB control sends no MIDI
+      // at all when pressed, so there's nothing to rebind it to; the
+      // "fine-scrub mode" toggle (isScrubToggled) has no known trigger
+      // on this hardware anymore. See README for the full wheel-
+      // assignment button investigation (ZOOM/SCRUB/MARKER/BANK/CHANNEL).
 
       // Fader Touch (Notes 104-111 = channels 1-8, 112 = Master) - the
       // motorized faders send a separate Note-On/Off for touching/
@@ -4083,14 +5234,38 @@ function onMidi(status, data1, data2) {
                }
             }
             faderTouchHeld[faderTouchIndex] = true;
+            // See faderTouchedTarget above - tells Bitwig's own Parameter
+            // API a hardware gesture has started, captured now so release
+            // touches the same target even if mode changes meanwhile.
+            var pressedTarget = getFaderSnapZeroTarget(faderTouchIndex);
+            faderTouchedTarget[faderTouchIndex] = pressedTarget;
+            if (pressedTarget) {
+               pressedTarget.touch(true);
+            }
          } else {
             faderTouchHeld[faderTouchIndex] = false;
+            var releasedTarget = faderTouchedTarget[faderTouchIndex];
+            faderTouchedTarget[faderTouchIndex] = null;
+            if (releasedTarget) {
+               releasedTarget.touch(false);
+            }
             // Fader Snap to Zero - see scheduleFaderSnapZeroCheck() above.
             // Only arms a check on RELEASE; the check itself re-verifies
             // the fader is still untouched (and still within range) once
             // the delay elapses.
             if (faderSnapToZeroEnabled) {
                scheduleFaderSnapZeroCheck(faderTouchIndex, getFaderSnapZeroTarget(faderTouchIndex));
+            }
+            // Fader Snap to dB Marks - see scheduleFaderSnapDbMarkCheck()
+            // above. Independent toggle/generation counter from Snap to
+            // Zero - both can fire off the same release, whichever one's
+            // range the fader actually landed in wins (Snap to Zero only
+            // ever matches near true -inf, at the opposite end from every
+            // FADER_SNAP_DB_MARKS entry, so they can't both match at once
+            // in practice).
+            if (faderSnapToDbMarksEnabled) {
+               scheduleFaderSnapDbMarkCheck(faderTouchIndex, getFaderSnapZeroTarget(faderTouchIndex),
+                  isFaderVolumeTarget(faderTouchIndex));
             }
          }
          return;
@@ -4130,8 +5305,41 @@ function onMidi(status, data1, data2) {
       // popup; only an actual HOLD (past FKEY_HOLD_THRESHOLD_MS) escalates
       // to revealing every F-key's assignment across all 8 channels, for
       // learning the whole layout without a manual - not on every tap.
+      //
+      // SHIFT+F(n)/OPTION+F(n) are otherwise-unused combos on these same
+      // 8 buttons (a plain press ignores modifier state entirely) - used
+      // here for Mixer Snapshots: SHIFT+F(n) stores the current bank
+      // window's volume+pan into slot n, OPTION+F(n) recalls it (see
+      // storeMixerSnapshot()/recallMixerSnapshot() above). Checked before
+      // the plain-press path so neither modifier's own standalone-tap
+      // action nor the normal F-key function fires at the same time.
       if (data1 >= 62 && data1 <= 69) {
          var fkeyIdx = data1 - 62;
+         // ALT+F8 starts/cancels the Fader Position Test (see
+         // startFaderPositionTest() above); plain F8 confirms/advances
+         // it while active. Both only take over from F8's normal
+         // green-state function while "Fader Position Test Mode" is
+         // enabled in Debug settings (the ALT+F8 check itself no-ops if
+         // it's off) or a test is already running (the plain-F8 check).
+         if (isPressed && fkeyIdx === 7 && isAltPressed && faderPositionTestModeEnabled) {
+            altUsedForCombo = true;
+            startFaderPositionTest();
+            return;
+         }
+         if (isPressed && fkeyIdx === 7 && faderPositionTestActive) {
+            confirmFaderPositionTest();
+            return;
+         }
+         if (isPressed && isShiftPressed) {
+            shiftUsedForCombo = true;
+            storeMixerSnapshot(fkeyIdx);
+            return;
+         }
+         if (isPressed && isOptionPressed) {
+            optionUsedForCombo = true;
+            recallMixerSnapshot(fkeyIdx);
+            return;
+         }
          if (isPressed) {
             handleFKeyPress(fkeyIdx);
          } else {
@@ -4160,13 +5368,13 @@ function handleButtonPress(note) {
 }
 
 function handleButtonPressInner(note) {
-   println("Button pressed - Note: " + note); // DEBUG: remove once all mappings are confirmed
+   debugLog(DEBUG_BUTTON_DISPATCH, "Button pressed - Note: " + note);
    // Track Channel Strip Buttons (0 - 31) - always act on whichever bank
    // (main tracks or returns) is currently active.
    if (note >= 0 && note <= 7) {
       // Rec Arm 1-8
       if (isMainSlotEmpty(note)) { return; }
-      activeTrackAt(note).arm().toggle();
+      directTrackAt(note).arm().toggle();
       return;
    }
    if (note >= 8 && note <= 15) {
@@ -4175,7 +5383,7 @@ function handleButtonPressInner(note) {
       // showBottomRowPopup()).
       var soloIdx = note - 8;
       if (isMainSlotEmpty(soloIdx)) { return; }
-      var soloTrack = activeTrackAt(soloIdx);
+      var soloTrack = directTrackAt(soloIdx);
       var newSoloState = !soloTrack.solo().get();
       soloTrack.solo().set(newSoloState);
       showBottomRowPopup(soloIdx, newSoloState ? "SOLO" : "UNSOLO");
@@ -4186,7 +5394,7 @@ function handleButtonPressInner(note) {
       // momentary MUTE/UNMUTE LCD popup.
       var muteIdx = note - 16;
       if (isMainSlotEmpty(muteIdx)) { return; }
-      var muteTrack = activeTrackAt(muteIdx);
+      var muteTrack = directTrackAt(muteIdx);
       var newMuteState = !muteTrack.mute().get();
       muteTrack.mute().set(newMuteState);
       showBottomRowPopup(muteIdx, newMuteState ? "MUTE" : "UNMUTE");
@@ -4207,6 +5415,7 @@ function handleButtonPressInner(note) {
          lastSelectPressTime[selIdx] = 0; // don't let a 3rd quick press toggle again
       } else {
          selectedTrack.selectInMixer();
+         selectedTrack.selectInEditor();
          cursorTrack.selectChannel(selectedTrack);
       }
       return;
@@ -4224,7 +5433,7 @@ function handleButtonPressInner(note) {
          // target) caused real problems on hardware across several
          // implementations and was reverted; see git history if revisiting
          // a volume-reset feature here.
-         if (!isMainSlotEmpty(encIdx)) { activeTrackAt(encIdx).pan().reset(); }
+         if (!isMainSlotEmpty(encIdx)) { directTrackAt(encIdx).pan().reset(); }
       } else if (currentMode === MODE_SENDS) {
          var resetSendIdx = (sendBankPage * 8) + encIdx;
          cursorTrack.sendBank().getItemAt(resetSendIdx).reset();
@@ -4599,16 +5808,26 @@ function handleButtonPressInner(note) {
                // pressing the overlay's printed DRAW button produces note
                // 76, not 81 (confirmed via console log) - same kind of
                // wrong inherited note-number assumption as the FLIP/
-               // RETURNS/UNDO/REDO fixes above. Cycles through the 6
-               // arranger edit tools, one per press (Pointer -> Time
-               // Selection -> Pencil -> Spray Can -> Eraser -> Knife ->
-               // back to Pointer) - see ARRANGER_TOOL_ACTIONS above.
-               // SHIFT+DRAW toggles Arranger Automation Write instead
+               // RETURNS/UNDO/REDO fixes above. Made fully automation-
+               // centric, requested directly: plain DRAW cycles the
+               // global automation write mode (Latch -> Touch -> Write ->
+               // back to Latch - see cycleAutomationWriteMode() above);
+               // SHIFT+DRAW toggles the write-enable arm
                // (transport.isArrangerAutomationWriteEnabled() - a real
                // SettableBooleanValue, same call this hardware used for
                // Automation Write when it was briefly bound to SMPTE/BEATS
                // earlier this session, before that was repurposed as a
-               // pure hardware-local mode key).
+               // pure hardware-local mode key); OPTION+DRAW shows/hides
+               // the Arranger's automation lanes (see
+               // toggleAutomationLanesVisible() above - action id not yet
+               // hardware-confirmed).
+               //
+               // The arranger edit tool cycle (Pointer -> Time Selection
+               // -> Pencil -> Spray Can -> Eraser -> Knife) that used to
+               // live here was shelved, not deleted - limited clip-editing
+               // use on this hardware right now to justify a dedicated
+               // button. See patches/arranger-tool-cycle.patch to bring it
+               // back (on this or another controller).
          if (isShiftPressed) {
             shiftUsedForCombo = true;
             // Resulting state, not "toggled" - computed before toggling
@@ -4616,11 +5835,14 @@ function handleButtonPressInner(note) {
             // correct regardless of whether the value updates synchronously.
             var newAutomationWriteState = !transport.isArrangerAutomationWriteEnabled().get();
             transport.isArrangerAutomationWriteEnabled().toggle();
-            host.showPopupNotification("Automation Write: " + (newAutomationWriteState ? "ENABLED" : "DISABLED"));
+            var automationWriteStateText = "Automation Write: " + (newAutomationWriteState ? "ENABLED" : "DISABLED");
+            host.showPopupNotification(automationWriteStateText);
+            showModePopup(newAutomationWriteState ? "WRITE ON" : "WRITE OFF");
+         } else if (isOptionPressed) {
+            optionUsedForCombo = true;
+            toggleAutomationLanesVisible();
          } else {
-            var nextTool = ARRANGER_TOOL_ACTIONS[arrangerToolCycleIndex];
-            safeInvokeAction(nextTool.id, nextTool.name);
-            arrangerToolCycleIndex = (arrangerToolCycleIndex + 1) % ARRANGER_TOOL_ACTIONS.length;
+            cycleAutomationWriteMode();
          }
          break;
 
@@ -5000,7 +6222,7 @@ function getFaderTarget(i) {
       if (currentMode === MODE_MIXER && isToolVolumeMode) {
          return getToolParam(i, 0);
       }
-      return activeTrackAt(i).volume();
+      return directTrackAt(i).volume();
    }
    if (currentMode === MODE_DEVICE) {
       return remoteControls.getParameter(i);
@@ -5008,7 +6230,7 @@ function getFaderTarget(i) {
    if (isToolVolumeMode) {
       return getToolParam(i, 1);
    }
-   return activeTrackAt(i).pan();
+   return directTrackAt(i).pan();
 }
 
 // Same as getFaderTarget(), except also covers the master fader (index 8,
@@ -5045,12 +6267,12 @@ function getEncoderTarget(i) {
       if (currentMode === MODE_MIXER && isToolVolumeMode) {
          return getToolParam(i, 1);
       }
-      return activeTrackAt(i).pan();
+      return directTrackAt(i).pan();
    }
    if (currentMode === MODE_MIXER && isToolVolumeMode) {
       return getToolParam(i, 0);
    }
-   return activeTrackAt(i).volume();
+   return directTrackAt(i).volume();
 }
 
 // Re-binds each of the 8 hwFaders to whichever Parameter they should
@@ -5260,11 +6482,17 @@ function renderLCDDisplays() {
    var topTextCombined = topRowText.join("");
    var bottomTextCombined = bottomRowText.join("");
 
-   sendMCUSysex(0x00, topTextCombined);   // Top Row (56 chars)
-   sendMCUSysex(0x38, bottomTextCombined); // Bottom Row (56 chars offset 56)
+   if (swapLcdRows) {
+      sendMCUSysex(0x00, bottomTextCombined); // Top Row (56 chars)
+      sendMCUSysex(0x38, topTextCombined);    // Bottom Row (56 chars offset 56)
+   } else {
+      sendMCUSysex(0x00, topTextCombined);    // Top Row (56 chars)
+      sendMCUSysex(0x38, bottomTextCombined); // Bottom Row (56 chars offset 56)
+   }
 }
 
 function sendMCUSysex(offset, text) {
+   debugLog(DEBUG_LCD, "LCD SysEx - offset " + offset + ": \"" + text + "\"");
    var header = [0xF0, 0x00, 0x00, 0x66, 0x14, 0x12, offset];
    var sysexBytes = header.slice();
 

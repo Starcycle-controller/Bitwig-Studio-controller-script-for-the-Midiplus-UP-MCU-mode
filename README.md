@@ -2,14 +2,17 @@
 
 **File:** `MidiplusUP-MCU.control.js`
 **Hardware mode:** standard **MCU mode** (see the unit's manual, section 3.3
-and section 8) - not one of the Logic/Cubase/Live "customized" modes. The
-plastic Ableton Live overlay has been removed, so the buttons show their
-real printed labels.
+and section 8) - not one of the Logic/Cubase/Live "customized" modes. Only
+the **top piece** of the plastic Ableton Live overlay has been removed -
+the left and right pieces are still in place - so buttons under the top
+piece show their real printed labels, while buttons under the left/right
+pieces still show their Live-overlay labels.
 **Bitwig API version:** 25 (minimum) - intended for **Bitwig Studio 6.x**;
 confirmed unchanged in 6.1.
-**Credits:** based on Mossgraber's DrivenByMoss, with additional ideas
-from a user named Sternenlicht, built with Claude Code. Also shown in
-Controller Preferences -> **About** category.
+**Author:** Sternenlicht / Claude
+**Credits:** based on Mossgraber's DrivenByMoss SSL UF8 script, with
+additional ideas from Sternenlicht, built with Claude Code. Also shown
+in Controller Preferences -> **About** category.
 **Current script version string:** `3.0.0-native-faders` (shown in Bitwig's
 Settings -> Controllers panel - check this after every reload to confirm
 Bitwig is actually running the current file, not a stale cached copy).
@@ -25,9 +28,9 @@ fresh diagnostic dump.
 
 The long-standing "motorized faders don't move" bug is **fixed** (see
 below). What's left for next session is finishing the audit of button
-assignments in the higher note range (74-90) now that the Live overlay is
-off and the real printed labels are different from what the script's
-comments still say - see **Open Items** below.
+assignments in the higher note range (74-90) now that the Live overlay's
+top piece is off and the real printed labels there are different from
+what the script's comments still say - see **Open Items** below.
 
 ## Architecture
 
@@ -56,6 +59,142 @@ Two independent halves, both required:
   it doesn't flood MIDI. Because `flush()` runs continuously rather than
   only on discrete button events, this covers hardware input, mouse drags,
   automation playback, and mode/bank switches alike.
+
+**Fader-vs-group-volume bug (found, bisected, and fixed)**: reported as
+"the fader moves but the volume doesn't update" - console logs proved a
+value really was changing live, but on a group's first CHILD track, the
+hardware fader was actually reading/writing the GROUP's own volume
+instead of the child's, even though the LCD correctly showed the child's
+name. First suspected as a Mixer Snapshots regression (see "Reverted /
+abandoned" below) - reverting that feature entirely did NOT fix it, so
+the user went back to progressively older working versions and
+confirmed bidirectional fader sync was solid on the exact version right
+after the original fader fix above (`a543d30`, long before Mixer
+Snapshots or even the "Deactivated Tracks in Bank" feature existed).
+Comparing that confirmed-good version against current directly (rather
+than guessing) found the real cause: `a543d30` bound faders/encoders
+straight to `trackBank.getItemAt(i).volume()`/`.pan()` - a plain bank
+item, no `CursorTrack` involved. `c9bd10e` ("Add Deactivated Tracks in
+Bank setting") replaced that everywhere, even in the default Show All
+mode, with `mainTrackCursors[i]` - 8 persistent `CursorTrack` objects
+re-pointed via `selectChannel()`, needed so Hide mode can skip
+deactivated slots (something a plain `TrackBank` can't do per-slot).
+That commit's own message says "not yet tested on hardware" for exactly
+this path. The `CursorTrack` indirection turned out fine for reads like
+`name()` (matches what the LCD showed), but apparently unreliable for
+`volume()`/`pan()` specifically on a track nested inside a group.
+
+Fixed with a new `faderTrackAt(i)` helper (used only by
+`getFaderTarget()`/`getEncoderTarget()`, not the shared `activeTrackAt()`
+used everywhere else) that binds straight to `trackBank.getItemAt(i)`
+again whenever Hide mode isn't actually active - restoring the exact
+confirmed-working pre-`c9bd10e` binding for the common case - and only
+falls back to the `mainTrackCursors` indirection when Hide mode is on
+(where it's structurally required, and hasn't been reported broken).
+`trackBank`'s own 8 items now also get `volume()`/`pan()` `markInterested()`
+directly in `init()`, matching exactly what the confirmed-working version
+did before `mainTrackCursors` existed.
+
+**First hardware retest confirmed the fader fix itself worked** (the
+group child's volume updated correctly) **but crashed shortly after** -
+"Either call markInterested() or add at least one observer in init in
+order to access the current value", from Fader Snap to Zero's
+`target.discreteValueCount().get()` against one of these `trackBank`
+items. The first pass only marked `.value()` interested - enough for
+basic fader motion, but missing everything else
+`applyEncoderStep()`/`resolveOrigin()`/Fader Snap to Zero also call on a
+fader/encoder target: `discreteValueCount()`, `discreteValueNames()`,
+`getOrigin()`, `name()`, `displayedValue()`. `setupChannelStripObservers()`
+already marks this full set for `mainTrackCursors`/`effectTrackBank`
+items - now mirrored for `trackBank`'s own items too, matching exactly
+(one `markInterested()` call per sub-accessor; there's no "interest
+inherited from the parent Parameter" shortcut - each has to be marked
+individually). **Confirmed working on hardware after this second fix.**
+
+**Consistency review, requested directly**: asked whether the same bug
+could affect other sections/modes, since REC ARM, SOLO, MUTE, and the
+Mixer-mode encoder-push Pan Reset all read/write a track parameter
+through the exact same `activeTrackAt(i)`-through-`mainTrackCursors`
+pattern that was confirmed broken for volume/pan on a group-nested
+track. Pan Reset (`.pan().reset()`) is essentially the identical
+operation to the fader bug, just triggered by a button press instead of
+physical fader movement - very likely to have the same issue. REC
+ARM/SOLO/MUTE (`.arm()`/`.solo()`/`.mute()`, all `SettableBooleanValue`
+rather than `Parameter`) share the identical cursor mechanism but were
+never separately hardware-confirmed broken - given a wrong-track
+SOLO/MUTE/ARM on a group is a worse silent mistake than a fader glitch,
+all four were switched to the same `directTrackAt(i)` helper
+proactively (renamed from `faderTrackAt()` now that it covers more than
+faders) rather than waiting for each to be reported separately.
+`trackBank`'s own items also got `arm()`/`solo()`/`mute()`
+`markInterested()` in `init()`, alongside the existing volume()/pan()
+set.
+
+Left unchanged, lower risk/lower stakes: SELECT (notes 24-31, including
+its double-press group-fold check), fader-touch select-on-touch, bank-
+scroll's own track selection, and the per-channel track-color LED/LCD
+output - all still go through `activeTrackAt()`. Selection-related ones
+(`selectInMixer()`/`selectInEditor()`/`cursorTrack.selectChannel()`,
+`isGroup()`/`isGroupExpanded()`) got extensive hardware testing earlier
+this session (see "Bank scrolling selects a track" below) with no
+reported misdirection issue, and track color is cosmetic only (wrong
+color, not a wrong control) - both worth keeping an eye on, but not
+proactively changed without evidence they're actually affected.
+
+**First hardware test of this pass showed faders not responding to
+input at all - reverted.** Turned out to be a false alarm: the real
+cause (see the startup race condition immediately below) was an
+unrelated, pre-existing bug that happened to be triggered by whatever
+Hide-mode state was active during that specific test, not by this
+change. Re-applied once the actual race condition was found and fixed -
+**confirmed correct on hardware**: REC ARM, SOLO, MUTE, and encoder-push
+Pan Reset all now act on the intended track (tested on both a group's
+child track and a plain ungrouped track), not the enclosing group.
+
+**Second bug found, unrelated to the group/CursorTrack issue above -
+a genuine startup race condition**: reported as "faders don't move
+Bitwig's level" being inconsistent between reloads - worked if
+"Deactivated Tracks in Bank" (Hide mode) was off at startup, or toggled
+on manually mid-session, but never worked if Hide mode was *already* the
+persisted setting when the script started. Root cause: `activeTrackRawIndices`
+(which Hide mode needs to know which slots have a track) is only
+populated by a background scan that first completes ~100ms after `init()`
+returns (`mainMappingTick()`'s scheduled task). But when Hide mode is
+already the persisted Controller Preferences value at startup, its
+`addValueObserver()` fires immediately during `init()` registration -
+standard Bitwig behavior - calling `rebindFaders()` while
+`activeTrackRawIndices` is still empty. Every slot looks like "no track"
+(`isMainSlotEmpty()`), so all 8 fader bindings get cleared via
+`hwFaders[i].clearBindings()`. `recomputeActiveTrackIndices()` (the
+function that finally populates the list for real, ~100ms later) only
+ever called `refreshMainCursors()` afterward - it never called
+`rebindFaders()` again, so the faders stayed cleared indefinitely, with
+nothing left to ever re-bind them. Fixed by also calling
+`refreshDisplayText()`/`rebindFaders()` from `recomputeActiveTrackIndices()`
+whenever Hide mode is active and currently in Mixer mode - matches
+exactly what the Controller Preferences setting's own observer already
+does when toggled live. **Confirmed fixed on hardware** - faders now
+work immediately on restart even with Hide mode already enabled from a
+previous session.
+
+**Third bug found in the same area, smaller**: with Hide mode active,
+hiding a track correctly shifts the remaining tracks up/down and the
+fader/motor immediately follows the newly-shifted-in track's real
+value - but the LCD text (name + level) kept showing the *previous*
+occupant's stale text until the channel was manually clicked/selected.
+Cause: `refreshMainCursors()` re-points `mainTrackCursors[i]` via
+`selectChannel()`, but the newly-selected track's `name()`/
+`displayedValue()` aren't reliably available to a synchronous `.get()`
+in the very same tick - the immediate `refreshDisplayText()` call added
+by the previous fix could read the old track's still-cached data before
+Bitwig had actually delivered the new one. The fader/motor output
+doesn't have this problem since it re-polls continuously via `flush()`
+rather than reading once; `refreshDisplayText()` is exactly that kind of
+one-shot read. Fixed with a short delayed follow-up call (75ms,
+debounce-token-guarded so hiding/showing several tracks in quick
+succession doesn't pile up stale scheduled calls) that re-reads the text
+once Bitwig has actually caught up. **Not yet re-tested on hardware
+since this fix.**
 
 ### Modes (`currentMode`)
 
@@ -136,7 +275,14 @@ control each button's *standalone tap* action, i.e. what happens if you
 press and release one without using it to modify anything else:
 
 - **Expanded Device View Button** (CTRL / ALT / OPTION / SHIFT / None,
-  default CTRL) - which button's tap toggles `cursorDevice.isExpanded()`.
+  default **None** - was CTRL, changed per direct feedback) - which
+  button's tap toggles `cursorDevice.isExpanded()`. Reported as confusing
+  on CTRL specifically: CTRL is the most ergonomic modifier and already
+  heavily used for jog-wheel combos, so a long-press mode-switch/window-
+  open living on the same button could fire unintentionally while just
+  trying to use CTRL+wheel, and F1-F8 (direct device select + open
+  window) already covers the same need without that risk. Off by
+  default now; still fully available by picking any modifier here.
 - **Expanded Device View Trigger** (Long Press / Instant Tap, default Long
   Press) - whether that tap needs to be held for the duration below, or
   fires immediately on release.
@@ -309,9 +455,10 @@ for Delete, etc.) - guaranteed correct, not guessed, straight from the
 Controller API Javadoc. Everything else (`Consolidate` and all 33 Editing/
 File actions) has no dedicated method anywhere in the Controller API, so
 it goes through `safeInvokeAction(actionId, null)` (the same generic
-`application.getAction(id).invoke()` helper DRAW's tool-cycling uses for
-its own real, confirmed action ids - see `ARRANGER_TOOL_ACTIONS`) with
-every `actionId` copied verbatim from `bitwig-actions-reference.txt`, not
+`application.getAction(id).invoke()` helper the shelved arranger tool
+cycle used for its own real, confirmed action ids - see
+`patches/arranger-tool-cycle.patch`) with every `actionId` copied
+verbatim from `bitwig-actions-reference.txt`, not
 guessed - unlike Consolidate's first attempt (`"consolidate_time_selection"`,
 a wrong snake_case guess before the real id, the plain word
 `"Consolidate"`, was console-confirmed - see git history). **Not yet
@@ -1043,16 +1190,33 @@ the two views now stay in sync on every bank move.
 
 **Which slot gets selected depends on scroll direction**, per direct
 feedback: scrolling left/backward (`ToStart`/`PageBackward`/
-`StepBackward`) selects slot 0, the new window's first/leftmost track
+`StepBackward`) selects a configurable slot near the window's left side
 (`selectFirstTrackOfBank()`); scrolling right/forward (`ToEnd`/
-`PageForward`/`StepForward`) selects slot 7, its last/rightmost track
-(`selectLastTrackOfBank()`) - selecting the edge in the direction just
+`PageForward`/`StepForward`) selects one near its right side
+(`selectLastTrackOfBank()`) - selecting a track in the direction just
 scrolled *toward* keeps Bitwig's view following the newly-revealed
 tracks, rather than always snapping back to the window's left edge
-regardless of which way it just moved. `selectLastTrackOfBank()` scans
-backward from slot 7 rather than assuming it's always populated, since
-Hide mode can leave fewer than 8 activated tracks in the window (Show
-All mode and Returns never hit that case). Guarded by
+regardless of which way it just moved.
+
+**Bank Scroll Left: Select Track #** / **Bank Scroll Right: Select Track
+#** (Mixer category, `None`/`1`-`8`, default `1`/`8` - the original
+hardcoded first-slot/last-slot behavior) - requested directly: always
+jumping to the window's extreme edge (track 1 or track 8) can feel
+jarring in Bitwig's own view; a slot nearer the center (e.g. `3` on the
+left, `6` on the right) might land Bitwig's scrolled-into-view result
+somewhere less abrupt. `None` (requested separately) skips selection on
+that scroll direction entirely - the bank window still scrolls, but
+whatever track was already selected stays selected, for workflows that
+would rather not have scrolling disturb the current selection at all.
+Exposed as a setting rather than a fixed redesign specifically to
+experiment with different values on hardware. Both
+`selectFirstTrackOfBank()`/`selectLastTrackOfBank()` funnel through
+`selectBankSlotNear(index)`, which scans backward from the configured
+slot toward slot 0 if that exact one turns out empty (Hide mode can
+leave fewer than 8 activated tracks in the window - empty slots only
+ever trail towards slot 7 there, never lead, so backward/toward-0 is the
+correct search direction for either the left or the right setting; Show
+All mode and Returns never hit the empty-slot case at all). Guarded by
 `isMainSlotEmpty()` for the one case where there's genuinely nothing to
 select at all (Hide mode, zero activated tracks left in the whole
 project). Applies to both Main and Returns; the RETURNS toggle itself
@@ -1192,26 +1356,178 @@ always bound straight to `masterTrack.volume()` regardless of mode).
 Skipped for a genuine discrete/switch target, which has no continuous
 "close to the bottom" to land on. Not yet tested on hardware.
 
-### Diagnostics settings (Controller Preferences panel)
+**Fader Snap to dB Marks** (on/off, **default OFF**) - **confirmed
+working on hardware**. Around -10dB (and generally anywhere well below
+unity), Bitwig's own volume curve compresses more heavily than it does
+near the top, so the same small physical fader movement covers a much
+bigger dB range down there - landing exactly on a specific value like
+-10.0dB by hand is genuinely harder than it is near 0dB, not just a
+perception thing. Deliberately a **separate toggle from Fader Snap to
+Zero above, not folded into it** - someone may want -inf snapping on
+its own without every other round dB number grabbing the fader too, so
+it defaults off and each is independently switchable. Same
+release-triggered/re-touch-cancels mechanics as Fader Snap to Zero (own
+generation counter, not shared with it): releasing within **Fader Snap
+to dB Marks Range (%)** (default 3%, range 0-10%, same normalized-range
+meaning as the Snap to Zero range setting) of one of the active
+layout's marks arms a check - `scheduleFaderSnapDbMarkCheck()` runs
+**Fader Snap to dB Marks Delay (ms)** later (default 500ms, range
+100-3000ms); if the fader is still untouched and still in range, it
+snaps to that mark's exact value.
+
+**Fader Snap to dB Marks Layout** (dropdown, default **Hardware
+Scale**) - which set of marks to snap to, since "the round numbers"
+means different things depending on context:
+- **Hardware Scale** (default - matches what's actually printed on this
+  controller, so the snap lands where the label says out of the box):
+  `5, 0, -10, -20, -30, -50, -60` dB - the marks actually printed on
+  this hardware's own fader scale (read directly off the unit:
+  `10, 5, 0, -10, -20, -30, -50, -60, -Infinity` top to bottom). The
+  printed `+10` is deliberately left out - Bitwig's volume curve tops
+  out around **+6.02dB** at full fader travel (see the curve formula
+  below, evaluated at normalized=1.0), so a literal `+10dB` target is
+  never actually reachable; `dbMarkToNormalized()` clamps to `[0, 1]`
+  defensively regardless, so an unreachable mark would just behave like
+  "snap to the very top" rather than error. `-Infinity` isn't in either
+  list - Fader Snap to Zero above already owns that endpoint, so turn
+  that on too if the hardware scale's bottom mark should also snap.
+- **Musical (Standard)** - for advanced users who'd rather snap to the
+  standard audio-engineering halving series than the printed labels:
+  `0, -6, -12, -18, -24, -30, -36` dB (every -6dB is half the
+  amplitude), requested directly.
+
+Scoped to plain **Track Volume only** (`isFaderVolumeTarget()`) - not
+Send level or device macros under FLIP, which may use a different curve
+or an arbitrary (often percentage) scale where "snap to -10 dB" would be
+meaningless or outright wrong. Converting a target dB figure to the
+normalized value Bitwig will actually display as that figure uses
+`dB = 60*log10(normalized) + 6.0206` (Bitwig's volume curve) inverted to
+`normalized = 10^((dB - 6.0206) / 60)` - this formula wasn't guessed,
+it was fit against three real (normalized value, displayed dB) pairs
+read back from this hardware's own console log earlier in this session
+(0.7939&rarr;0.0dB, 0.6257&rarr;-6.2dB, 0.6182&rarr;-6.5dB) and predicts
+the third point to within 0.02dB of the other two, so it should be
+accurate across the whole practical fader range. Each layout's mark
+list itself isn't individually exposed as a setting (only which layout,
+plus range/delay, are) - edit `FADER_SNAP_DB_MARKS_MUSICAL`/
+`FADER_SNAP_DB_MARKS_HARDWARE` directly if different reference points
+are wanted.
+
+### Debug settings (Controller Preferences panel)
 
 Bitwig Studio -> Settings -> Controllers -> this controller -> Preferences
--> **Diagnostics** category.
+-> **Debug** category. Requested directly: this script had several
+`println()` calls sprinkled through it for verifying key presses/wheel
+behavior/modifier state while developing against real hardware, each
+either always-on or manually commented out - no single place to see or
+control all of them. Centralized into `debugLog(category, message)` (see
+the `DEBUG_*` globals near the top of the script) instead, with one
+setting per category:
 
+- **Enable Debug Logging** (default ON) - the master switch. Off silences
+  every category below regardless of its own setting, and also
+  `hide()`s their individual checkboxes from this panel via Bitwig's own
+  `Setting.hide()`/`show()` API - turning this off collapses the whole
+  section down to just itself, previewing what fully retiring debug
+  logging later (once the project is more mature and end users shouldn't
+  see any of this) would look like.
+- **Log Raw MIDI (Controller Input)** (default ON) - every incoming CC not
+  otherwise handled, and every Note-On (the main "what does this physical
+  button/wheel actually send" tool, e.g. the note-87/101 jog-wheel-click
+  mixup earlier in this doc was found this way).
+- **Log Button Dispatch** (default ON) - "Button pressed - Note: N", once
+  a Note-On has passed modifier filtering and actually reached
+  `handleButtonPress()` - lets "the hardware sent something" (raw MIDI,
+  above) be told apart from "the script recognized and dispatched it".
+- **Log Modifier State (SHIFT/OPTION/CTRL/ALT) in Raw MIDI** (default ON)
+  - whether the raw Note-On line above also appends the live
+  `[SHIFT=... OPTION=... CTRL=... ALT=... ZOOM=... SCRUB=...]` state
+  suffix - its own toggle since that's the noisiest part of an already
+  noisy line, only really needed when chasing a modifier-dependent bug.
+- **Log LCD Display SysEx** (default ON) - the exact text sent to each
+  half of the two-row MCU LCD via `sendMCUSysex()`, so a display
+  formatting bug can be read straight from the console instead of
+  eyeballing tiny hardware LCD characters. New this session - there was
+  no LCD-specific debug logging before.
+- **Log Encoder Target Classification** (default ON) - reports a
+  pointed-at parameter's real `discreteValueCount()` whenever it exceeds
+  `MAX_NATIVE_SWITCH_STEPS` and gets treated as continuous instead of
+  stepped - for calibrating that constant against real hardware/device
+  values.
 - **Channel 8 Meter Test Mode** (default `LED + LCD (default, mode 3)`) -
-  live-switches which of the 4 real MCU VU-meter modes channel 8's strip
-  uses, by re-sending `F0 00 00 66 14 20 07 <mode> F7` with a different
-  mode byte the moment you change the dropdown - no reload needed. The 4
-  values are confirmed against Mossgraber's `switchVuMode()`/`VUMODE_*` in
+  moved here from its own former "Diagnostics" category, per request, for
+  consistency - it's a live hardware-experimentation control like
+  everything else in this hub, so it belongs alongside it. Live-switches
+  which of the 4 real MCU VU-meter modes channel 8's strip uses, by
+  re-sending `F0 00 00 66 14 20 07 <mode> F7` with a different mode byte
+  the moment you change the dropdown - no reload needed. The 4 values are
+  confirmed against Mossgraber's `switchVuMode()`/`VUMODE_*` in
   `MCUControlSurface.java` (not guessed): `0` = all off, `1` = LED meter
   only, `3` = LED + VU-meter on the LCD (what all 8 channels normally use,
   see below), `6` = VU-meter on the LCD only, no LED. Scoped to channel 8
   only - the other 7 strips stay on the confirmed-working mode 3
-  regardless of this setting. **Result: on this hardware, the on-screen
-  LCD bar reacted to real level in every one of the 4 modes, including
-  `0`/off** - so this unit doesn't appear to distinguish between the mode
-  byte values the way genuine Mackie hardware does; the LCD meter bar
-  seems to always be driven directly by the incoming Channel Pressure
-  level data regardless of the mode SysEx. Conclusion below.
+  regardless of this setting. **Result so far: on this hardware, the
+  on-screen LCD bar reacted to real level in every one of the 4 modes,
+  including `0`/off** - so this unit doesn't appear to distinguish
+  between the mode byte values the way genuine Mackie hardware does; the
+  LCD meter bar seems to always be driven directly by the incoming
+  Channel Pressure level data regardless of the mode SysEx. Didn't reveal
+  anything new yet, but left in as a live knob in case there's still more
+  to get out of the LCD worth revisiting later, rather than concluding
+  this hardware categorically can't do anything more with it. Conclusion
+  below.
+- **Fader Position Test Mode (ALT+F8 start/cancel, F8 confirm)** (default
+  off) - requested directly: a way to verify every motorized fader
+  actually drives to the correct physical position for each printed
+  hardware dB label. Once enabled, **ALT+F8** drives all 8 channel
+  faders to `FADER_SNAP_DB_MARKS_HARDWARE`'s values one at a time,
+  bottom-to-top (`-60` up to `+5`); **F8** (no ALT) confirms the current
+  position once you've checked it against the hardware's printed scale
+  and advances to the next mark, ending the test after the last one.
+  ALT+F8 again cancels early. Only takes over F8's normal function while
+  the setting is on (ALT+F8) or a test is already running (plain F8) -
+  otherwise F8 behaves exactly as before. Requires Mixer mode, Show All
+  (not Hide/Returns), unflipped, not showing a Tool Volume parameter
+  (where the faders are actually bound to plain track volume - see
+  `getFaderTarget()`, and Mixer Snapshots need Main/Show All - see
+  below); shows a popup and refuses to start otherwise. Logs the driven
+  target and an immediate `volume().get()` readback for every channel at
+  each step, then a settled readback again on confirm - **important
+  caveat**: this can only confirm Bitwig's own parameter model holds the
+  value this script wrote, not the fader's true physical position - this
+  hardware's motorized fader input goes entirely through the native
+  `setBinding()`/`setAdjustValueMatcher()` plumbing with no raw
+  pitch-bend byte ever reaching this script's own code, so there's no
+  independent electronic position readback to check against. The logged
+  value is still useful (it would catch a write silently failing to take
+  effect at all, as an earlier Mixer Snapshot bug turned out to be), but
+  the human visually confirming the physical fader position via the F8
+  press remains the actual ground-truth check.
+
+  **Auto-backs up and restores via Mixer Snapshot slot 8** (requested
+  directly, so the test doesn't permanently disturb whatever mix you were
+  actually working on): starting the test (ALT+F8) stores the current
+  bank window's Volume+Pan into slot 8 (overwriting whatever was there,
+  the same as manually pressing SHIFT+F8), then ending the test - however
+  it ends: completing all marks, cancelling early with ALT+F8, or the
+  test auto-aborting because you switched modes mid-test - recalls it
+  (the same as OPTION+F8), only while this test mode is actually running;
+  slot 8 is a completely normal, independent Mixer Snapshot the rest of
+  the time. **Recommended setup regardless: a throwaway project with 8
+  real tracks**, so every channel has something to drive and the slot-8
+  backup isn't your only safety net. If you switch to Hide mode or
+  Returns mid-test, the auto-abort's restore can't run either (same
+  Main/Show All requirement) - switch back and press OPTION+F8 to recall
+  slot 8 manually in that case.
+
+  Not yet tested on hardware.
+
+Real error/warning logging (caught exceptions, invalid action ids,
+duplicate F-key assignments, a cue marker that couldn't be found to
+rename, etc.) is deliberately **not** gated by any of this - those always
+print, so a genuine problem can never be accidentally silenced by a
+debug setting. Not yet tested on hardware (the `hide()`/`show()` toggle
+behavior especially).
 
 ### LCD / meters / LEDs
 
@@ -1223,13 +1539,45 @@ packing `(stripIndex<<4)|level`) - all cross-checked against Ableton's own
 `ChannelStrip.py`. Button LEDs are plain Note On/Off (`midiOut.sendMidi(
 0x90, note, 127/0)`).
 
+**Swap LCD Rows (Value on Top)** (Controller Preferences -> "Mixer"
+category, default off) - swaps which physical row shows the name vs. the
+value (level/pan/parameter text) for every channel strip, in every mode
+(Mixer, Sends, Device). Requested directly: this hardware's rotary
+encoders can physically block the row directly above them, and the value
+is what gets watched more often than the name. Purely a rendering swap
+in `renderLCDDisplays()` - `topRowText`/`bottomRowText` still mean
+exactly what they always did everywhere else in the script (name/value
+respectively); only which SysEx offset each one is sent to changes.
+
+**Auto-Banking (Bank Follows Track Selection)** (Controller Preferences
+-> "Mixer" category, default off) - requested directly, modeled on the
+SSL UF8's autobanking: when the user selects a different track by any
+means outside this hardware (mouse click, keyboard, etc.), the bank
+window scrolls just enough to bring it into view - the same
+minimal-scroll behavior a text editor uses to keep the cursor line
+visible, not always resetting to the window's left edge. Works via a new
+`addIsSelectedInMixerObserver()` on every one of `mainTrackScanBank`'s
+128 scanned positions (the same permanently-unscrolled background scan
+bank used for "Deactivated Tracks in Bank" and the whole-project Mixer
+Snapshots) - whichever one reports selected gives
+`handleAutoBankSelectionChanged()` the absolute position to scroll
+toward. A selection this hardware itself caused (SELECT button, Select
+Channel on Fader Touch, a Bank Scroll Left/Right edge-select) always
+lands on an already-visible slot, so the "already visible" check inside
+it makes this naturally a no-op for those - no separate "was this a
+mouse click" detection needed. Main tracks only (`mainTrackScanBank`
+doesn't scan Returns) - skipped entirely while viewing Returns. Default
+off: a hardware view that can jump on its own from background mouse
+activity is a big enough behavior change to opt into deliberately.
+Not yet tested on hardware.
+
 **Per-channel LCD meter bar: confirmed working, and confirmed NOT
 independently paintable for color.** Console-verified: `track idx 7`'s
 Channel Pressure level fluctuated correctly (2-6, tracking real playback)
 while the on-screen bar visibly moved in sync, on all 8 channels,
 including channel 8 (the earlier "channel 8 not updating" report turned
 out to be no audio actually routed to that track yet, not a script bug).
-The Channel 8 Meter Test Mode experiment (see Diagnostics above) then
+The Channel 8 Meter Test Mode experiment (see Debug settings above) then
 showed the bar reacting to level in every one of the 4 documented VU
 modes, including notionally "off" - meaning this bar isn't a separate
 paintable display region gated by that mode byte, it's a genuine VU meter
@@ -1399,7 +1747,7 @@ was still in Live mode, is confirmed still correct.
 | 70-73 | SHIFT / OPTION / CTRL / ALT | Modifier hold state; standalone tap action is configurable, see Plugin Mode settings above |
 | 74 | (Live label: SESS/ARR) | Toggle clip launcher / arranger view |
 | 75 | (Live label: CLIP/FX) | Toggle device / clip view |
-| 76 | DRAW | Cycle the 6 arranger edit tools; SHIFT+DRAW toggles Arranger Automation Write (popup shows `Automation Write: ENABLED`/`DISABLED`) - moved here from note 81 after console-log confirmation that the overlay's printed DRAW button actually sends this note, not 81 |
+| 76 | DRAW | Cycle the automation write mode (Latch -> Touch -> Write, popup shows the new mode); SHIFT+DRAW toggles Arranger Automation Write (popup shows `Automation Write: ENABLED`/`DISABLED`); OPTION+DRAW shows/hides automation lanes via `safeInvokeAction("toggle_automation_lanes", ...)` - **action id not yet hardware-confirmed**, same "dump `application.getActions()` filtered to a keyword" technique used to confirm the ids below will find the real one if this is wrong. Moved here from note 81 after console-log confirmation that the overlay's printed DRAW button actually sends this note, not 81. Previously cycled the 6 arranger edit tools instead - shelved (limited clip-editing use on this hardware right now), see `patches/arranger-tool-cycle.patch` |
 | 77 | (Live label: BROWSER) | Toggle browser panel |
 | 78 | (Live label: DETAIL) | Toggle note/automation editor panel |
 | 79 | B.T.A. | Toggle `MODE_SCENE` - moved here from note 80 after console-log confirmation that the overlay's printed B.T.A. button actually sends this note, not 80 |
@@ -1410,7 +1758,7 @@ was still in Live mode, is confirmed still correct.
 | 84 | - | Jump to previous cue marker |
 | 85 | - | Jump to next cue marker |
 | 86 | (Live label: LOOP) | Toggle arranger loop |
-| 87 | Jog wheel push | Momentary "Pan Mode" hold; launches selected scene in `MODE_SCENE` |
+| 87 | Unconfirmed - previously (wrongly) assumed to be Jog Wheel Push | Unbound - needs testing |
 | 88 | (Live label: PUNCH OUT) | Toggle punch-out (CTRL = set loop end from playhead) |
 | 89 | (Live label: HOME), SHIFT = add "Bar N" cue marker | Jump playhead to project start; SHIFT+HOME adds a cue marker at the current position, auto-named for its bar number - see Cue Marker Naming below |
 | 90 | (Live label: END) | Jump playhead to loop start |
@@ -1420,7 +1768,7 @@ was still in Live mode, is confirmed still correct.
 | 98 | Cursor LEFT | Arrow key left, device select previous in `MODE_DEVICE`, or zoom out timeline (while ZOOM toggled) - see Zoom below |
 | 99 | Cursor RIGHT | Arrow key right, device select next in `MODE_DEVICE`, or zoom in timeline (while ZOOM toggled) - see Zoom below |
 | 100 | ZOOM | Toggle zoom mode for cursor arrows |
-| 101 | SCRUB | Toggle fine-scrub mode for jog wheel |
+| 101 | Jog wheel push - moved here from note 87 (confirmed via console log: the wheel's own click always sends 101, never 87 - see "Wheel-assignment button investigation" below) | Momentary "Pan Mode" hold; ALT+press = select item at playhead; SHIFT+CTRL+press = same, one-shot; launches selected scene in `MODE_SCENE` |
 | 104-111 | Fader touch 1-8 | Optionally selects that channel's track, see Mixer settings below |
 | 112 | Fader touch (Master) | Optionally selects the master track, see Mixer settings below |
 | CC 16-23 | Rotary encoders 1-8 | Mode-dependent (pan/send/macro); SHIFT = stepped or fine adjust, see Encoders settings above |
@@ -1437,9 +1785,11 @@ next/previous arranger clip/item, see below) > **SHIFT+ALT** (nudge the
 selected arranger item, see below) > **ALT alone** (adjust the
 last-clicked GUI parameter, see below) > PLUG-INS held (step devices) >
 BANK held (page remote-control pages) > OPTION alone (halve/double loop
-length) > SHIFT alone (shift loop by a bar) > SCRUB toggle or wheel press
-(jump by a bar, or select-at-cursor with ALT or SHIFT+CTRL held, see
-below) > default (scrub, **Wheel (No Modifier): Playhead Jump per Tick
+length) > SHIFT alone (shift loop by a bar) > wheel held down (note 101 -
+see "Wheel-assignment button investigation" below; `isScrubToggled` is
+currently dead, no known hardware note sets it) (jump by a bar, or
+select-at-cursor with ALT or SHIFT+CTRL held, see below) > default
+(scrub, **Wheel (No Modifier): Playhead Jump per Tick
 (bars)** per **Wheel (No Modifier): Ticks per Bar** accumulated raw
 ticks - default 1 bar per 8 ticks, configurable, see below - no longer
 ALT-modified).
@@ -1530,27 +1880,63 @@ request and covers a different gesture) - only the three CTRL-combo
 settings. Not yet tested on hardware.
 
 **CTRL + Jog Wheel** (outside `MODE_DEVICE`, where it still steps devices
-as before) now selects the next/previous arranger clip/item instead of
-its previous job, nudging the project tempo - via Bitwig's real "Select
-Next Item"/"Select Previous Item" actions (ids `"Select next item"`/
-`"Select previous item"`, confirmed from `bitwig-actions-reference.txt`),
+as before) selects the next/previous arranger clip/item instead of its
+original job, nudging the project tempo - via Bitwig's real "Select Next
+Item"/"Select Previous Item" actions (ids `"Select next item"`/`"Select
+previous item"`, confirmed from `bitwig-actions-reference.txt`),
 throttled once every **CTRL+Wheel: Ticks to Move to Next/Prev Clip or
-Track** (default 4) wheel messages - its own dedicated setting, no longer shared with
-device-stepping's `PLUGIN_DEVICE_STEP_MESSAGES`. Repurposed per request -
-**tempo nudging no longer has a jog-wheel binding** (CTRL+ALT no longer
-means "fine tempo nudge" either, since there's no longer a continuous
-nudge to make fine - CTRL+ALT+wheel is now its own separate combo, see
-above, no longer swallowed into plain CTRL's behavior). **Confirmed
-working on hardware** - steps between arranger clips
-when one is selected; falls back to stepping between tracks (above/
-below) when nothing's selected, which is real Bitwig behavior from the
-same action, not something this script special-cases, and confirmed to
-be a liked side effect ("gives freedom to move around the arrangement").
+Track** (default 4) wheel messages - its own dedicated setting, no longer
+shared with device-stepping's `PLUGIN_DEVICE_STEP_MESSAGES`. Repurposed
+per request - **tempo nudging no longer has a jog-wheel binding**
+(CTRL+ALT no longer means "fine tempo nudge" either, since there's no
+longer a continuous nudge to make fine - CTRL+ALT+wheel is now its own
+separate combo, see above, no longer swallowed into plain CTRL's
+behavior).
+
+**Confirmed working on hardware, current behavior (post-revert)** - with
+a clip selected, steps between clips on that track; with nothing
+selected, steps track-to-track (above/below) instead - and that
+track-to-track stepping also walks through any expanded automation
+lanes on the way, not just track rows, since it's real Bitwig Arranger
+navigation from the same action, not something this script special-cases
+or filters. Whether
+that fallback is welcome has flipped over the course of this session:
+originally reported as a liked side effect ("gives freedom to move
+around the arrangement") when it mostly only showed up with nothing
+selected; then, once the `selectInEditor()` fix (see "Likely root cause
+found and fixed" above) gave the Arranger a genuine, persistent
+selection anchor for the first time, the same fallback started firing
+far more often and was reported as actively breaking the expected "just
+step along the current track" gesture. Briefly swapped to "Select item
+to left"/"Select item to right" (mirroring LEFT/RIGHT arrow-key
+navigation specifically, hoping for same-track-only stepping), then
+**reverted after confirming on hardware that those two do nothing at
+all**, even with a clip already selected - same non-functional pattern
+already seen with `select_item_at_cursor` and `Select item above`/`Select
+item below` (all real, named Bitwig actions that appear to do nothing
+when invoked via the Controller API, regardless of exact wording).
+"Select next item"/"Select previous item" is the only action in this
+whole family confirmed to actually change the selection this way, so
+it's back in place despite its own quirk - a working action with an
+occasional side effect beats a "correct" one that does nothing.
+
 Note this is a different thing from CHANNEL PREV/NEXT (notes 48/49) + CTRL,
 which still independently nudges
 tempo when this hardware's own CHANNEL wheel-assignment mode is active
 (see case 48/49) - untouched, since that's a separate firmware-level
 input path, not the plain jog wheel.
+
+**OPTION + Jog Wheel** halves (turn left) or doubles (turn right) the
+arranger loop length, accumulated across messages via
+`loopScaleAccumulator`/**OPTION+Wheel: Ticks to Halve/Double Loop
+Length** (see settings above) so it doesn't fire on every raw wheel
+message. Capped at 256 bars on the doubling side so repeated doubling
+can't run away forever; floored at **1 whole bar** (not a fixed tiny
+note value like a 64th note, which is what it used to floor at) on the
+halving side - found and fixed directly: starting from a non-power-of-2
+loop length (e.g. 3 bars) used to keep halving straight past whole-bar
+lengths into awkward fractional-bar ones instead of stopping cleanly at
+1 bar.
 
 **ALT + Jog Wheel** adjusts whatever parameter was last clicked in
 Bitwig's own GUI - click any knob/slider/fader once in Bitwig
@@ -1648,16 +2034,18 @@ it falls directly out of dividing by the live zoom value and rounding.
 Off by default - an opt-in alternative to the fixed bar count above, not
 a replacement, until confirmed on hardware.
 
-**ALT + Jog Wheel Press** (push the wheel down while holding ALT) runs
-Bitwig's real `select_item_at_cursor` action ("Select item at cursor" -
-same one the Function Keys dropdowns offer, see `FKEY_FUNCTIONS`) - the
-wheel press itself acts as the "click", so nothing needs an actual mouse
-click first. The check only tests `isAltPressed` (not caring whether
-SHIFT is also held), so it doubles as the first step of the SHIFT+ALT
-clip-drag gesture below - the same press works whether you're holding
-just ALT or SHIFT+ALT. Takes priority over the wheel-press's other use
-(launching the selected scene in `MODE_SCENE`) when ALT is held. Not yet
-tested on hardware.
+**ALT + Jog Wheel Press** (push the wheel down while holding ALT - note
+101, not 87, see "Jog-wheel 'mode' buttons" above) runs Bitwig's real
+`select_item_at_cursor` action ("Select item at cursor" - same one the
+Function Keys dropdowns offer, see `FKEY_FUNCTIONS`) - the wheel press
+itself acts as the "click", so nothing needs an actual mouse click
+first. The check only tests `isAltPressed` (not caring whether SHIFT is
+also held), so it doubles as the first step of the SHIFT+ALT clip-drag
+gesture below - the same press works whether you're holding just ALT or
+SHIFT+ALT. Takes priority over the wheel-press's other use (launching
+the selected scene in `MODE_SCENE`) when ALT is held. Not yet tested on
+hardware since the note-87/101 fix - this combo had never actually
+fired before that (see above), so this is effectively untested.
 
 **SHIFT+ALT + Jog Wheel** nudges whatever's currently selected in the
 arranger (a clip, automation point, etc.) left/right by one grid step per
@@ -1678,14 +2066,84 @@ SHIFT isn't also held. Not yet tested on hardware.
 
 **SHIFT+CTRL + Jog Wheel Press** was tried as a "select whichever clip is
 closest to the playhead" gesture, reusing the same `select_item_at_cursor`
-action as ALT + Jog Wheel Press above - **confirmed on hardware NOT to do
-that**. So "cursor" in that action's name is the generic UI keyboard-focus
-reading, not the arranger edit cursor/playhead - it just repeats the
-ALT-press behavior. Left bound for now (harmless, if redundant with
-ALT+press) since nothing better has replaced it yet; the SHIFT+CTRL
-*turn* combo above (jump to first/last item) covers a related but
-different need instead. If jump-to-playhead-clip is still wanted, it
-needs a different real action or approach - not yet found one.
+action as ALT + Jog Wheel Press above - re-tested after fixing the note
+87/101 mixup, and **confirmed for real this time**: it does NOT select
+the item at the playhead on whatever track is currently active. Test
+performed: created a clip on one track, switched to a different track
+(also containing a clip), then pressed ALT+wheel and SHIFT+CTRL+wheel -
+neither changed the selection at all; the original clip (on the track
+switched away from) stayed selected. So "cursor" in that action's name
+really is a generic UI keyboard-focus position, not the arranger edit
+cursor/playhead - `select_item_at_cursor` cannot do what was hoped here.
+
+**Follow-up experiment, now also confirmed non-functional and retired**:
+SHIFT+CTRL + press briefly called `Select item below`, and OPTION + press
+called `Select item above` (both real action ids from
+`bitwig-actions-reference.txt`'s Selection category), hoping to mirror
+arrow-key UP/DOWN's "move selection to the adjacent track" behavior and
+let clip selection follow a track switch without touching the mouse.
+Confirmed on hardware: the popup fires for both, but neither actually
+changes the selection - same dead end as `select_item_at_cursor` and
+"Select item to left/right" (see "CTRL + Jog Wheel" above). Both bindings
+have been removed; the "need to click with the mouse to target a clip"
+problem itself remains unsolved (the Controller API's Selection-category
+actions are largely non-functional here - only "Select next/previous
+item", used by plain CTRL+wheel, genuinely works) - see "Bank scrolling
+selects a track" and the hidden-track/Show-Hide-Chains dead ends
+elsewhere in this document for the same underlying Controller API
+ceiling.
+
+**OPTION + Jog Wheel Press now does something different and unrelated**:
+it toggles `LastClickedParameter.smartToggleLock()` (see "ALT + Jog
+Wheel" above) - locks the ALT+wheel parameter-adjust combo onto whatever
+parameter the mouse is currently hovering over, without needing an exact
+click first, and if already locked and the mouse has since moved
+elsewhere, re-locks to the new parameter instead of unlocking (Bitwig's
+own "smart" behavior, straight from its Javadoc: "Toggle locked status,
+but if we are already locked and the mouse points at a different
+parameter now, lock to the new parameter instead."). Requested directly
+after the plain click-then-ALT+wheel workflow was reported as "a bit too
+fiddly" - this is worth playing around with as a hover-based alternative,
+especially for small Inspector fields (e.g. clip Gain) that are easy to
+mis-click. A popup notification ("Locked to: <name>" / "Unlocked:
+<name>") fires on every lock-state change via an `isLocked()` value
+observer, rather than reading the value back immediately after invoking
+the toggle (which risks reading a stale, not-yet-updated cached value on
+the same tick). **Not yet tested on hardware.**
+
+**Likely root cause found and fixed**: reported that clicking a track's
+header with the mouse produces a visible "white circle" indicator around
+it, and that selecting a track from the hardware (SELECT button/bank
+scroll) leaves the track selected but shows no white circle at all.
+`Channel.select()` is deprecated with an explicit note: "Use
+`selectInEditor()` or `Channel.selectInMixer()` instead" - confirming
+these are two genuinely separate selection concepts (`selectInEditor()`:
+"Selects the device chain in Bitwig Studio [Arranger/editors]" vs.
+`selectInMixer()`: "...in the Bitwig Studio mixer"). This script had
+only ever called `selectInMixer()` at every track-selection call site
+(fader touch, bank scroll's `selectBankSlot()`, the SELECT button
+handler) - very likely why the white circle never appeared and why
+`select_item_at_cursor`/`Select item above`/`Select item below` never
+had any anchor to work from, since those probably read the Arranger's
+own (editor) selection state, not the Mixer's. `track.selectInEditor()`
+now runs alongside `selectInMixer()` at all 4 of those call sites. Not
+yet confirmed on hardware whether this actually produces the white
+circle or unblocks the wheel-press clip-navigation experiments above -
+if it does, that's the whole "need to click with the mouse to target a
+clip" problem solved in one line per call site.
+
+**Final result**: SHIFT+CTRL + press (`Select item below`) and OPTION +
+press (`Select item above`) both visibly fired - their popups showed -
+but neither ever changed the actual selection, confirmed on hardware.
+Whether the white circle itself now appears from `selectInEditor()`
+wasn't separately confirmed, but it no longer matters for this specific
+gesture since both bindings were retired (see "Follow-up experiment, now
+also confirmed non-functional and retired" above) - the vertical
+(`above`/`below`) and horizontal (`to left`/`to right`) Selection-category
+actions all turned out equally non-functional via the Controller API, so
+there wasn't a same-track-vs-cross-track distinction to find after all.
+OPTION + press now drives an unrelated feature instead (the
+`smartToggleLock()` hover-lock combo, see above).
 
 ### Jog-wheel "mode" buttons (CURSOR / SCROLL / ZOOM / MASTER / MARKER /
 NUDGE / BANK / CHANNEL, per the manual's "Multi-Purpose Jog Wheel Section")
@@ -1696,6 +2154,43 @@ wheel itself sends when subsequently turned (e.g. the already-documented
 BANK/CHANNEL quirk: while lit, turning the wheel sends repeated Note-On
 46/47/48/49 instead of CC 60). ZOOM is the one confirmed exception - it
 sends note 100 directly, same as the note 100 already bound above.
+
+**Full systematic sweep, this session**: tested the wheel's own click
+under every mode reachable so far (SCROLL/base, ZOOM, MARKER, BANK,
+CHANNEL - CURSOR, MASTER, and NUDGE not yet tested):
+
+| Mode | Mode button itself | Wheel click | Wheel turn |
+|------|---------------------|-------------|------------|
+| SCROLL (base/default - this script previously called it "SCRUB", the manual calls it SCROLL) | No MIDI at all | **Note 101** | CC 60 (normal scrub) |
+| ZOOM | Note 100 (toggle) | Nothing | Note-On 96/97 (up/down) or 98/99 (left/right) - see Zoom below |
+| MARKER | No MIDI at all | Nothing | Note-On 84/85 - already bound above to jump to previous/next cue marker, so this already works with no extra code |
+| BANK | Note 46/47 (also its own PREV/NEXT press action) | Nothing | Note-On 46/47 - already documented above |
+| CHANNEL | Note 48/49 (also its own PREV/NEXT press action) | Nothing | Note-On 48/49 - already documented above |
+
+**Corrected a real bug from this sweep**: the wheel's own click was
+previously assumed to be note 87, and note 101 was previously assumed to
+be a dedicated "SCRUB Button" toggling `isScrubToggled`. Both were wrong.
+The click is always note 101, but only in the SCROLL/base mode - never
+87, under any mode tested. Since the note-101 handler used to intercept
+and `return` immediately (toggling a fine-scrub flag on every press), it
+was silently swallowing every wheel click before it could ever reach the
+Jog Wheel Push logic (bound to the nonexistent note 87) - meaning Pan
+Mode, ALT+press "select item at cursor", the SHIFT+ALT clip-drag
+gesture's click step, and Scene-mode launch-by-press had never actually
+fired on this hardware. Fixed: Jog Wheel Push is now on note 101 (see
+button-map table above), the old note-101 interceptor is removed, and
+note 87 is left as an unconfirmed placeholder. `isScrubToggled` is now
+dead code (nothing on this hardware can set it - the real SCROLL/SCRUB
+button sends no MIDI at all) but left in place rather than ripped out,
+in case a real trigger for it turns up later.
+
+**Re-tested**: the original "SHIFT+CTRL + Jog Wheel Press ... confirmed
+on hardware NOT to [select the item at the playhead]" conclusion further
+below was reached while this same bug was still active, so it was
+worth re-testing once the binding reached its handler correctly. Result:
+**re-confirmed negative** - see that section for the actual test
+performed and the experimental `Select item below`/`Select item above`
+replacement now in place instead.
 
 ## Open items for next session
 
@@ -1749,6 +2244,79 @@ sends note 100 directly, same as the note 100 already bound above.
    index) - worth trying only if track color on this hardware still
    matters enough to keep chasing.
 
+### Mixer Snapshots
+
+SHIFT+F(n) stores Volume+Pan for every existing Main track in the
+project into slot n (not just the current 8-track bank window);
+OPTION+F(n) recalls it back. Persisted via `host.getDocumentState()`, so
+a snapshot is saved inside the Bitwig project file itself and travels
+with the song. Main tracks in Show All mode only - Hide mode and Returns
+show a `switch to Main / Show All view` popup instead (see below for
+why).
+
+Shelved once already this session after recall reliably failed to write
+a value to any channel whose fader had been touched earlier in the same
+session - see `patches/mixer-snapshots.patch` and git history
+(`e1d4e2b`..`efeeb43`) for that investigation's full blow-by-blow. The
+actual root cause turned out to be simpler than the leading "permanent
+per-session write lock" theory: this script never called Bitwig's own
+`Parameter.touch(isBeingTouched)` on hardware fader press/release, so
+Bitwig had no signal a touch gesture had ever ended and kept ignoring
+subsequent script `.set()` calls on that parameter. Confirmed via
+Mossgraber's DrivenByMoss (`ParameterImpl.touchValue()` calls
+`parameter.touch()`) - real MCU-style drivers call this on every touch/
+release, and this script simply never did. Fixed by capturing the exact
+`directTrackAt(i)`-resolved target on press (`faderTouchedTarget`) and
+calling `.touch(true)`/`.touch(false)` on it at press/release - the same
+object the fader is actually bound to, not a separately-resolved one (an
+earlier absolute-position rebuild through `mainTrackScanBank` failed
+identically, since touch state on the fader-bound object has no bearing
+on a different object's writability).
+
+Reintroduced for a second round of testing once the unrelated all-8-
+columns/all-8-SELECT-LEDs "cursor collapse" bug (see "Faders"/git history
+around the `mainTrackCursors` fix) was found and fixed - that bug's
+`mainTrackCursors`/`selectChannel()` unreliability was never ruled out as
+a contributing factor in the original recall failures, so worth a clean
+retest now that it's gone. Confirmed working on hardware, including a
+channel whose fader had been touched earlier in the session.
+
+**Whole project, not just one bank window.** Earlier versions of this
+feature only covered whichever 8 tracks were visible in the bank at
+store time - first not scroll-proof at all (recall applied to whatever
+was currently in slots 0-7), then fixed to restore that one stored
+window before writing. Since the actual ask was "change several banks,
+then revert everything, without needing the hardware to jump around" -
+store now captures every existing Main track in the project (via the
+always-unscrolled `mainTrackScanBank`, by absolute position), not just
+the visible window.
+
+Writes still have to go through `directTrackAt(i)` specifically - the
+exact object the fader for that index is bound to; writing through any
+other object (the scan bank included) was already confirmed a dead end
+independent of the `touch()` fix. So a track that isn't currently in one
+of the 8 fader-bound slots can't be updated in place. Recall handles
+this in two passes: whatever's already visible in the CURRENT window
+updates immediately, live, with no scrolling at all (so the fader you're
+looking at responds right away); everything else is applied afterward,
+one bank window at a time (batching anything that lands in the same
+window together) - each briefly scrolling `trackBank` there, writing,
+and moving on - before finally scrolling back to wherever you started.
+The bank window/faders/LCD will visibly jump through each affected
+window in turn for anything off-screen - there's no way around that
+given the write constraint above - but you end up back where you were,
+with everything applied.
+
+Main tracks in Show All mode only. Hide mode is refused rather than
+silently reinterpreted, since its slot mapping
+(`activeTrackRawIndices`, built from live `isActivated()` state) isn't a
+stable absolute position the way `trackBank.scrollPosition()` is - a
+captured position could mean a different track by recall time if tracks
+were (de)activated in between. Returns is refused because this feature
+is built on `mainTrackScanBank`, which only scans Main tracks. Both
+simply aren't implemented for this feature, given the added complexity
+for a case that hasn't been reported needed.
+
 ## Reverted / abandoned this session (for context, don't re-attempt without a new plan)
 
 - **Encoder-click volume-to-dB reset** (three different implementation
@@ -1758,3 +2326,12 @@ sends note 100 directly, same as the note 100 already bound above.
 - **Live fader-follow via manual `sendMidi()` from a value observer /
   `scheduleTask`** - never worked; superseded entirely by the `flush()`-
   polling approach described above, which does work.
+- **Mixer Snapshots, first attempt** (SHIFT+F1-F8 store / OPTION+F1-F8
+  recall a Volume+Pan mix balance) - fully reverted after its first real
+  hardware test appeared to break the core fader-input path: moving a
+  physical fader stopped updating Bitwig's volume. **Turned out to be a
+  red herring** - the real cause (an unrelated Hide-mode startup race
+  condition, see "Faders" above) predates this feature entirely and just
+  happened to be triggered during that test. Rebuilt from scratch below
+  using `directTrackAt()` instead of the original cursor-based
+  `activeTrackAt()`, once the real cause was found and fixed elsewhere.
