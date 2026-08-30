@@ -31,13 +31,20 @@
 
 loadAPI(25);
 
+// Single source of truth for the version string shown both in Bitwig's
+// Settings -> Controllers list (via defineController() below) and in this
+// script's own Controller Preferences -> About category (see
+// versionInfoSetting in init()) - bump this one place on a real release,
+// not the two places separately.
+var SCRIPT_VERSION = "3.0.0-native-faders";
+
 // Define Controller Metadata
 host.defineController(
    "Midiplus",
    "Midiplus UP (MCU Mode)",
-   "3.0.0-native-faders",
+   SCRIPT_VERSION,
    "6f56e9e0-0871-4623-a178-5e82485a3c10",
-   "Sternenlicht / Claude"
+   "Starcycle + Claude + " + SCRIPT_VERSION
 );
 
 // Define MIDI Ports (1 Input, 1 Output)
@@ -3123,6 +3130,14 @@ function init() {
    var requiresInfoSetting = host.getPreferences().getStringSetting(
       "Requires", "About", 60, "Bitwig 6.x (Controller API 25)");
    requiresInfoSetting.markInterested();
+
+   // Same string shown in Bitwig's Settings -> Controllers list (see
+   // SCRIPT_VERSION/defineController() near the top of this file) -
+   // duplicated here since the Controllers list isn't always visible while
+   // actually using the controller, but this Preferences panel is.
+   var versionInfoSetting = host.getPreferences().getStringSetting(
+      "Version", "About", 70, "Starcycle + Claude + " + SCRIPT_VERSION);
+   versionInfoSetting.markInterested();
 
    var creditsInfoSetting = host.getPreferences().getStringSetting(
       "Credits", "About", 100,
