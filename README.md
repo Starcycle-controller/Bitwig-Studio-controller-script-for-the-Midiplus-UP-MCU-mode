@@ -361,19 +361,25 @@ Capped at 256 bars doubling; floored at 1 whole bar halving.
 Adjusts whatever parameter was last clicked in Bitwig's own GUI - click any
 knob/slider/fader once in Bitwig, then hold ALT and turn the wheel to dial
 it in without touching the mouse again. Shows the parameter's name as a
-Bitwig popup on every turn.
+Bitwig popup on every turn - or **"No Parameter (click a Bitwig control
+first)"** if nothing valid was ever clicked (or the clicked GUI element
+isn't a real Parameter at all - see below), instead of a confusing blank
+popup.
 
 **Scope limitation, hardware-confirmed:** this only works for values that
 are genuine Bitwig `Parameter` objects (device/mixer knobs, sends, macros,
 and similar) - it does **not** work for every visually-editable field in
 Bitwig's GUI. Confirmed on hardware: clicking a clip's fade-length field in
-the Inspector panel, then using ALT+Wheel, has no effect at all - clip
+the Inspector panel, then using ALT+Wheel, has no effect, and the popup
+comes back completely empty (now shown as "No Parameter" - see above) -
+meaning `host.createLastClickedParameter()` never resolved the click to
+anything at all, not just that the resulting value failed to move. Clip
 fade appears to sit entirely outside Bitwig's generic addressable-parameter
 system (consistent with API Feature Request #11 - there's no `Clip` fade
-API either), so `host.createLastClickedParameter()` can't resolve it no
-matter how reliably the click/ALT are registered. If a wheel turn doesn't
-move something you clicked, this GUI-element scope gap - not a modifier
-detection issue - is the most likely reason; see
+API either), unreachable through this "whatever was last clicked" escape
+hatch no matter how reliably the click/ALT themselves are registered. If a
+wheel turn doesn't move something you clicked, this GUI-element scope gap -
+not a modifier detection issue - is the most likely reason; see
 `BITWIG-API-FEATURE-REQUESTS.md` #11.
 
 **ALT + Jog Wheel Press** (push the wheel while holding ALT, note 101)

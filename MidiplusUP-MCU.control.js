@@ -4955,8 +4955,21 @@ function onMidi(status, data1, data2) {
          // also note 101's press handler for ALT+wheel-press ("Select item
          // at cursor").
          altUsedForCombo = true;
+         var lastClickedParamName = lastClickedParamValue.name().get();
+         if (!lastClickedParamName) {
+            // Confirmed on hardware: clicking some GUI fields (e.g. a
+            // clip's fade length in the Inspector) leaves this blank -
+            // LastClickedParameter never resolved to a real Parameter at
+            // all for those, most likely because they aren't backed by
+            // one in Bitwig's object model in the first place (see
+            // BITWIG-API-FEATURE-REQUESTS.md #11). Previously this still
+            // called .inc() and showed an empty popup box, which just
+            // looked broken - now it's a clear, distinct message instead.
+            host.showPopupNotification("No Parameter (click a Bitwig control first)");
+            return;
+         }
          lastClickedParamValue.inc(rawStep, 128);
-         host.showPopupNotification(lastClickedParamValue.name().get());
+         host.showPopupNotification(lastClickedParamName);
          return;
       }
 
