@@ -232,6 +232,26 @@ settable fade-in and fade-out length (and ideally curve shape), so a
 hardware controller could support hands-free clip editing the same way
 it already does for track volume/pan/sends.
 
+**Follow-up, hardware-confirmed:** tried the obvious workaround anyway -
+click a clip's fade field in the Inspector panel, then use this script's
+ALT+Wheel combo (`host.createLastClickedParameter()`, the same generic
+"whatever was last clicked" mechanism that reliably works for device/
+mixer knobs elsewhere in this script) to adjust it. Confirmed on hardware
+that this does **not** work - the wheel has no effect on the fade value.
+Ruled out a button-detection problem first (ALT's own Note-On registers
+cleanly and reliably, confirmed via the raw MIDI log), so the cause isn't
+this script failing to read ALT. The likely explanation, consistent with
+the gap above: `LastClickedParameter` can only ever resolve to something
+that already exists as a real, addressable `Parameter` in Bitwig's object
+model, and the Inspector's clip-fade field apparently isn't modeled as
+one - it's a specialized audio-event edit handle outside the generic
+automation/remote-control `Parameter` system entirely, the same
+architectural gap that keeps it out of the Controller API's `Clip`
+interface too. Not just unexposed to scripts via `Clip` - potentially
+unreachable via *any* generic script-facing mechanism, including the
+"whatever the user just clicked" escape hatch that normally works for
+arbitrary GUI controls.
+
 ## 12. Takeover Mode is one Studio-wide setting, not per-controller - and isn't readable from script
 
 **What broke:** Bitwig Studio's **Takeover Mode** preference (Settings ->

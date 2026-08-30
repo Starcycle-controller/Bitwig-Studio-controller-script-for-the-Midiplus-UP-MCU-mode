@@ -363,6 +363,19 @@ knob/slider/fader once in Bitwig, then hold ALT and turn the wheel to dial
 it in without touching the mouse again. Shows the parameter's name as a
 Bitwig popup on every turn.
 
+**Scope limitation, hardware-confirmed:** this only works for values that
+are genuine Bitwig `Parameter` objects (device/mixer knobs, sends, macros,
+and similar) - it does **not** work for every visually-editable field in
+Bitwig's GUI. Confirmed on hardware: clicking a clip's fade-length field in
+the Inspector panel, then using ALT+Wheel, has no effect at all - clip
+fade appears to sit entirely outside Bitwig's generic addressable-parameter
+system (consistent with API Feature Request #11 - there's no `Clip` fade
+API either), so `host.createLastClickedParameter()` can't resolve it no
+matter how reliably the click/ALT are registered. If a wheel turn doesn't
+move something you clicked, this GUI-element scope gap - not a modifier
+detection issue - is the most likely reason; see
+`BITWIG-API-FEATURE-REQUESTS.md` #11.
+
 **ALT + Jog Wheel Press** (push the wheel while holding ALT, note 101)
 attempts to select whatever's at the current GUI focus, via
 `select_item_at_cursor` - the same action confirmed non-functional for
