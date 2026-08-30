@@ -4,6 +4,35 @@ Reference patches for features that were shelved out of the main tree -
 kept here instead of only in git history so they're easy to find and
 reapply if someone picks the idea back up.
 
+## arranger-tool-cycle.patch
+
+The arranger edit tool cycle (Pointer -> Time Selection -> Pencil ->
+Spray Can -> Eraser -> Knife, one per press) that used to live on plain
+DRAW (note 76), shelved when DRAW was made fully automation-centric
+(plain DRAW now cycles the automation write mode, SHIFT+DRAW toggles
+the write-enable arm, OPTION+DRAW shows/hides automation lanes - see
+the main README's "DRAW" section). Not dropped because it's broken -
+this hardware's limited clip-editing use just didn't justify keeping a
+dedicated button for it right now, and the user has other MIDI
+controllers this could plausibly land on instead.
+
+Applies additively (adds `ARRANGER_TOOL_ACTIONS`/`cycleArrangerTool()`
+back as their own standalone block - doesn't touch or conflict with
+anything DRAW does now):
+
+```
+git apply patches/arranger-tool-cycle.patch
+```
+
+It does NOT wire `cycleArrangerTool()` up to any button on its own,
+since DRAW is taken now - call it from whichever button/combo makes
+sense on whichever controller this ends up on. The action ids
+(`select_object_selection_tool` etc.) were confirmed via a real
+`application.getActions()` dump filtered to names containing "tool"
+back when this lived on DRAW; re-confirm the same way if this has been
+a few major Bitwig versions since, or if reapplying on a different
+Bitwig install shows anything different.
+
 ## mixer-snapshots.patch
 
 The Mixer Snapshots feature (SHIFT+F1-F8 store / OPTION+F1-F8 recall a

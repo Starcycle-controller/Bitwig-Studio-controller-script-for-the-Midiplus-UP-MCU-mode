@@ -455,9 +455,10 @@ for Delete, etc.) - guaranteed correct, not guessed, straight from the
 Controller API Javadoc. Everything else (`Consolidate` and all 33 Editing/
 File actions) has no dedicated method anywhere in the Controller API, so
 it goes through `safeInvokeAction(actionId, null)` (the same generic
-`application.getAction(id).invoke()` helper DRAW's tool-cycling uses for
-its own real, confirmed action ids - see `ARRANGER_TOOL_ACTIONS`) with
-every `actionId` copied verbatim from `bitwig-actions-reference.txt`, not
+`application.getAction(id).invoke()` helper the shelved arranger tool
+cycle used for its own real, confirmed action ids - see
+`patches/arranger-tool-cycle.patch`) with every `actionId` copied
+verbatim from `bitwig-actions-reference.txt`, not
 guessed - unlike Consolidate's first attempt (`"consolidate_time_selection"`,
 a wrong snake_case guess before the real id, the plain word
 `"Consolidate"`, was console-confirmed - see git history). **Not yet
@@ -1746,7 +1747,7 @@ was still in Live mode, is confirmed still correct.
 | 70-73 | SHIFT / OPTION / CTRL / ALT | Modifier hold state; standalone tap action is configurable, see Plugin Mode settings above |
 | 74 | (Live label: SESS/ARR) | Toggle clip launcher / arranger view |
 | 75 | (Live label: CLIP/FX) | Toggle device / clip view |
-| 76 | DRAW | Cycle the 6 arranger edit tools; SHIFT+DRAW toggles Arranger Automation Write (popup shows `Automation Write: ENABLED`/`DISABLED`) - moved here from note 81 after console-log confirmation that the overlay's printed DRAW button actually sends this note, not 81 |
+| 76 | DRAW | Cycle the automation write mode (Latch -> Touch -> Write, popup shows the new mode); SHIFT+DRAW toggles Arranger Automation Write (popup shows `Automation Write: ENABLED`/`DISABLED`); OPTION+DRAW shows/hides automation lanes via `safeInvokeAction("toggle_automation_lanes", ...)` - **action id not yet hardware-confirmed**, same "dump `application.getActions()` filtered to a keyword" technique used to confirm the ids below will find the real one if this is wrong. Moved here from note 81 after console-log confirmation that the overlay's printed DRAW button actually sends this note, not 81. Previously cycled the 6 arranger edit tools instead - shelved (limited clip-editing use on this hardware right now), see `patches/arranger-tool-cycle.patch` |
 | 77 | (Live label: BROWSER) | Toggle browser panel |
 | 78 | (Live label: DETAIL) | Toggle note/automation editor panel |
 | 79 | B.T.A. | Toggle `MODE_SCENE` - moved here from note 80 after console-log confirmation that the overlay's printed B.T.A. button actually sends this note, not 80 |

@@ -1764,19 +1764,41 @@ var isScrubToggled = false;
 // created in init() below.
 var ZOOM_ARROW_STEP = 1;
 
-// DRAW (note 81): cycles through the 6 arranger edit tools (Bitwig's own
-// keyboard shortcuts 1-6), wrapping back to the first after the sixth
-// press. Real action ids confirmed via the DRAW-button diagnostic dump
-// (application.getActions(), filtered to names containing "tool").
-var ARRANGER_TOOL_ACTIONS = [
-   { id: "select_object_selection_tool", name: "Pointer Tool" },
-   { id: "select_time_selection_tool", name: "Time Selection Tool" },
-   { id: "select_create_tool", name: "Pencil Tool" },
-   { id: "select_spray_tool", name: "Spray Can Tool" },
-   { id: "select_erase_tool", name: "Eraser Tool" },
-   { id: "select_cut_tool", name: "Knife Tool" }
-];
-var arrangerToolCycleIndex = 0;
+// DRAW (note 76) - fully automation-centric, see the case 76 handler in
+// handleButtonPressInner() below for the full SHIFT/OPTION breakdown.
+//
+// Transport has no readable getAutomationWriteMode() - only
+// setAutomationWriteMode(mode)/addAutomationWriteModeObserver(callback)
+// (confirmed against the Controller API stubs: setAutomationWriteMode()
+// takes a plain string, no enum constant exposed to script) - so the
+// current mode has to be tracked locally via the observer (registered
+// in init() below), same pattern as every other live Controller
+// Preferences value in this file. "latch"/"touch"/"write" are Bitwig's
+// own lowercase mode identifiers.
+var AUTOMATION_WRITE_MODES = ["latch", "touch", "write"];
+var currentAutomationWriteMode = "latch";
+
+function cycleAutomationWriteMode() {
+   var idx = AUTOMATION_WRITE_MODES.indexOf(currentAutomationWriteMode);
+   var nextMode = AUTOMATION_WRITE_MODES[(idx + 1) % AUTOMATION_WRITE_MODES.length];
+   transport.setAutomationWriteMode(nextMode);
+   host.showPopupNotification("Automation Write Mode: " + nextMode.toUpperCase());
+   showModePopup(nextMode.toUpperCase());
+}
+
+// UNCONFIRMED action id - Bitwig's generic action system doesn't expose
+// automation-lane visibility via a dedicated method the way
+// isArrangerAutomationWriteEnabled() does for the write-arm, so this
+// goes through the same application.getAction(id)/safeInvokeAction()
+// path the (now-shelved, see patches/arranger-tool-cycle.patch) arranger
+// tool cycle used - same reasoning, id not yet confirmed against a real
+// application.getActions() dump on this hardware. If "Automation Lanes"
+// never shows up, dump application.getActions() filtered to names
+// containing "automat" (same technique the tool cycle's ids were found
+// with) and swap in whatever the real id turns out to be.
+function toggleAutomationLanesVisible() {
+   safeInvokeAction("toggle_automation_lanes", "Automation Lanes");
+}
 
 // Default (no modifier) Jog Wheel scrub - how many WHOLE BARS the
 // playhead jumps per wheel message, always landing exactly on a bar
@@ -3822,9 +3844,16 @@ function init() {
    transport.arrangerLoopDuration().markInterested();
    transport.timeSignature().numerator().markInterested();
    transport.timeSignature().denominator().markInterested();
-   // Read on-demand by SHIFT+DRAW (case 81) to show the resulting ON/OFF
+   // Read on-demand by SHIFT+DRAW (case 76) to show the resulting ON/OFF
    // state in its popup, rather than a generic "toggled" message.
    transport.isArrangerAutomationWriteEnabled().markInterested();
+   // Keeps currentAutomationWriteMode (see cycleAutomationWriteMode()
+   // above) in sync with the real current mode, including a change made
+   // from Bitwig's own UI rather than plain DRAW - no getter exists, so
+   // this observer is the only way to know the current value at all.
+   transport.addAutomationWriteModeObserver(function (mode) {
+      currentAutomationWriteMode = mode;
+   });
 
    // Segment display (the separate "BEATS" transport-position display,
    // notes 40-53 are NOT it - this is CC 0x40-0x49, 10 digit cells,
@@ -5778,16 +5807,26 @@ function handleButtonPressInner(note) {
                // pressing the overlay's printed DRAW button produces note
                // 76, not 81 (confirmed via console log) - same kind of
                // wrong inherited note-number assumption as the FLIP/
-               // RETURNS/UNDO/REDO fixes above. Cycles through the 6
-               // arranger edit tools, one per press (Pointer -> Time
-               // Selection -> Pencil -> Spray Can -> Eraser -> Knife ->
-               // back to Pointer) - see ARRANGER_TOOL_ACTIONS above.
-               // SHIFT+DRAW toggles Arranger Automation Write instead
+               // RETURNS/UNDO/REDO fixes above. Made fully automation-
+               // centric, requested directly: plain DRAW cycles the
+               // global automation write mode (Latch -> Touch -> Write ->
+               // back to Latch - see cycleAutomationWriteMode() above);
+               // SHIFT+DRAW toggles the write-enable arm
                // (transport.isArrangerAutomationWriteEnabled() - a real
                // SettableBooleanValue, same call this hardware used for
                // Automation Write when it was briefly bound to SMPTE/BEATS
                // earlier this session, before that was repurposed as a
-               // pure hardware-local mode key).
+               // pure hardware-local mode key); OPTION+DRAW shows/hides
+               // the Arranger's automation lanes (see
+               // toggleAutomationLanesVisible() above - action id not yet
+               // hardware-confirmed).
+               //
+               // The arranger edit tool cycle (Pointer -> Time Selection
+               // -> Pencil -> Spray Can -> Eraser -> Knife) that used to
+               // live here was shelved, not deleted - limited clip-editing
+               // use on this hardware right now to justify a dedicated
+               // button. See patches/arranger-tool-cycle.patch to bring it
+               // back (on this or another controller).
          if (isShiftPressed) {
             shiftUsedForCombo = true;
             // Resulting state, not "toggled" - computed before toggling
@@ -5796,10 +5835,11 @@ function handleButtonPressInner(note) {
             var newAutomationWriteState = !transport.isArrangerAutomationWriteEnabled().get();
             transport.isArrangerAutomationWriteEnabled().toggle();
             host.showPopupNotification("Automation Write: " + (newAutomationWriteState ? "ENABLED" : "DISABLED"));
+         } else if (isOptionPressed) {
+            optionUsedForCombo = true;
+            toggleAutomationLanesVisible();
          } else {
-            var nextTool = ARRANGER_TOOL_ACTIONS[arrangerToolCycleIndex];
-            safeInvokeAction(nextTool.id, nextTool.name);
-            arrangerToolCycleIndex = (arrangerToolCycleIndex + 1) % ARRANGER_TOOL_ACTIONS.length;
+            cycleAutomationWriteMode();
          }
          break;
 
