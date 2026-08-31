@@ -183,7 +183,10 @@ Wheel Modifier Combos** and **Confirmed Button Map** below):
   a *different* F-key selects that device and opens its window.
 - `MODE_SCENE` - entered via B.T.A. (note 79): shows the clip launcher,
   switches Bitwig to the Mix panel layout, and the jog wheel
-  selects/launches scenes instead of scrubbing.
+  selects/launches scenes instead of scrubbing. SHIFT+wheel can
+  optionally also move track selection without disturbing the current
+  scene row - see **Scene Mode: SHIFT+Wheel Selects** in Mixer settings
+  below.
 
 FLIP (note 43) swaps faders and encoders between volume and pan in
 `MODE_MIXER`, and faders only between volume and macros in `MODE_DEVICE`.
@@ -669,6 +672,25 @@ window gets selected (so Bitwig's own view follows the hardware) after a
 BANK/CHANNEL scroll in that direction. `None` skips selection on that
 scroll direction entirely, leaving whatever was already selected alone.
 
+**Scene Mode: SHIFT+Wheel Selects** (`Off` / `Select Track` / `Page Track
+Bank`, default `Select Track`) - requested directly, a workflow choice for
+the user rather than a replacement of anything: track selection is already
+reachable in Scene mode via BANK/CHANNEL wheel-modes or the SELECT1-8
+buttons, but those need leaving Scene mode's own SCROLL wheel-mode. This
+setting adds an option to reach it straight from SHIFT+wheel instead,
+without ever touching the current scene row - the plain wheel still
+selects scenes and the wheel push still launches regardless of this
+setting.
+- **`Off`** - SHIFT+wheel does nothing extra in Scene mode (same as before
+  this feature existed).
+- **`Select Track`** (default) - moves which single slot (0-7) of the
+  current 8-track bank is selected/highlighted, the same effect as
+  clicking a track or pressing a SELECT1-8 button, without paging which 8
+  tracks are visible.
+- **`Page Track Bank`** - instead pages which 8 tracks are visible (same
+  effect as CHANNEL wheel-mode's own step), without necessarily selecting
+  one specific track.
+
 **Blink Armed Track's SELECT LED** (on/off, default ON) - any channel armed
 for recording blinks its SELECT LED, regardless of whether it's also
 selected, so the SELECT row doubles as an always-visible "which tracks are
@@ -1141,6 +1163,11 @@ it turned out broken) - this list tracks status, the feature sections
 carry the detail/evidence. If a later change touches something already
 checked off, uncheck it here until it's retested.
 
+- [ ] **Scene Mode: SHIFT+Wheel Selects** (`Select Track`/`Page Track
+      Bank`) - brand new, not yet tested on hardware at all. Confirm
+      SHIFT+wheel moves track selection without disturbing the current
+      scene row, both step directions, and that plain wheel/wheel-push
+      behavior is completely unaffected.
 - [ ] CURSOR wheel-mode - mode button and wheel-turn behavior both
       untested.
 - [ ] NUDGE wheel-mode - mode button and wheel-turn behavior both

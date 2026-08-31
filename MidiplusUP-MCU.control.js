@@ -1805,6 +1805,23 @@ var sceneCursorIndex = 0;
 var sceneStepAccumulator = 0;
 var SCENE_STEP_MESSAGES = 4;
 
+// MODE_SCENE SHIFT+Wheel: Track Selection - requested directly, so track
+// selection feels reachable straight from the wheel while browsing scenes
+// (already possible via BANK/CHANNEL wheel-modes or the SELECT1-8 buttons,
+// but those need leaving Scene mode's own SCROLL wheel-mode). Deliberately
+// a separate accumulator/index from sceneCursorIndex/sceneStepAccumulator
+// above - SHIFT+wheel must never disturb the current scene row, and vice
+// versa, so the two dimensions stay fully independent. "Off" (see
+// sceneModeShiftWheelAction below) means SHIFT+wheel does nothing extra in
+// Scene mode, same as before this feature existed.
+var sceneModeShiftWheelAction = "Off";
+// Which of the current 8-track bank's slots (0-7) is "selected" via this
+// feature specifically - only meaningful/used when sceneModeShiftWheelAction
+// is "Select Track". Reset to 0 whenever Scene mode is (re-)entered, same
+// as sceneCursorIndex.
+var sceneModeTrackSlotIndex = 0;
+var sceneModeTrackStepAccumulator = 0;
+
 // BANK PREV/NEXT Buttons (Notes 46/47): a press still reaches
 // handleButtonPress() for their own bank-paging action, but held state is
 // also tracked (either one) so the jog wheel can page through the current
@@ -4031,6 +4048,28 @@ function init() {
       bankScrollRightSelectIndex = value === "None" ? -1 : (parseInt(value, 10) - 1);
    });
 
+   // Scene Mode (BTA) SHIFT+Wheel: Track Selection - see
+   // sceneModeShiftWheelAction/sceneModeTrackSlotIndex above and the
+   // MODE_SCENE branch of onMidi()'s jog wheel handling. Purely additive -
+   // "Off" (the default) leaves Scene mode exactly as it was: plain wheel
+   // still selects scenes, the wheel push still launches, unaffected by
+   // this setting either way. The other two options let SHIFT+wheel also
+   // move track selection without disturbing the current scene row, in
+   // one of two ways: "Select Track" moves which single slot of the
+   // current 8-track bank is selected/highlighted (same effect as
+   // clicking a track or the SELECT1-8 buttons); "Page Track Bank" instead
+   // pages which 8 tracks are visible (same effect as CHANNEL wheel-mode's
+   // own step), without necessarily selecting one specific track.
+   var sceneModeShiftWheelActionSetting = host.getPreferences().getEnumSetting(
+      "Scene Mode: SHIFT+Wheel Selects", "Mixer",
+      ["Off", "Select Track", "Page Track Bank"], "Select Track");
+   sceneModeShiftWheelActionSetting.markInterested();
+   sceneModeShiftWheelActionSetting.addValueObserver(function (value) {
+      sceneModeShiftWheelAction = value;
+      sceneModeTrackSlotIndex = 0;
+      sceneModeTrackStepAccumulator = 0;
+   });
+
    // See selectLedVelocityFor()/armedLedBlinkTick() above. Turning this
    // off immediately restores every SELECT LED to its plain isSelected
    // state via refreshChannelStripLEDs() (selectLedVelocityFor() checks
@@ -5184,7 +5223,40 @@ function onMidi(status, data1, data2) {
          // cursor within the 8-scene bank window (see sceneCursorIndex
          // above) - takes priority over every other modifier combo below,
          // since none of them make sense while browsing scenes. Launching
-         // is done separately by note 101's press handler.
+         // is done separately by note 101's press handler. This default
+         // behavior is never replaced by the SHIFT+wheel option below -
+         // it's purely an added alternative, opt-in, a workflow choice for
+         // the user rather than a takeover of the plain wheel or the
+         // wheel-push launch action.
+         if (isShiftPressed && sceneModeShiftWheelAction !== "Off") {
+            shiftUsedForCombo = true;
+            sceneModeTrackStepAccumulator += Math.abs(rawStep);
+            if (sceneModeTrackStepAccumulator >= SCENE_STEP_MESSAGES) {
+               sceneModeTrackStepAccumulator -= SCENE_STEP_MESSAGES;
+               if (sceneModeShiftWheelAction === "Page Track Bank") {
+                  if (backwards) {
+                     scrollActiveBankStepBackward();
+                     host.showPopupNotification("Nudge Channel Left");
+                  } else {
+                     scrollActiveBankStepForward();
+                     host.showPopupNotification("Nudge Channel Right");
+                  }
+               } else {
+                  // "Select Track" - moves which single slot (0-7) of the
+                  // current 8-track bank is selected, without paging the
+                  // bank window itself - see sceneModeTrackSlotIndex above.
+                  sceneModeTrackSlotIndex = backwards ?
+                     Math.max(0, sceneModeTrackSlotIndex - 1) :
+                     Math.min(7, sceneModeTrackSlotIndex + 1);
+                  selectBankSlot(sceneModeTrackSlotIndex);
+                  var selectedSlotTrack = activeTrackAt(sceneModeTrackSlotIndex);
+                  var selectedSlotTrackName = (selectedSlotTrack && selectedSlotTrack.name().get()) ||
+                     ("Track " + (sceneModeTrackSlotIndex + 1));
+                  host.showPopupNotification("Track " + (sceneModeTrackSlotIndex + 1) + ": " + selectedSlotTrackName);
+               }
+            }
+            return;
+         }
          sceneStepAccumulator += Math.abs(rawStep);
          if (sceneStepAccumulator >= SCENE_STEP_MESSAGES) {
             sceneStepAccumulator -= SCENE_STEP_MESSAGES;
@@ -6349,6 +6421,8 @@ function handleButtonPressInner(note) {
             isToolVolumeMode = false;
             sceneCursorIndex = 0;
             sceneStepAccumulator = 0;
+            sceneModeTrackSlotIndex = 0;
+            sceneModeTrackStepAccumulator = 0;
             arranger.isClipLauncherVisible().set(true);
             try {
                application.setPanelLayout("MIX");
