@@ -2299,21 +2299,27 @@ var cueMarkerBank = null; // for SHIFT+HOME's "Bar N" auto-named cue marker feat
 var midiOut = null;
 var midiIn = null;
 
-// MODE_MIXER F1-F8: Mixer Layout Presets/Toggles - requested directly.
-// mixer (host.createMixer(), created in init()) exposes 6 real settable
-// booleans for the Bitwig Mixer panel's own show/hide sections (Clip
-// Launcher, Cross-Fade, Devices, I/O, Sends, Meter) - unlike the mixer-
-// row toggle *actions* in bitwig-actions-reference.txt (Show Sends etc.),
-// these are genuine SettableBooleanValues (.set()/.toggle()), so a preset
-// can force an exact, reliable Show/Hide state rather than just flipping
-// whatever's currently showing. F1/F2 each get a 3-slot "layout preset"
+// Mixer Layout Presets/Toggles (F1-F8 in MODE_MIXER and MODE_SCENE) -
+// requested directly. mixer (host.createMixer(), created in init())
+// exposes 6 real settable booleans for the Bitwig Mixer panel's own
+// show/hide sections (Clip Launcher, Cross-Fade, Devices, I/O, Sends,
+// Meter) - unlike the mixer-row toggle *actions* in
+// bitwig-actions-reference.txt (Show Sends etc.), these are genuine
+// SettableBooleanValues (.set()/.toggle()), so a preset can force an
+// exact, reliable Show/Hide state rather than just flipping whatever's
+// currently showing. F1/F2 each get a 3-slot "layout preset"
 // (mixerFKeyLayoutPresets below) - up to 3 independent Show/Hide actions
 // applied in slot order (1 then 2 then 3), so two conflicting slots on
 // the same key resolve predictably (last one wins) rather than ambiguously.
 // F3-F8 each get a single section to toggle open/closed one at a time
 // (mixerFKeySingleToggle below). Both are opt-in per key: "None"
 // everywhere (the default) leaves F1-F8 exactly as they've always been
-// (direct device select) - see case 54-61 in the button switch.
+// (direct device select) - see case 54-61 in the button switch. Covers
+// both MODE_MIXER and MODE_SCENE (B.T.A.) rather than MODE_MIXER alone -
+// MODE_SCENE is the one mode that actually guarantees the Mixer panel is
+// on screen (forces Bitwig's "MIX" panel layout on entry), so scoping
+// this to MODE_MIXER only would fire in a mode where the mixer might not
+// even be visible.
 var mixer = null;
 var mixerFKeyLayoutPresets = [["None", "None", "None"], ["None", "None", "None"]]; // index 0 = F1, index 1 = F2
 var mixerFKeySingleToggle = ["None", "None", "None", "None", "None", "None"]; // index 0 = F3 ... index 5 = F8
@@ -4164,8 +4170,8 @@ function init() {
       sceneModeTrackStepAccumulator = 0;
    });
 
-   // MODE_MIXER F1-F8: Mixer Layout Presets/Toggles - see
-   // mixerFKeyLayoutPresets/mixerFKeySingleToggle/getMixerSectionValue()
+   // Mixer Layout Presets/Toggles (F1-F8, MODE_MIXER and MODE_SCENE) -
+   // see mixerFKeyLayoutPresets/mixerFKeySingleToggle/getMixerSectionValue()
    // above and case 54-61 in the button switch. Requested directly: F1
    // and F2 each get a 3-slot preset (up to 3 Show/Hide actions applied
    // together, e.g. a "mixing" layout and a "arranging" layout the user
@@ -4173,7 +4179,8 @@ function init() {
    // individually. "None" everywhere (the default) leaves F1-F8 exactly
    // as they've always been (direct device select) - only a key that's
    // actually been given a real action here changes behavior, and only
-   // while in Mixer mode.
+   // while in Mixer or Scene mode (see the big comment where mixer is
+   // declared above for why Scene mode is included).
    var MIXER_SECTION_SLOT_OPTIONS = ["None",
       "Show Clip Launcher", "Hide Clip Launcher",
       "Show Cross-Fade", "Hide Cross-Fade",
@@ -4299,7 +4306,7 @@ function init() {
    transport = host.createTransport();
    application = host.createApplication();
    arranger = host.createArranger();
-   mixer = host.createMixer(); // MODE_MIXER F1-F8 layout presets/toggles - see getMixerSectionValue() above
+   mixer = host.createMixer(); // F1-F8 Mixer Layout Presets/Toggles - see getMixerSectionValue() above
 
    // ZOOM+LEFT/RIGHT (see case 98/99 below) - Arranger extends
    // TimelineEditor, whose getHorizontalScrollbarModel() exposes the
@@ -6289,14 +6296,17 @@ function handleButtonPressInner(note) {
          // device, whether that means entering Device mode fresh or just
          // switching devices while already in it.
          var fkeyDeviceIdx = note - 54;
-         // MODE_MIXER F1-F8: Mixer Layout Presets/Toggles - see
-         // mixerFKeyLayoutPresets/mixerFKeySingleToggle/
-         // getMixerSectionValue() above. Opt-in per key: only intercepts
-         // here if this specific key actually has something configured
-         // (not all "None") - otherwise falls through to the normal
-         // device-select behavior below, unchanged, exactly as it's
-         // always worked in Mixer mode until now.
-         if (currentMode === MODE_MIXER) {
+         // Mixer Layout Presets/Toggles - see mixerFKeyLayoutPresets/
+         // mixerFKeySingleToggle/getMixerSectionValue() above. Live in
+         // MODE_MIXER AND MODE_SCENE, deliberately - MODE_SCENE (B.T.A.)
+         // is the one mode that actually guarantees Bitwig's Mixer panel
+         // is on screen (it forces the "MIX" panel layout on entry), so
+         // scoping this to MODE_MIXER alone would only ever fire in a
+         // mode where the mixer might not even be visible. Opt-in per
+         // key: only intercepts here if this specific key actually has
+         // something configured (not all "None") - otherwise falls
+         // through to the normal device-select behavior below, unchanged.
+         if (currentMode === MODE_MIXER || currentMode === MODE_SCENE) {
             if (fkeyDeviceIdx < 2) {
                var mixerPreset = mixerFKeyLayoutPresets[fkeyDeviceIdx];
                if (mixerPreset[0] !== "None" || mixerPreset[1] !== "None" || mixerPreset[2] !== "None") {
@@ -6572,8 +6582,19 @@ function handleButtonPressInner(note) {
                // and the jog wheel selects/launches scenes instead of its
                // usual transport scrub (see the jog wheel handler and note
                // 87's press handler). Second press exits back to Mixer mode
-               // AND back to the Arrange panel layout, same toggle pattern
-               // as PLUGIN/SEND.
+               // and hides the clip launcher again, but deliberately does
+               // NOT force any particular panel layout on the way out (see
+               // below) - every other mode-switch button in this file
+               // (TRACK/IO, SEND, PAN, RETURNS, PLUG-INS/F1-F8) already
+               // leaves panel layout alone, only entering Scene mode ever
+               // forces one; forcing "ARRANGE" here too used to hide the
+               // Mixer panel again right as you left the one mode that
+               // guaranteed it was visible - confirmed on hardware this
+               // fought against Mixer Layout Presets/Toggles (F1-F8 above),
+               // which need the Mixer panel to actually stay on screen to
+               // be useful. Not "same toggle pattern as PLUGIN/SEND" (the
+               // old claim here) - neither of those touch panel layout at
+               // all, so this now matches them instead of contradicting them.
                //
                // ALT+B.T.A. = toggleMasterMeterPluginWindow() - a second,
                // independent access path to the MASTER Wheel feature's
@@ -6603,11 +6624,6 @@ function handleButtonPressInner(note) {
          } else {
             currentMode = MODE_MIXER;
             arranger.isClipLauncherVisible().set(false);
-            try {
-               application.setPanelLayout("ARRANGE");
-            } catch (e) {
-               println("Error setting panel layout to ARRANGE: " + e);
-            }
             host.showPopupNotification("Mode: Mixer (Track Volume / Pan)");
          }
          applyModeChange(null);

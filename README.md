@@ -181,15 +181,33 @@ Wheel Modifier Combos** and **Confirmed Button Map** below):
   plugin window. Pressing the SAME F-key again for the already-selected
   device toggles its window closed/open instead of reselecting it; pressing
   a *different* F-key selects that device and opens its window. **In
-  `MODE_MIXER` specifically**, an F-key that's been given a Mixer Layout
-  Preset/Toggle assignment (see **Mixer Layout Presets & Toggles** in
-  Mixer settings below) does that instead of selecting a device - opt-in
-  per key, so an unconfigured F-key keeps this exact device-select
-  behavior even while in Mixer mode.
+  `MODE_MIXER` or `MODE_SCENE` specifically**, an F-key that's been given
+  a Mixer Layout Preset/Toggle assignment (see **Mixer Layout Presets &
+  Toggles** in Mixer settings below) does that instead of selecting a
+  device - opt-in per key, so an unconfigured F-key keeps this exact
+  device-select behavior even in those two modes. Covers `MODE_SCENE` as
+  well as `MODE_MIXER` deliberately - `MODE_SCENE` is the one mode that
+  actually guarantees Bitwig's Mixer panel is on screen (see below), so
+  scoping this to `MODE_MIXER` alone would only fire in a mode where the
+  mixer might not even be visible.
 - `MODE_SCENE` - entered via B.T.A. (note 79): shows the clip launcher,
-  switches Bitwig to the Mix panel layout, and the jog wheel
-  selects/launches scenes instead of scrubbing. SHIFT+wheel and/or
-  CTRL+wheel can each optionally also move track selection without
+  switches Bitwig to the Mix panel layout (the only mode-switch button in
+  this script that forces a specific Bitwig panel layout at all), and the
+  jog wheel selects/launches scenes instead of scrubbing. A second B.T.A.
+  press exits back to `MODE_MIXER` and hides the clip launcher again, but
+  deliberately does **not** force any panel layout on the way out -
+  confirmed on hardware that it used to force `"ARRANGE"`, which hid the
+  Mixer panel again right as you left the one mode that guaranteed it was
+  visible, fighting against Mixer Layout Presets/Toggles above. **Known
+  minor gap, not yet fixed:** leaving `MODE_SCENE` via a *different*
+  button than B.T.A. (e.g. pressing TRACK/IO or PLUG-INS directly while
+  still in Scene mode) skips this clip-launcher-hide entirely, since it
+  only runs inside B.T.A.'s own toggle-off branch - the clip launcher can
+  stay visibly on screen after switching modes that way. Cosmetic (doesn't
+  affect fader/encoder behavior), but worth fixing by centralizing it in
+  `applyModeChange()` if it turns out to bother anyone in practice.
+  SHIFT+wheel and/or CTRL+wheel can each optionally also move track
+  selection without
   disturbing the current scene row - see **Scene Mode: SHIFT+Wheel
   Selects** / **Scene Mode: CTRL+Wheel Selects** in Mixer settings below.
 
@@ -706,10 +724,16 @@ enabled and held at once. Shares the same underlying track-slot state
 with SHIFT+Wheel, so switching which modifier you hold mid-session
 continues from wherever the other left off rather than resetting.
 
-**Mixer Layout Presets & Toggles** (F1-F8, only active in `MODE_MIXER`) -
-requested directly: repurposes the orange F1-F8 row, while in Mixer mode
-specifically, to show/hide sections of Bitwig's own Mixer panel instead
-of selecting a device. Built on `host.createMixer()`'s 6 real settable
+**Mixer Layout Presets & Toggles** (F1-F8, active in `MODE_MIXER` **and**
+`MODE_SCENE`) - requested directly: repurposes the orange F1-F8 row, while
+in Mixer or Scene mode, to show/hide sections of Bitwig's own Mixer panel
+instead of selecting a device. Deliberately covers `MODE_SCENE` too, not
+just `MODE_MIXER` - `MODE_SCENE` (B.T.A.) is the one mode that actually
+guarantees the Mixer panel is on screen (it forces Bitwig's "MIX" panel
+layout on entry - see the Modes list above), so scoping this to
+`MODE_MIXER` alone left it firing in a mode where the mixer might not
+even be visible, and silent in the one mode where it was. Built on
+`host.createMixer()`'s 6 real settable
 booleans (`isClipLauncherSectionVisible()`, `isCrossFadeSectionVisible()`,
 `isDeviceSectionVisible()`, `isIoSectionVisible()`, `isSendSectionVisible()`,
 `isMeterSectionVisible()`) - genuine `.set()`/`.toggle()` calls, not the
@@ -1214,12 +1238,17 @@ checked off, uncheck it here until it's retested.
       disturbing the current scene row, both step directions, that the two
       modifiers share state sensibly, and that plain wheel/wheel-push
       behavior is completely unaffected.
-- [ ] **Mixer Layout Presets & Toggles** (F1-F8 in `MODE_MIXER`) - brand
-      new, not yet tested on hardware at all. Confirm F1/F2's 3-slot
-      presets apply all configured slots in order and land on the exact
-      same layout every press; confirm F3-F8 each toggle only their
+- [ ] **Mixer Layout Presets & Toggles** (F1-F8 in `MODE_MIXER` and
+      `MODE_SCENE`) - first version only checked `MODE_MIXER`, confirmed
+      on hardware to fire in the wrong mode (B.T.A./`MODE_SCENE` is the
+      mode that actually shows the Mixer panel); now fixed to cover both,
+      and B.T.A.'s toggle-off no longer forces `"ARRANGE"` panel layout.
+      Needs a full hardware retest: confirm F1/F2's 3-slot presets apply
+      all configured slots in order and land on the exact same layout
+      every press in both modes; confirm F3-F8 each toggle only their
       assigned section; confirm an unconfigured (`None`) F-key still
-      selects a device exactly as before, both in and out of Mixer mode.
+      selects a device exactly as before; confirm leaving/re-entering
+      B.T.A. no longer fights over the visible panel layout.
 - [ ] CURSOR wheel-mode - mode button and wheel-turn behavior both
       untested.
 - [ ] NUDGE wheel-mode - mode button and wheel-turn behavior both
