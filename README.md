@@ -818,17 +818,24 @@ to land on a specific number by hand (Bitwig's dB display is a
 non-linear curve, so identical raw steps read as different-sized dB
 jumps depending where on the curve you are). Rather than fight that, the
 existing **Fader Snap to dB Marks** feature (Mixer category above) is
-reused as-is for the master wheel too: with it enabled, getting
-"close enough" and pausing snaps precisely to the nearest mark once the
-wheel goes idle for `Fader Snap to dB Marks Delay` - it needs no
-dedicated Master Wheel setting of its own, since master (index 8) was
-already one of the feature's supported targets, and simply calling the
-existing check on every incoming wheel message (rather than only on a
-physical fader's touch-release, which this wheel doesn't have) re-arms
-its own idle timer automatically. **Not yet confirmed on hardware since
-this specific wiring was added** - test with Fader Snap to dB Marks
-enabled and see whether pausing near 0dB (or another mark) reliably
-snaps to it.
+reused for the master wheel too: getting "close enough" and pausing
+snaps precisely to the nearest mark once the wheel goes idle for
+`Fader Snap to dB Marks Delay` - master (index 8) was already one of the
+feature's supported targets, and simply calling the existing check on
+every incoming wheel message (rather than only on a physical fader's
+touch-release, which this wheel doesn't have) re-arms its own idle timer
+automatically. **Confirmed working on hardware.**
+
+**Master Wheel: Snap to dB Marks** (`Off` / `Hardware Scale` /
+`Musical (Standard)`, default `Off`) - whether the wheel snaps at all,
+and to which mark layout, kept **independent of the channel faders' own
+Fader Snap to dB Marks toggle and layout above** (requested directly) -
+so, for example, channel faders can snap to Hardware Scale while the
+wheel stays off, or the two can use different layouts entirely. Uses the
+same `Fader Snap to dB Marks Range (%)`/`Fader Snap to dB Marks Delay
+(ms)` settings as the channel faders (those two aren't duplicated
+per-target). Off by default, so enabling Fader Snap to dB Marks for the
+channel faders doesn't silently also start snapping the wheel.
 
 ### Debug
 

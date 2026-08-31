@@ -1299,6 +1299,25 @@ function activeFaderSnapDbMarks() {
    return faderSnapDbMarkLayout === "Hardware Scale" ? FADER_SNAP_DB_MARKS_HARDWARE : FADER_SNAP_DB_MARKS_MUSICAL;
 }
 
+// Master wheel (index 8) has its own independent Snap to dB Marks
+// on/off + layout choice (Master Wheel Controller Preferences category),
+// deliberately separate from the channel faders' faderSnapToDbMarksEnabled/
+// faderSnapDbMarkLayout above - requested directly, since someone may want
+// e.g. channel faders snapping to Hardware Scale while the wheel is either
+// off or on a different layout. "Off" here (the default) returns null,
+// which scheduleFaderSnapDbMarkCheck() below treats as disabled for index 8
+// specifically, independent of the channel faders' own toggle.
+var masterWheelSnapDbMarksLayout = "Off";
+function activeMasterWheelSnapDbMarks() {
+   if (masterWheelSnapDbMarksLayout === "Hardware Scale") {
+      return FADER_SNAP_DB_MARKS_HARDWARE;
+   }
+   if (masterWheelSnapDbMarksLayout === "Musical (Standard)") {
+      return FADER_SNAP_DB_MARKS_MUSICAL;
+   }
+   return null;
+}
+
 // True for whichever fader index/mode combination is plain Track Volume
 // (master always is; channel 0-7 only when in Mixer mode, unflipped,
 // and not showing a TOOL_DEVICE_NAME parameter instead) - see
@@ -1320,11 +1339,18 @@ function scheduleFaderSnapDbMarkCheck(index, target, isVolumeTarget) {
       if (faderSnapDbMarkGeneration[index] !== myGeneration) {
          return;
       }
-      if (!faderSnapToDbMarksEnabled || faderTouchHeld[index] || !isVolumeTarget || !target) {
+      // Master (index 8, the wheel) uses its own independent enable/
+      // layout - see masterWheelSnapDbMarksLayout/activeMasterWheelSnapDbMarks()
+      // above - completely separate from the channel faders' own toggle
+      // below. faderTouchHeld[8] is always undefined/falsy (that array
+      // only covers the 8 real faders), so the touch-held guard never
+      // blocks index 8.
+      var marks = index === 8 ? activeMasterWheelSnapDbMarks() :
+         (faderSnapToDbMarksEnabled ? activeFaderSnapDbMarks() : null);
+      if (!marks || faderTouchHeld[index] || !isVolumeTarget || !target) {
          return;
       }
       var current = target.get();
-      var marks = activeFaderSnapDbMarks();
       for (var i = 0; i < marks.length; i++) {
          var markValue = dbMarkToNormalized(marks[i]);
          if (Math.abs(current - markValue) <= FADER_SNAP_DB_MARK_RANGE) {
@@ -3405,10 +3431,22 @@ function init() {
    // Normal-mode (metering-plugin mode off) master volume control is
    // absolute, driven directly off the wheel's own raw position - see the
    // big comment above where masterWheelAccumulator etc. are declared,
-   // and the pitch-bend channel 9 handling in onMidi(), for why, and for
-   // how landing on an exact value is instead handled via the existing
-   // Fader Snap to dB Marks feature (Mixer category below) - no separate
-   // setting needed here, it reuses that one as-is.
+   // and the pitch-bend channel 9 handling in onMidi(), for why. Landing
+   // on an exact value is handled by reusing the existing Fader Snap to
+   // dB Marks feature (Mixer category below), but with its own
+   // independent enable/layout here rather than sharing the channel
+   // faders' toggle - requested directly, since the two may want
+   // different settings (e.g. channel faders snapping while the wheel
+   // doesn't, or each on a different layout). "Off" (the default) means
+   // the wheel never snaps, regardless of the channel faders' own
+   // setting.
+   var masterWheelSnapDbMarksLayoutSetting = host.getPreferences().getEnumSetting(
+      "Master Wheel: Snap to dB Marks", "Master Wheel",
+      ["Off", "Hardware Scale", "Musical (Standard)"], "Off");
+   masterWheelSnapDbMarksLayoutSetting.markInterested();
+   masterWheelSnapDbMarksLayoutSetting.addValueObserver(function (value) {
+      masterWheelSnapDbMarksLayout = value;
+   });
 
    // How far (as a percentage of the wheel's full 14-bit pitch-bend
    // range) the wheel has to move, accumulated, before an open/close
@@ -5034,18 +5072,17 @@ function onMidi(status, data1, data2) {
          // needed - see updateFaderOutputs() for the separate LCD-facing
          // readback of this same parameter.
          masterTrack.volume().set(masterRaw14 / 16383);
-         // Fader Snap to dB Marks (see scheduleFaderSnapDbMarkCheck()
-         // above) - reused as-is, unmodified, for the master wheel too.
-         // Calling it on every message rather than just on release (as
-         // the 8 real faders do) works because it's already its own
-         // idle-debounce: each call just re-arms the FADER_SNAP_DB_MARK_
-         // DELAY_MS timer, so as long as messages keep arriving nothing
-         // fires - only once the wheel actually goes quiet does the
-         // scheduled check run and (if still in range) snap. index 8's
-         // faderTouchHeld[8] is always undefined/falsy (that array only
-         // covers the 8 real faders' touch state), so the check's own
-         // !faderTouchHeld[index] guard never blocks it here.
-         if (faderSnapToDbMarksEnabled) {
+         // Snap to dB Marks (see scheduleFaderSnapDbMarkCheck() above) -
+         // reused as-is for the master wheel, gated by its own
+         // masterWheelSnapDbMarksLayout setting, independent of the
+         // channel faders' own toggle. Calling it on every message rather
+         // than just on release (as the 8 real faders do) works because
+         // it's already its own idle-debounce: each call just re-arms the
+         // FADER_SNAP_DB_MARK_DELAY_MS timer, so as long as messages keep
+         // arriving nothing fires - only once the wheel actually goes
+         // quiet does the scheduled check run and (if still in range)
+         // snap.
+         if (masterWheelSnapDbMarksLayout !== "Off") {
             scheduleFaderSnapDbMarkCheck(8, masterTrack.volume(), true);
          }
       }
