@@ -2168,18 +2168,22 @@ var masterWheelTriggerRange = 0.15 * 16383;
 // rail produces one large jump. Ignored rather than accumulated, so a
 // rail-clamp can't masquerade as (or corrupt) a real gesture.
 var MASTER_WHEEL_RAW_JUMP_IGNORE_THRESHOLD = 2000;
-// Normal-mode (masterWheelPluginModeEnabled off) master volume control -
-// how much of each raw pitch-bend delta actually reaches
-// masterTrack.volume(), as a fraction. Confirmed on hardware this
-// hardware's MASTER-mode wheel doesn't behave like a true absolute
-// fader - it's a jog wheel emulating one, and its own internal step size
-// per physical detent, combined with Bitwig's non-linear dB display
-// curve, made landing on an exact value (0dB in particular) unreliable
-// at 1:1 (jumps of ~0.2-0.3dB per detent, unevenly sized depending on
-// where on the curve you are). Below 1.0 trades sweep speed (more wheel
-// turning needed to cross the full range) for finer, more predictable
-// per-detent steps - live from its Controller Preferences % setting.
-var masterWheelVolumeSensitivity = 0.3;
+// Normal-mode (masterWheelPluginModeEnabled off) master volume control is
+// absolute, not relative/delta-based - masterTrack.volume() is set
+// directly from the wheel's own raw position (masterRaw14/16383), same
+// math a native HardwareSlider binding would apply. Two delta/relative
+// designs were tried and abandoned first: a straight scaled fraction of
+// each message's delta, then an accumulate-then-fixed-step version -
+// both confirmed on hardware to barely respond at all, because this
+// wheel's raw reporting isn't a clean, monotonic direction signal even
+// during genuine slow, deliberate one-tick-at-a-time turning (real test:
+// moving tick to tick left for a whole receivemidi capture netted only
+// +128 raw units out of 16383 - the per-message deltas mostly cancelled
+// each other out). Going absolute sidesteps that: it doesn't depend on
+// delta accuracy at all, just "wherever the wheel currently reports" -
+// see the Fader Snap to dB Marks call in onMidi()'s pitch-bend channel 9
+// handling for how landing on an exact value (0dB especially) is instead
+// handled, idle-debounced, rather than by fighting the raw signal itself.
 var cursorTrack = null;
 var cursorDevice = null;
 var cursorDeviceBank = null; // 8-slot device chain bank for the F1-F8 (notes 54-61) direct device-select feature
@@ -3398,19 +3402,13 @@ function init() {
       masterMeterDeviceName = value;
    });
 
-   // How much of the wheel's own raw movement actually reaches master
-   // volume when this mode is off (normal MASTER-wheel behavior) - see
-   // masterWheelVolumeSensitivity above for why a straight 1:1 mapping
-   // wasn't good enough on hardware. Lower = finer per-detent steps but
-   // more turning needed to sweep the full range; higher = faster sweep
-   // but coarser, harder-to-land-exactly steps (100% is the old 1:1
-   // absolute-jump behavior).
-   var masterWheelVolumeSensitivitySetting = host.getPreferences().getNumberSetting(
-      "Master Wheel: Volume Sensitivity (%)", "Master Wheel", 5, 100, 1, "%", 30);
-   masterWheelVolumeSensitivitySetting.markInterested();
-   masterWheelVolumeSensitivitySetting.addRawValueObserver(function (value) {
-      masterWheelVolumeSensitivity = value / 100;
-   });
+   // Normal-mode (metering-plugin mode off) master volume control is
+   // absolute, driven directly off the wheel's own raw position - see the
+   // big comment above where masterWheelAccumulator etc. are declared,
+   // and the pitch-bend channel 9 handling in onMidi(), for why, and for
+   // how landing on an exact value is instead handled via the existing
+   // Fader Snap to dB Marks feature (Mixer category below) - no separate
+   // setting needed here, it reuses that one as-is.
 
    // How far (as a percentage of the wheel's full 14-bit pitch-bend
    // range) the wheel has to move, accumulated, before an open/close
@@ -5027,20 +5025,29 @@ function onMidi(status, data1, data2) {
             host.scheduleTask(function () { triggerMasterMeterPlugin(false); }, 0);
          }
       } else {
-         // Normal behavior (mode off, the default) - the wheel nudges
-         // master volume by a scaled-down fraction of its own raw
-         // movement (see masterWheelVolumeSensitivity above for why a
-         // plain 1:1 absolute mapping wasn't good enough on hardware).
-         // Relative, not absolute: this accumulates onto wherever volume
-         // currently is rather than jumping to match the wheel's own
-         // raw position, which also means it can never produce a large
-         // unexpected jump if the wheel's internal counter and Bitwig's
-         // volume drift apart (e.g. while switching back from the
-         // metering-plugin mode above). No physical master fader exists
-         // on this hardware to give motor feedback to, so a plain
-         // .inc() is all that's needed - see updateFaderOutputs() for
-         // the separate LCD-facing readback of this same parameter.
-         masterTrack.volume().inc(masterRawDelta * masterWheelVolumeSensitivity, 16383);
+         // Normal behavior (mode off, the default) - absolute position
+         // control, exactly like a native HardwareSlider binding would
+         // apply (see the big comment above where masterWheelAccumulator
+         // etc. are declared for why this is absolute, not relative/
+         // delta-based). No physical master fader exists on this hardware
+         // to give motor feedback to, so a plain .set() is all that's
+         // needed - see updateFaderOutputs() for the separate LCD-facing
+         // readback of this same parameter.
+         masterTrack.volume().set(masterRaw14 / 16383);
+         // Fader Snap to dB Marks (see scheduleFaderSnapDbMarkCheck()
+         // above) - reused as-is, unmodified, for the master wheel too.
+         // Calling it on every message rather than just on release (as
+         // the 8 real faders do) works because it's already its own
+         // idle-debounce: each call just re-arms the FADER_SNAP_DB_MARK_
+         // DELAY_MS timer, so as long as messages keep arriving nothing
+         // fires - only once the wheel actually goes quiet does the
+         // scheduled check run and (if still in range) snap. index 8's
+         // faderTouchHeld[8] is always undefined/falsy (that array only
+         // covers the 8 real faders' touch state), so the check's own
+         // !faderTouchHeld[index] guard never blocks it here.
+         if (faderSnapToDbMarksEnabled) {
+            scheduleFaderSnapDbMarkCheck(8, masterTrack.volume(), true);
+         }
       }
       return;
    }

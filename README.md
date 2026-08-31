@@ -797,19 +797,38 @@ far the wheel has to move, accumulated, before an open or close actually
 fires - tune lower for a lighter flick, higher to require a more
 deliberate turn. **Confirmed working on hardware** at the default value.
 
-**Master Wheel: Volume Sensitivity (%)** (default 30%, range 5-100%) -
-only applies with the metering-plugin mode above **off** (normal MASTER
-mode, driving master volume). Confirmed on hardware that a straight 1:1
-mapping of the wheel's raw movement to volume (100%) made it hard to land
-on an exact value, 0dB especially - the wheel isn't a true absolute-
-position fader, it's a jog wheel emulating one, and its own per-detent
-step size runs into Bitwig's non-linear dB display curve, so identical
-physical clicks can produce noticeably different, "randomly" sized dB
-jumps depending where on the curve you are. This setting scales down how
-much of each raw movement actually reaches volume - lower values need
-more turning to sweep the full range but land far more precisely; 100%
-restores the original 1:1 feel. Tune to taste; not yet confirmed which
-value best balances speed vs. precision on real hardware.
+**Landing on an exact volume value (0dB especially):** with the
+metering-plugin mode above off (normal MASTER mode, driving master
+volume), the wheel maps its raw pitch-bend position straight onto
+`masterTrack.volume()`, the same absolute mapping a native hardware
+binding would use. Two relative/delta-based alternatives were tried
+first and abandoned - scaling each message's own movement down, then an
+accumulate-and-step version - both confirmed on hardware to barely
+respond at all: a real `receivemidi` capture of slow, deliberate,
+one-tick-at-a-time turning (not even a fast flick) netted only +128 raw
+units out of a possible 16383 across the whole capture, because this
+wheel's raw reporting jitters up and down enough, even mid-turn in a
+single direction, that per-message deltas mostly cancel each other out.
+Absolute positioning sidesteps that dead end entirely, since it doesn't
+depend on delta accuracy at all - whatever the wheel currently reports
+simply is the volume.
+
+That still leaves the wheel's own per-detent step size an imprecise way
+to land on a specific number by hand (Bitwig's dB display is a
+non-linear curve, so identical raw steps read as different-sized dB
+jumps depending where on the curve you are). Rather than fight that, the
+existing **Fader Snap to dB Marks** feature (Mixer category above) is
+reused as-is for the master wheel too: with it enabled, getting
+"close enough" and pausing snaps precisely to the nearest mark once the
+wheel goes idle for `Fader Snap to dB Marks Delay` - it needs no
+dedicated Master Wheel setting of its own, since master (index 8) was
+already one of the feature's supported targets, and simply calling the
+existing check on every incoming wheel message (rather than only on a
+physical fader's touch-release, which this wheel doesn't have) re-arms
+its own idle timer automatically. **Not yet confirmed on hardware since
+this specific wiring was added** - test with Fader Snap to dB Marks
+enabled and see whether pausing near 0dB (or another mark) reliably
+snaps to it.
 
 ### Debug
 
