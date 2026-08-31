@@ -1112,6 +1112,22 @@ it's also written up in `BITWIG-API-FEATURE-REQUESTS.md`.
   Can/Eraser/Knife) that used to live on plain DRAW - shelved when DRAW was
   made fully automation-centric. Kept as `patches/arranger-tool-cycle.patch`
   for reuse on a different button or controller.
+- **SHIFT+wheel Fine Mode and a low-pass smoothing filter** for the MASTER
+  wheel's volume control - tried to make the wheel usable for careful,
+  continuous volume riding (a relative scaled-down nudge while SHIFT was
+  held, then an exponential filter on the raw signal to damp jitter).
+  Confirmed on hardware, across multiple `receivemidi` captures, that this
+  wheel's raw pitch-bend reporting is genuinely noisy relative to real
+  movement - even "serious" deliberate turns with Fine Mode engaged still
+  showed values jumping backward mid-turn, and no amount of scaling or
+  smoothing fully eliminated it without adding so much lag the control
+  stopped feeling responsive at all. Concluded this wheel just isn't a
+  precise-enough encoder for that use case, and reverted both features -
+  master volume control is back to the plain absolute mapping alone.
+  **Fader Snap to dB Marks (Master Wheel category above) is the intended
+  way to land precisely despite the wheel's own jumpiness**: get close and
+  pause, rather than trying to ride there smoothly. Confirmed working well
+  on hardware in this simpler form.
 
 ### Open items
 
