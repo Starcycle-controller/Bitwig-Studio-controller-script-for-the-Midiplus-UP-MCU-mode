@@ -729,32 +729,41 @@ by hand and would rather use it to call up a metering plugin.
 
 **Enable MASTER Wheel: Open/Close Metering Plugin** (default off) - off,
 MASTER mode behaves exactly as it always has (drives master volume). On,
-the same wheel gesture is meant to open the configured device's plugin
-window when turned right, and close it when turned left, with master
-volume itself held steady throughout (each observed movement measured,
-then written back to the value it started at). **First hardware test
-confirmed this doesn't actually work yet**: master volume kept drifting,
-and the plugin window never opened/closed, even though a popup confirmed
-the code path was running - most likely because the corrective writes
-were being issued synchronously from inside the same value-observer
-callback that the wheel's own live hardware-binding update was already
-firing from, and Bitwig silently ignores `.set()` calls made from within
-that chain (the same class of write-reliability issue as API Feature
-Request #2). Reworked to defer both writes to a fresh tick via
-`host.scheduleTask()` instead - **second hardware test confirmed the
-open trigger now works, but the volume-hold correction still didn't,
-and turning left still never closed the plugin.** Root cause of the
-remaining half: `masterTrack.volume()` is actively bound to the physical
-wheel via `setBinding()`, and per API Feature Request #2, a script write
-to an actively-bound Parameter is silently ignored without bracketing it
-in `Parameter.touch(true)`/`touch(false)` - the wheel has no discrete
-touch-down/up messages of its own to bracket individual writes with, so
-this now brackets the entire time the setting is switched on instead of
-per-write. This should also fix the left-turn/close problem, which was
-really the same root cause: the held baseline drifting out of sync with
-reality once the correction silently failed, throwing off the
-accumulator's math for any turn after the first. **Not yet re-confirmed
-on hardware since this second fix.**
+the same wheel gesture opens the configured device's plugin window when
+turned right, and closes it when turned left, with master volume held
+steady overall. This went through three rounds of hardware-confirmed
+fixes to get working - worth keeping the history, since the last one
+changes what "held steady" actually means in practice:
+
+1. **First test: didn't work at all** - master volume kept drifting and
+   the plugin never opened/closed, despite a popup confirming the code
+   ran. Cause: corrective writes issued synchronously from inside the
+   value-observer callback that the wheel's own live hardware-binding
+   update was already firing from get silently ignored by Bitwig. Fixed
+   by deferring both writes to a fresh tick via `host.scheduleTask()`.
+2. **Second test: open worked, but the volume correction still didn't,
+   and left/close still never fired** - `masterTrack.volume()` is
+   actively bound to the physical wheel via `setBinding()`, and per API
+   Feature Request #2, a script write to an actively-bound Parameter is
+   silently ignored without a `Parameter.touch(true)`/`touch(false)`
+   bracket. Fixed by bracketing the entire time the setting is switched
+   on with one touch pair (the wheel has no discrete touch-down/up
+   messages of its own to bracket individual writes with).
+3. **Third test: open/close both worked, but volume still audibly
+   changed on every flick.** Confirmed via an independent OS-level MIDI
+   monitor (`receivemidi`, bypassing this script entirely) that this
+   wheel sends a rapid, continuous stream of pitch-bend messages for the
+   *entire* duration of a turn, not one message per detent - so a
+   correction fired on every observed change was immediately overwritten
+   by the very next incoming wheel message a few milliseconds later, a
+   race the correction could never win. Fixed by making the correction
+   **idle-debounced** instead (same pattern as Encoder Snap to Origin) -
+   it only actually writes once the wheel has been still for 300ms.
+   **Trade-off worth knowing:** master volume will still show real
+   movement for the duration of an active turn, snapping back to where
+   it started shortly after you stop turning - it does not appear frozen
+   in real time. **Not yet re-confirmed on hardware since this third
+   fix.**
 
 **Master Wheel: Metering Plugin Name** (text, default `ADPTR MetricAB`) -
 which device on the Master track's own chain to open/close, matched by

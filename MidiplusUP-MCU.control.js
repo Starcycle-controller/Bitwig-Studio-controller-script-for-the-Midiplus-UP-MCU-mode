@@ -2147,6 +2147,19 @@ var masterMeterDeviceNames = [];
 var masterWheelBaseline = null;
 var masterWheelAccumulator = 0;
 var masterWheelTriggerRange = 0.15; // fraction of the 0..1 volume range - live from its Controller Preferences % setting
+// Idle-debounce generation token for the volume-hold correction - see
+// the masterTrack.volume() observer in init(). Same pattern as
+// encoderSnapGeneration/scheduleEncoderSnapCheck() above.
+var masterWheelCorrectionGeneration = 0;
+// How long the wheel has to sit idle before the volume-hold correction
+// actually writes - confirmed on hardware this can't be 0/immediate:
+// this wheel sends a rapid, continuous stream of pitch-bend updates for
+// the whole duration of a turn (not one message per detent), so a
+// correction issued mid-gesture just gets overwritten by the next
+// incoming message a few ms later. Not exposed as a Controller
+// Preferences setting - matches ENCODER_SNAP_IDLE_MS's own default,
+// internal tuning rather than a user-facing feel choice.
+var MASTER_WHEEL_CORRECTION_IDLE_MS = 300;
 var cursorTrack = null;
 var cursorDevice = null;
 var cursorDeviceBank = null; // 8-slot device chain bank for the F1-F8 (notes 54-61) direct device-select feature
@@ -3169,58 +3182,75 @@ function init() {
    // masterWheelTriggerRange (a fraction of the 0..1 volume range,
    // configurable via "Master Wheel: Movement to Trigger (%)"), it opens
    // (positive/right) or closes (negative/left) the configured metering
-   // plugin's window and resets.
+   // plugin's window.
    //
-   // Two rounds of hardware-confirmed fixes here, both already applied:
+   // Three rounds of hardware-confirmed fixes here, all now applied:
    //
-   // 1. Both the corrective "hold master volume steady" write and
-   //    triggerMasterMeterPlugin() itself are deferred to a fresh tick
-   //    via host.scheduleTask(fn, 0) rather than called synchronously
-   //    from inside this observer - calling them directly here left the
-   //    plugin never opening/closing at all (despite a popup confirming
-   //    the code path ran), most likely because this observer fires from
+   // 1. triggerMasterMeterPlugin() is deferred to a fresh tick via
+   //    host.scheduleTask(fn, 0) rather than called synchronously from
+   //    inside this observer - calling it directly here left the plugin
+   //    never opening/closing at all (despite a popup confirming the
+   //    code path ran), most likely because this observer fires from
    //    deep inside the wheel's own live hardware-binding update, and
    //    Bitwig silently ignores further .set() calls issued synchronously
-   //    from within that chain. Deferring fixed the open/close trigger.
-   // 2. The corrective volume write on its own still didn't stick even
-   //    once deferred - masterTrack.volume() is actively bound to
-   //    hwMasterFader via setBinding(), and per API Feature Request #2,
-   //    script writes to an actively-bound Parameter are silently ignored
-   //    without a touch(true)/touch(false) bracket. The wheel has no
-   //    discrete touch-down/up messages of its own, so
-   //    masterWheelPluginModeEnabledSetting's observer above brackets the
-   //    entire "this mode is on" span with one touch(true)/touch(false)
-   //    instead of per-write. This should also fix turning left never
-   //    closing the plugin, which was really a symptom of the same root
-   //    cause: masterWheelBaseline never actually tracked reality once
-   //    the correction silently failed, throwing off the accumulator's
-   //    math for any turn after the first.
+   //    from within that chain. This fixed the open trigger.
+   // 2. masterWheelPluginModeEnabledSetting's observer above brackets the
+   //    entire "this mode is on" span with touch(true)/touch(false) on
+   //    masterTrack.volume() - per API Feature Request #2, a script write
+   //    to an actively-bound Parameter is silently ignored without this.
+   // 3. Even with both of the above, the volume-hold correction itself
+   //    still didn't stick, and turning left still never closed the
+   //    plugin. Root cause, confirmed via an independent OS-level MIDI
+   //    monitor (receivemidi, bypassing this script and Bitwig's own
+   //    controller-script layer entirely): this wheel sends a rapid,
+   //    continuous stream of pitch-bend messages for the WHOLE duration
+   //    of a turn, not one message per detent - so a correction issued
+   //    on every single observed change (as this did) was immediately
+   //    overwritten by the very next incoming wheel message a few
+   //    milliseconds later, an unwinnable race. The correction below is
+   //    now idle-debounced instead (same generation-token pattern as
+   //    scheduleEncoderSnapCheck()/Encoder Snap to Origin above) - it
+   //    only actually writes once the wheel has been still for
+   //    MASTER_WHEEL_CORRECTION_IDLE_MS, a genuinely quiet moment rather
+   //    than mid-gesture. This also fixes the left-turn/close problem,
+   //    which was really the same root cause: the held baseline drifting
+   //    out of sync with reality (since the correction kept losing the
+   //    race) threw off the accumulator's math for any turn after the
+   //    first. Trade-off: master volume will still show real movement
+   //    for the duration of an active turn, snapping back to
+   //    masterWheelBaseline shortly after the wheel actually stops,
+   //    rather than appearing to never move at all in real time.
    //
-   // Not yet re-confirmed on hardware since fix #2.
+   // Not yet re-confirmed on hardware since fix #3.
    masterTrack.volume().value().addValueObserver(function (value) {
       if (masterWheelBaseline === null) {
          return;
       }
       var delta = value - masterWheelBaseline;
       if (Math.abs(delta) < 0.0005) {
-         // Negligible - most likely this observer re-firing from our own
-         // corrective .set() call just below, not a further wheel tick.
          return;
       }
       masterWheelAccumulator += delta;
-      var shouldOpen = masterWheelAccumulator >= masterWheelTriggerRange;
-      var shouldClose = masterWheelAccumulator <= -masterWheelTriggerRange;
-      if (shouldOpen || shouldClose) {
+      if (masterWheelAccumulator >= masterWheelTriggerRange) {
          masterWheelAccumulator = 0;
-      }
-      host.scheduleTask(function () {
-         masterTrack.volume().value().set(masterWheelBaseline);
-         if (shouldOpen) {
+         host.scheduleTask(function () {
             triggerMasterMeterPlugin(true);
-         } else if (shouldClose) {
+         }, 0);
+      } else if (masterWheelAccumulator <= -masterWheelTriggerRange) {
+         masterWheelAccumulator = 0;
+         host.scheduleTask(function () {
             triggerMasterMeterPlugin(false);
+         }, 0);
+      }
+      masterWheelCorrectionGeneration++;
+      var myCorrectionGeneration = masterWheelCorrectionGeneration;
+      host.scheduleTask(function () {
+         if (masterWheelCorrectionGeneration !== myCorrectionGeneration ||
+             masterWheelBaseline === null) {
+            return;
          }
-      }, 0);
+         masterTrack.volume().value().set(masterWheelBaseline);
+      }, MASTER_WHEEL_CORRECTION_IDLE_MS);
    });
 
    // Initialize Cursor Track & Send Bank (16 Send slots for focused track)
