@@ -693,10 +693,16 @@ further touch. Applies to whatever the fader currently controls
 
 **Fader Snap to dB Marks** (on/off, **default OFF**) - same
 release-triggered mechanics, snapping instead to one of a set of "round"
-dB marks once released within **Fader Snap to dB Marks Range (%)** (default
-3%) and left untouched for **Fader Snap to dB Marks Delay (ms)** (default
-500ms). Scoped to plain **Track Volume only**. **Fader Snap to dB Marks
-Layout** (default **Hardware Scale**) picks which marks:
+dB marks once released within **Fader Snap to dB Marks Range (dB)**
+(default 0.5dB, range 0.1-5dB - a commonly-cited threshold for hearing a
+volume difference by ear; go lower if you can reliably hear finer than
+that) and left untouched for **Fader Snap to dB Marks Delay (ms)**
+(default 500ms). The range is an actual dB tolerance, not a fraction of
+the fader's physical travel - deliberate, since Bitwig's volume curve is
+non-linear (steep near 0dB, much flatter down near -60dB), so a fixed
+travel-% tolerance would mean a far wider, inconsistent dB window low on
+the fader than up high. Scoped to plain **Track Volume only**. **Fader
+Snap to dB Marks Layout** (default **Hardware Scale**) picks which marks:
 
 - **Hardware Scale** (default) - `5, 0, -10, -20, -30, -50, -60` dB, the
   marks actually printed on this hardware's own fader scale.
@@ -832,7 +838,7 @@ and to which mark layout, kept **independent of the channel faders' own
 Fader Snap to dB Marks toggle and layout above** (requested directly) -
 so, for example, channel faders can snap to Hardware Scale while the
 wheel stays off, or the two can use different layouts entirely. Uses the
-same `Fader Snap to dB Marks Range (%)`/`Fader Snap to dB Marks Delay
+same `Fader Snap to dB Marks Range (dB)`/`Fader Snap to dB Marks Delay
 (ms)` settings as the channel faders (those two aren't duplicated
 per-target). Off by default, so enabling Fader Snap to dB Marks for the
 channel faders doesn't silently also start snapping the wheel.

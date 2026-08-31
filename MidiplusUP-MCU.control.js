@@ -1250,7 +1250,7 @@ function scheduleFaderSnapZeroCheck(index, target) {
 // Zero (own generation counter, not shared with it), just against a
 // fixed list of dB marks (see FADER_SNAP_DB_MARKS_MUSICAL/_HARDWARE and
 // faderSnapDbMarkLayout below) instead of a single target. When enabled
-// (default OFF - opt-in), releasing within FADER_SNAP_DB_MARK_RANGE of
+// (default OFF - opt-in), releasing within FADER_SNAP_DB_MARK_RANGE_DB of
 // one of the active layout's marks schedules a check
 // FADER_SNAP_DB_MARK_DELAY_MS later; if the fader is still untouched
 // and still in range, it snaps to that mark's exact value.
@@ -1283,7 +1283,18 @@ function scheduleFaderSnapZeroCheck(index, target) {
 // within ~0.02dB across that range - inverted to
 // normalized = 10^((dB - 6.0206) / 60).
 var faderSnapToDbMarksEnabled = false;
-var FADER_SNAP_DB_MARK_RANGE = 0.03;
+// How close the fader/wheel has to land to a mark to snap to it, in
+// actual dB - not a fraction of the fader's normalized 0..1 travel.
+// Deliberately dB, not normalized %: Bitwig's volume curve is non-linear
+// (steep up near 0dB, much flatter down near -60dB), so a fixed
+// normalized-% tolerance would mean a much wider effective dB window down
+// low than up high - inconsistent and hard to reason about. A dB
+// tolerance stays exactly what it says regardless of where a mark sits on
+// the curve. Default 0.5dB matches a commonly-cited threshold for
+// perceiving a volume difference by ear - requested directly, since a
+// wider window could snap somewhere audibly different from where the
+// fader/wheel actually was.
+var FADER_SNAP_DB_MARK_RANGE_DB = 0.5;
 var FADER_SNAP_DB_MARK_DELAY_MS = 500;
 var FADER_SNAP_DB_MARKS_MUSICAL = [0, -6, -12, -18, -24, -30, -36];
 var FADER_SNAP_DB_MARKS_HARDWARE = [5, 0, -10, -20, -30, -50, -60];
@@ -1293,6 +1304,19 @@ var FADER_SNAP_DB_CURVE_OFFSET = 6.0206;
 
 function dbMarkToNormalized(db) {
    return Math.max(0, Math.min(1, Math.pow(10, (db - FADER_SNAP_DB_CURVE_OFFSET) / FADER_SNAP_DB_CURVE_SLOPE)));
+}
+
+// Inverse of dbMarkToNormalized() - used to express the current fader/
+// wheel position in dB so it can be compared against a mark using an
+// actual dB tolerance (FADER_SNAP_DB_MARK_RANGE_DB) instead of a
+// normalized-% one. normalized <= 0 is true silence (-inf dB, below the
+// curve's own domain) - never within range of any real mark, so it can
+// never accidentally match one this way.
+function normalizedToDb(normalized) {
+   if (normalized <= 0) {
+      return -Infinity;
+   }
+   return FADER_SNAP_DB_CURVE_SLOPE * Math.log(normalized) / Math.LN10 + FADER_SNAP_DB_CURVE_OFFSET;
 }
 
 function activeFaderSnapDbMarks() {
@@ -1350,11 +1374,10 @@ function scheduleFaderSnapDbMarkCheck(index, target, isVolumeTarget) {
       if (!marks || faderTouchHeld[index] || !isVolumeTarget || !target) {
          return;
       }
-      var current = target.get();
+      var currentDb = normalizedToDb(target.get());
       for (var i = 0; i < marks.length; i++) {
-         var markValue = dbMarkToNormalized(marks[i]);
-         if (Math.abs(current - markValue) <= FADER_SNAP_DB_MARK_RANGE) {
-            target.set(markValue);
+         if (Math.abs(currentDb - marks[i]) <= FADER_SNAP_DB_MARK_RANGE_DB) {
+            target.set(dbMarkToNormalized(marks[i]));
             return;
          }
       }
@@ -3890,7 +3913,7 @@ function init() {
    });
 
    // Fader Snap to dB Marks - see faderSnapToDbMarksEnabled/
-   // FADER_SNAP_DB_MARK_RANGE/FADER_SNAP_DB_MARK_DELAY_MS and
+   // FADER_SNAP_DB_MARK_RANGE_DB/FADER_SNAP_DB_MARK_DELAY_MS and
    // scheduleFaderSnapDbMarkCheck() above. Independent toggle from Fader
    // Snap to Zero above (default OFF - opt-in) - someone may want -inf
    // snapping without every round dB number grabbing the fader too.
@@ -3901,11 +3924,20 @@ function init() {
       faderSnapToDbMarksEnabled = value;
    });
 
+   // In actual dB, not a fraction of the fader's normalized travel - see
+   // FADER_SNAP_DB_MARK_RANGE_DB/normalizedToDb() above for why a dB
+   // tolerance is used instead of the original normalized-% one (a fixed
+   // % translated to inconsistent, much wider dB windows lower on
+   // Bitwig's non-linear volume curve). Range goes down to 0.1dB for
+   // listeners who can reliably hear finer differences than the 0.5dB
+   // default (a commonly-cited threshold) - shared by both the channel
+   // faders here and the master wheel's own Snap to dB Marks setting
+   // above.
    var faderSnapDbMarkRangeSetting = host.getPreferences().getNumberSetting(
-      "Fader Snap to dB Marks Range (%)", "Mixer", 0, 10, 0.5, "%", 3);
+      "Fader Snap to dB Marks Range (dB)", "Mixer", 0.1, 5, 0.1, "dB", 0.5);
    faderSnapDbMarkRangeSetting.markInterested();
    faderSnapDbMarkRangeSetting.addRawValueObserver(function(value) {
-      FADER_SNAP_DB_MARK_RANGE = value / 100;
+      FADER_SNAP_DB_MARK_RANGE_DB = value;
    });
 
    var faderSnapDbMarkDelaySetting = host.getPreferences().getNumberSetting(
