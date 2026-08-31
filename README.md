@@ -738,9 +738,9 @@ drifts).
 **Master Wheel: Metering Plugin Name** (text, default `ADPTR MetricAB`) -
 which device on the Master track's own chain to open/close, matched by
 exact name (case-sensitive), same convention as the `TRLVL` gain-staging
-device. Change this if you use a different metering plugin, or if Bitwig
-reports the name slightly differently than expected once tested on
-hardware. This same setting also governs **ALT+B.T.A.** (note 79), a
+device. The default matched cleanly against a real ADPTR MetricAB
+instance on hardware - change this only if you use a different metering
+plugin. This same setting also governs **ALT+B.T.A.** (note 79), a
 second, independent way to reach the same plugin: toggles that device's
 window open/closed with a single button press, requested specifically so
 it can stay open while mixing without being tied to Plugin/Device mode at
@@ -749,7 +749,11 @@ never closes any other plugin window (doesn't call
 `closeOtherDeviceWindowsIfConfigured()`), regardless of the **Close Other
 Plugin Windows** setting. Available regardless of whether **Enable MASTER
 Wheel: Open/Close Metering Plugin** above is on - the wheel gesture and
-ALT+B.T.A. are two separate paths to the same device.
+ALT+B.T.A. are two separate paths to the same device. **Confirmed working
+on hardware**: ALT+B.T.A. opened/closed the metering plugin correctly,
+and stayed open while separately opening/closing other devices' windows
+via the F1-F8 orange direct-select buttons in Plugin Mode - confirming
+the two paths are genuinely independent, as designed.
 
 **Master Wheel: Movement to Trigger (%)** (default 15%, range 5-50%) - how
 far the wheel has to move, accumulated, before an open or close actually
