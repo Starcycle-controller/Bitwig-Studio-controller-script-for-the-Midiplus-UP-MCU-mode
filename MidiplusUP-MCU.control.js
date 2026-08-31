@@ -3142,7 +3142,11 @@ function init() {
    // pattern as eqDeviceBank above/scanTrackForToolDevice() below).
    // isWindowOpen() is markInterested() here (not just .set() elsewhere)
    // because ALT+B.T.A.'s toggle needs to read the current state first,
-   // unlike the wheel gesture's unconditional open/close.
+   // unlike the wheel gesture's unconditional open/close. Confirmed on
+   // hardware: operating on the bank item's own isWindowOpen() directly
+   // works fine from a clean context like a button press (ALT+B.T.A.) -
+   // see the wheel gesture's own observer below for the one context where
+   // this needed a different fix instead.
    masterMeterDeviceBank = masterTrack.createDeviceBank(MASTER_METER_DEVICE_SCAN_DEPTH);
    for (var meterScanIdx = 0; meterScanIdx < MASTER_METER_DEVICE_SCAN_DEPTH; meterScanIdx++) {
       (function (idx) {
@@ -3165,13 +3169,24 @@ function init() {
    // masterWheelTriggerRange (a fraction of the 0..1 volume range,
    // configurable via "Master Wheel: Movement to Trigger (%)"), it opens
    // (positive/right) or closes (negative/left) the configured metering
-   // plugin's window and resets. Either way, the observed value is
-   // immediately written back to masterWheelBaseline in the same tick, so
-   // real master volume never actually drifts while this mode is on - a
-   // tiny nudge-then-correct on every raw message rather than a
-   // continuous audible move. masterWheelBaseline is null whenever this
-   // mode is off, which is this function's own "do nothing, let the
-   // fader behave exactly as before this feature existed" gate.
+   // plugin's window and resets.
+   //
+   // Both the corrective "hold master volume steady" write and
+   // triggerMasterMeterPlugin() itself are deferred to a fresh tick via
+   // host.scheduleTask(fn, 0) rather than called synchronously from
+   // inside this observer. First-shipped version called both directly
+   // here and was confirmed broken on hardware - master volume kept
+   // drifting AND the plugin window never actually opened/closed, even
+   // though a popup confirmed the code path ran and the identical
+   // isWindowOpen().set() call works fine from a clean, standalone
+   // context (ALT+B.T.A.'s toggleMasterMeterPluginWindow(), confirmed
+   // working). Most likely cause: this observer itself fires from deep
+   // inside the wheel's own live hardware-binding update, and further
+   // .set() calls issued synchronously from within that chain are
+   // silently ignored - the same class of Bitwig write-reliability issue
+   // this project already hit and worked around (with scheduleTask, and
+   // separately with touch()) for Mixer Snapshot recall - see API
+   // Feature Request #2. Not yet re-confirmed on hardware since this fix.
    masterTrack.volume().value().addValueObserver(function (value) {
       if (masterWheelBaseline === null) {
          return;
@@ -3182,15 +3197,20 @@ function init() {
          // corrective .set() call just below, not a further wheel tick.
          return;
       }
-      masterTrack.volume().value().set(masterWheelBaseline);
       masterWheelAccumulator += delta;
-      if (masterWheelAccumulator >= masterWheelTriggerRange) {
+      var shouldOpen = masterWheelAccumulator >= masterWheelTriggerRange;
+      var shouldClose = masterWheelAccumulator <= -masterWheelTriggerRange;
+      if (shouldOpen || shouldClose) {
          masterWheelAccumulator = 0;
-         triggerMasterMeterPlugin(true);
-      } else if (masterWheelAccumulator <= -masterWheelTriggerRange) {
-         masterWheelAccumulator = 0;
-         triggerMasterMeterPlugin(false);
       }
+      host.scheduleTask(function () {
+         masterTrack.volume().value().set(masterWheelBaseline);
+         if (shouldOpen) {
+            triggerMasterMeterPlugin(true);
+         } else if (shouldClose) {
+            triggerMasterMeterPlugin(false);
+         }
+      }, 0);
    });
 
    // Initialize Cursor Track & Send Bank (16 Send slots for focused track)

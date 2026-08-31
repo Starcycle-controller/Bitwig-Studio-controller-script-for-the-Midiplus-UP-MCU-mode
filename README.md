@@ -729,11 +729,20 @@ by hand and would rather use it to call up a metering plugin.
 
 **Enable MASTER Wheel: Open/Close Metering Plugin** (default off) - off,
 MASTER mode behaves exactly as it always has (drives master volume). On,
-the same wheel gesture opens the configured device's plugin window when
-turned right, and closes it when turned left - master volume itself is
-held steady the whole time (each observed movement is measured, then
-immediately written back to the value it started at, so nothing actually
-drifts).
+the same wheel gesture is meant to open the configured device's plugin
+window when turned right, and close it when turned left, with master
+volume itself held steady throughout (each observed movement measured,
+then written back to the value it started at). **First hardware test
+confirmed this doesn't actually work yet**: master volume kept drifting,
+and the plugin window never opened/closed, even though a popup confirmed
+the code path was running - most likely because the corrective writes
+were being issued synchronously from inside the same value-observer
+callback that the wheel's own live hardware-binding update was already
+firing from, and Bitwig silently ignores `.set()` calls made from within
+that chain (the same class of write-reliability issue as API Feature
+Request #2). Reworked to defer both writes to a fresh tick via
+`host.scheduleTask()` instead - **not yet re-confirmed on hardware since
+this fix.**
 
 **Master Wheel: Metering Plugin Name** (text, default `ADPTR MetricAB`) -
 which device on the Master track's own chain to open/close, matched by
