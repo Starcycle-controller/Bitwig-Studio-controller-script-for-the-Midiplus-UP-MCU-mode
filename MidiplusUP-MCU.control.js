@@ -3136,14 +3136,19 @@ function init() {
    hwMasterFader.disableTakeOver();
    hwMasterFader.setBinding(masterTrack.volume());
 
-   // MASTER Wheel: Open/Close Metering Plugin - device bank over the
-   // Master track's own chain, purely for the masterMeterDeviceName
-   // search (same "one name() observer per slot" pattern as eqDeviceBank
-   // above/scanTrackForToolDevice() below).
+   // MASTER Wheel: Open/Close Metering Plugin (and ALT+B.T.A. below) -
+   // device bank over the Master track's own chain, purely for the
+   // masterMeterDeviceName search (same "one name() observer per slot"
+   // pattern as eqDeviceBank above/scanTrackForToolDevice() below).
+   // isWindowOpen() is markInterested() here (not just .set() elsewhere)
+   // because ALT+B.T.A.'s toggle needs to read the current state first,
+   // unlike the wheel gesture's unconditional open/close.
    masterMeterDeviceBank = masterTrack.createDeviceBank(MASTER_METER_DEVICE_SCAN_DEPTH);
    for (var meterScanIdx = 0; meterScanIdx < MASTER_METER_DEVICE_SCAN_DEPTH; meterScanIdx++) {
       (function (idx) {
-         masterMeterDeviceBank.getItemAt(idx).name().addValueObserver(function (name) {
+         var meterDevice = masterMeterDeviceBank.getItemAt(idx);
+         meterDevice.isWindowOpen().markInterested();
+         meterDevice.name().addValueObserver(function (name) {
             masterMeterDeviceNames[idx] = name;
          });
       })(meterScanIdx);
@@ -4589,6 +4594,30 @@ function triggerMasterMeterPlugin(openIt) {
    }
    masterMeterDeviceBank.getItemAt(deviceIndex).isWindowOpen().set(openIt);
    host.showPopupNotification(masterMeterDeviceName + (openIt ? " Window Opened" : " Window Closed"));
+}
+
+// ALT+B.T.A. (case 79 below) - a second, independent access path to the
+// same metering plugin the MASTER wheel gesture above targets, requested
+// specifically to monitor the master bus while mixing without it being
+// tied to Plugin/Device mode at all: unlike PLUG-INS/F1-F8/EQ Mode, this
+// never touches currentMode, cursorDevice, or
+// closeOtherDeviceWindowsIfConfigured() - opening it never closes any
+// other plugin window, and it doesn't switch away from whatever mode is
+// already active. A plain toggle (unlike the wheel's separate open/close
+// directions) since it's a single button tap - reads the window's actual
+// current state first rather than assuming, so it stays correct even if
+// the window was opened/closed some other way (double-clicking the
+// device in Bitwig itself, for instance) since this was last pressed.
+function toggleMasterMeterPluginWindow() {
+   var deviceIndex = findMasterMeterDeviceIndex();
+   if (deviceIndex < 0) {
+      host.showPopupNotification("No " + masterMeterDeviceName + " on Master track");
+      return;
+   }
+   var meterDevice = masterMeterDeviceBank.getItemAt(deviceIndex);
+   var isOpen = meterDevice.isWindowOpen().get();
+   meterDevice.isWindowOpen().set(!isOpen);
+   host.showPopupNotification(masterMeterDeviceName + (isOpen ? " Window Closed" : " Window Opened"));
 }
 
 // SHIFT+HOME's "Bar N" cue marker naming (case 89) - Transport only
@@ -6115,6 +6144,17 @@ function handleButtonPressInner(note) {
                // 87's press handler). Second press exits back to Mixer mode
                // AND back to the Arrange panel layout, same toggle pattern
                // as PLUGIN/SEND.
+               //
+               // ALT+B.T.A. = toggleMasterMeterPluginWindow() - a second,
+               // independent access path to the MASTER Wheel feature's
+               // metering plugin (see above), requested directly for
+               // monitoring the master bus while mixing without switching
+               // modes at all. Checked first, before the mode toggle.
+         if (isAltPressed) {
+            altUsedForCombo = true;
+            toggleMasterMeterPluginWindow();
+            break;
+         }
          if (currentMode !== MODE_SCENE) {
             currentMode = MODE_SCENE;
             sendBankPage = 0;

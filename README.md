@@ -227,7 +227,7 @@ between modes, so this map holds in either.
 | 76 | DRAW | Plain: cycle the automation write mode (Latch -> Touch -> Write). SHIFT: toggle Arranger Automation Write on/off. OPTION: show/hide automation lanes. See **Automation and mode switches** below |
 | 77 | (Live label: BROWSER) | Toggle browser panel |
 | 78 | (Live label: DETAIL) | Toggle note/automation editor panel |
-| 79 | B.T.A. | Toggle `MODE_SCENE` |
+| 79 | B.T.A. (ALT+B.T.A. = toggle metering plugin window) | Toggle `MODE_SCENE`; ALT+press toggles the Master Wheel metering plugin's window, independent of mode - see Master Wheel below |
 | 80 | Unconfirmed | Unbound - needs testing |
 | 81 | Unconfirmed | Unbound - needs testing |
 | 82 | PAGE (left arrow) | `MODE_DEVICE`: page macro bank back. `MODE_MIXER`: jump to previous cue marker and move the loop to follow it - see Mixer Mode PAGE below |
@@ -740,7 +740,16 @@ which device on the Master track's own chain to open/close, matched by
 exact name (case-sensitive), same convention as the `TRLVL` gain-staging
 device. Change this if you use a different metering plugin, or if Bitwig
 reports the name slightly differently than expected once tested on
-hardware.
+hardware. This same setting also governs **ALT+B.T.A.** (note 79), a
+second, independent way to reach the same plugin: toggles that device's
+window open/closed with a single button press, requested specifically so
+it can stay open while mixing without being tied to Plugin/Device mode at
+all - unlike PLUG-INS/F1-F8/EQ Mode, it never switches `currentMode` and
+never closes any other plugin window (doesn't call
+`closeOtherDeviceWindowsIfConfigured()`), regardless of the **Close Other
+Plugin Windows** setting. Available regardless of whether **Enable MASTER
+Wheel: Open/Close Metering Plugin** above is on - the wheel gesture and
+ALT+B.T.A. are two separate paths to the same device.
 
 **Master Wheel: Movement to Trigger (%)** (default 15%, range 5-50%) - how
 far the wheel has to move, accumulated, before an open or close actually
