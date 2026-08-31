@@ -247,10 +247,10 @@ between modes, so this map holds in either.
 | 100 | ZOOM | Toggle zoom mode for cursor arrows |
 | 101 | Jog wheel push | Momentary "Pan Mode" hold; ALT+press = select item at playhead; SHIFT+CTRL+press = same, one-shot; launches selected scene in `MODE_SCENE` |
 | 104-111 | Fader touch 1-8 | Optionally selects that channel's track, see Mixer settings below |
-| 112 | Fader touch (Master) | Optionally selects the master track |
+| 112 | Fader touch (Master) | Optionally selects the master track - **not confirmed to fire on this 8-fader unit**, see the wheel note below |
 | CC 16-23 | Rotary encoders 1-8 | Mode-dependent (pan/send/macro); SHIFT = stepped or fine adjust, see Encoders settings below |
 | CC 60 | Jog wheel | Arranger scrub, or bar/loop/tempo nudge with modifiers held, or scene navigation in `MODE_SCENE` |
-| Pitch bend ch 0-7 / 8 | Faders 1-8 / Master | Motorized fader input/output |
+| Pitch bend ch 0-7 / 8 | Faders 1-8 / Master | Motorized fader input/output - **channel 8 (Master) is supplied by the jog wheel under MASTER mode on this unit, not a separate physical fader** - see the Jog-Wheel "Mode" Buttons section below |
 
 This hardware also has its own local "mode" buttons for the jog wheel
 (CURSOR / SCROLL / ZOOM / MASTER / MARKER / NUDGE / BANK / CHANNEL, per the
@@ -265,8 +265,25 @@ sends when subsequently turned. Confirmed behavior per mode:
 | MARKER | No MIDI at all | Nothing | Note-On 84/85 - jumps to previous/next cue marker, already bound above |
 | BANK | Note 46/47 (also its own PREV/NEXT press action) | Nothing | Note-On 46/47 - already bound above |
 | CHANNEL | Note 48/49 (also its own PREV/NEXT press action) | Nothing | Note-On 48/49 - already bound above |
+| MASTER | No MIDI at all | Not yet tested | **Pitch-bend, channel 9** - already bound above (see the Master fader note below) |
 
-(CURSOR, MASTER, and NUDGE modes not yet tested.)
+(CURSOR and NUDGE modes not yet tested.)
+
+**This unit has no separate physical master fader - MASTER mode substitutes
+the wheel for one.** Confirmed via an independent OS-level MIDI monitor
+(`receivemidi`, bypassing this script entirely) while turning the wheel
+with MASTER engaged: it sends absolute pitch-bend on MIDI channel 9 -
+exactly the channel `hwMasterFader` was already bound to
+(`createAbsolutePitchBendValueMatcher(8)`, 0-indexed -> real channel 9 ->
+`masterTrack.volume()`), written assuming a literal 9th physical fader.
+That binding was already picking this up correctly and driving Bitwig's
+master track volume as designed - nothing was broken, the "9th fader" was
+just the wheel-under-MASTER-mode all along on this particular unit. This
+also explains why nothing showed in this script's own console while
+testing: pitch-bend claimed by a native `HardwareControl` binding is
+consumed entirely by Bitwig's binding pipeline and never reaches this
+script's `onMidi()` handler at all, the same reason the 8 track faders'
+own motor input never appears in the raw MIDI log either.
 
 ---
 
@@ -929,6 +946,27 @@ it's also written up in `BITWIG-API-FEATURE-REQUESTS.md`.
   pinned down - see `patches/README.md`'s "Follow-up lead" section for the
   investigation and the risk (a reproduced LCD-freeze regression) of
   reopening it casually.
+
+- **This unit has no separate physical master fader - the jog wheel
+  substitutes for one under MASTER mode, and the script's pre-existing
+  `hwMasterFader` binding was already handling it correctly.** Reported as
+  "there's a MASTER button and it's adjusting master bus volume, but
+  nothing shows in the console" - confirmed via an independent OS-level
+  MIDI monitor (`receivemidi`, reading the hardware port directly,
+  bypassing this script and Bitwig's controller-script layer entirely)
+  that MASTER-mode wheel turns send absolute pitch-bend on **MIDI channel
+  9** - exactly the channel `hwMasterFader` has been bound to since this
+  script's fader architecture was first built
+  (`midiIn.createAbsolutePitchBendValueMatcher(8)`, 0-indexed -> real
+  channel 9 -> `masterTrack.volume()`), under the assumption of a literal
+  9th physical fader. Nothing was actually broken; the console showed
+  nothing because pitch-bend claimed by a native `HardwareControl`
+  binding is consumed entirely by Bitwig's own binding pipeline and never
+  reaches this script's `onMidi()` handler - the exact same reason the 8
+  track faders' own motor input is invisible to the raw MIDI logger too.
+  Whether note 112 (the master fader's *touch* note) also fires on this
+  unit wasn't separately confirmed - worth checking if fader-touch-select
+  behavior for the master track ever needs to be relied on.
 
 ### Reverted / abandoned
 
