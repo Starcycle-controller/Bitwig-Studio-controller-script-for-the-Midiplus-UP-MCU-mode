@@ -283,7 +283,10 @@ also explains why nothing showed in this script's own console while
 testing: pitch-bend claimed by a native `HardwareControl` binding is
 consumed entirely by Bitwig's binding pipeline and never reaches this
 script's `onMidi()` handler at all, the same reason the 8 track faders'
-own motor input never appears in the raw MIDI log either.
+own motor input never appears in the raw MIDI log either. Since this
+finding, MASTER mode's gesture can optionally be repurposed to open/close
+a metering plugin's window instead of touching master volume at all - see
+**Master Wheel** below.
 
 ---
 
@@ -713,6 +716,36 @@ line visible. Main tracks only; skipped while viewing Returns.
 
 **Disable Automation Write on Mode Change** (default off) - see
 **Automation and mode switches** below.
+
+### Master Wheel
+
+This unit has no separate physical master fader - the jog wheel under
+MASTER mode substitutes pitch-bend on the same MIDI channel this script's
+existing master-fader binding already listens on, driving
+`masterTrack.volume()` by default (see **Development Notes & Findings**
+below for how this was confirmed). This category lets that same gesture
+be repurposed instead, for a workflow that never rides the master fader
+by hand and would rather use it to call up a metering plugin.
+
+**Enable MASTER Wheel: Open/Close Metering Plugin** (default off) - off,
+MASTER mode behaves exactly as it always has (drives master volume). On,
+the same wheel gesture opens the configured device's plugin window when
+turned right, and closes it when turned left - master volume itself is
+held steady the whole time (each observed movement is measured, then
+immediately written back to the value it started at, so nothing actually
+drifts).
+
+**Master Wheel: Metering Plugin Name** (text, default `ADPTR MetricAB`) -
+which device on the Master track's own chain to open/close, matched by
+exact name (case-sensitive), same convention as the `TRLVL` gain-staging
+device. Change this if you use a different metering plugin, or if Bitwig
+reports the name slightly differently than expected once tested on
+hardware.
+
+**Master Wheel: Movement to Trigger (%)** (default 15%, range 5-50%) - how
+far the wheel has to move, accumulated, before an open or close actually
+fires - tune lower for a lighter flick, higher to require a more
+deliberate turn. Not yet tested on hardware.
 
 ### Debug
 

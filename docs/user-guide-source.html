@@ -509,7 +509,10 @@ this script's master-fader binding already listens on, so it was already
 driving Bitwig's master volume correctly. Nothing appears in this script's
 own console for it, for the same reason the 8 track faders' own motor
 input doesn't either: pitch-bend claimed by a native hardware binding
-never reaches the script's own MIDI handler.
+never reaches the script's own MIDI handler. This gesture can optionally
+be repurposed to open/close a metering plugin's window instead of
+touching master volume - see the README's <strong>Master Wheel</strong>
+Controller Preferences section.
 </p>
 </div>
 

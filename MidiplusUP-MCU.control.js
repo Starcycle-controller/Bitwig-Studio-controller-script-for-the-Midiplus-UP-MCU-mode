@@ -80,6 +80,28 @@ var TOOL_DEVICE_SCAN_DEPTH = 32;
 // for the LAST device whose name matches EQ_DEVICE_NAME_KEYWORDS. Raise
 // if your chains routinely run deeper than this.
 var EQ_DEVICE_SCAN_DEPTH = 32;
+// MASTER Wheel: Open/Close Metering Plugin (see setupMasterWheelPluginMode()
+// and the masterTrack.volume() observer in init() below) - this hardware
+// has no separate physical master fader (see the README's "Development
+// Notes" for how this was found); its MASTER wheel-mode substitutes
+// pitch-bend on the same channel this script's hwMasterFader already
+// binds to masterTrack.volume(). Off by default, so master volume stays
+// exactly as reachable as it always was. On, that same wheel gesture is
+// reinterpreted as open/close for a named device on the Master track
+// (default a metering plugin) instead - see the Master Wheel Controller
+// Preferences category.
+var masterWheelPluginModeEnabled = false;
+// Device name to search for on the Master track's own chain. Match is
+// case-sensitive and exact, same convention as TOOL_DEVICE_NAME above -
+// change this (Controller Preferences -> Master Wheel -> Metering Plugin
+// Name) if you use a different metering plugin than ADPTR MetricAB, or if
+// Bitwig reports its name slightly differently than expected once tested
+// on hardware.
+var masterMeterDeviceName = "ADPTR MetricAB";
+// How many devices deep into the Master track's chain to search for a
+// device named masterMeterDeviceName - same default as
+// TOOL_DEVICE_SCAN_DEPTH/EQ_DEVICE_SCAN_DEPTH above.
+var MASTER_METER_DEVICE_SCAN_DEPTH = 32;
 // How many cue markers deep SHIFT+HOME's "Bar N" auto-naming (see
 // findAndRenamePendingCueMarker()/case 89 below) searches to find the
 // marker it just created. Raise if a project routinely has more markers
@@ -2107,6 +2129,24 @@ var displayRefreshRetryGeneration = 0;
 var bankScrollLeftSelectIndex = 0;
 var bankScrollRightSelectIndex = 7;
 var masterTrack = null;
+// MASTER Wheel: Open/Close Metering Plugin - runtime state, see
+// masterWheelPluginModeEnabled/masterMeterDeviceName above and
+// setupMasterWheelPluginMode()/findMasterMeterDeviceIndex() below.
+// masterMeterDeviceNames[i] is kept live by one name() observer per scanned
+// slot (empty string = no device there), same pattern as eqDeviceNames -
+// findMasterMeterDeviceIndex() scans it fresh on demand rather than
+// caching a live index, so a runtime change to masterMeterDeviceName takes
+// effect on the very next wheel gesture with no extra bookkeeping.
+// masterWheelBaseline is the master volume value to hold steady while this
+// mode is on (null when off, meaning the wheel drives masterTrack.volume()
+// completely normally, exactly as before this feature existed);
+// masterWheelAccumulator tracks net wheel movement since the last
+// open/close trigger.
+var masterMeterDeviceBank = null;
+var masterMeterDeviceNames = [];
+var masterWheelBaseline = null;
+var masterWheelAccumulator = 0;
+var masterWheelTriggerRange = 0.15; // fraction of the 0..1 volume range - live from its Controller Preferences % setting
 var cursorTrack = null;
 var cursorDevice = null;
 var cursorDeviceBank = null; // 8-slot device chain bank for the F1-F8 (notes 54-61) direct device-select feature
@@ -3096,6 +3136,58 @@ function init() {
    hwMasterFader.disableTakeOver();
    hwMasterFader.setBinding(masterTrack.volume());
 
+   // MASTER Wheel: Open/Close Metering Plugin - device bank over the
+   // Master track's own chain, purely for the masterMeterDeviceName
+   // search (same "one name() observer per slot" pattern as eqDeviceBank
+   // above/scanTrackForToolDevice() below).
+   masterMeterDeviceBank = masterTrack.createDeviceBank(MASTER_METER_DEVICE_SCAN_DEPTH);
+   for (var meterScanIdx = 0; meterScanIdx < MASTER_METER_DEVICE_SCAN_DEPTH; meterScanIdx++) {
+      (function (idx) {
+         masterMeterDeviceBank.getItemAt(idx).name().addValueObserver(function (name) {
+            masterMeterDeviceNames[idx] = name;
+         });
+      })(meterScanIdx);
+   }
+
+   // MASTER Wheel: Open/Close Metering Plugin - the actual gesture
+   // detector. Deliberately does NOT touch hwMasterFader's own binding
+   // above (rebinding a HardwareSlider to a synthetic, non-Parameter
+   // target is not a confirmed-safe Controller API pattern) - instead,
+   // the wheel keeps driving masterTrack.volume() exactly as it always
+   // has, and this observer watches the resulting value for the
+   // masterWheelPluginModeEnabled case only. Each observed delta is
+   // accumulated (masterWheelAccumulator); once it crosses +/-
+   // masterWheelTriggerRange (a fraction of the 0..1 volume range,
+   // configurable via "Master Wheel: Movement to Trigger (%)"), it opens
+   // (positive/right) or closes (negative/left) the configured metering
+   // plugin's window and resets. Either way, the observed value is
+   // immediately written back to masterWheelBaseline in the same tick, so
+   // real master volume never actually drifts while this mode is on - a
+   // tiny nudge-then-correct on every raw message rather than a
+   // continuous audible move. masterWheelBaseline is null whenever this
+   // mode is off, which is this function's own "do nothing, let the
+   // fader behave exactly as before this feature existed" gate.
+   masterTrack.volume().value().addValueObserver(function (value) {
+      if (masterWheelBaseline === null) {
+         return;
+      }
+      var delta = value - masterWheelBaseline;
+      if (Math.abs(delta) < 0.0005) {
+         // Negligible - most likely this observer re-firing from our own
+         // corrective .set() call just below, not a further wheel tick.
+         return;
+      }
+      masterTrack.volume().value().set(masterWheelBaseline);
+      masterWheelAccumulator += delta;
+      if (masterWheelAccumulator >= masterWheelTriggerRange) {
+         masterWheelAccumulator = 0;
+         triggerMasterMeterPlugin(true);
+      } else if (masterWheelAccumulator <= -masterWheelTriggerRange) {
+         masterWheelAccumulator = 0;
+         triggerMasterMeterPlugin(false);
+      }
+   });
+
    // Initialize Cursor Track & Send Bank (16 Send slots for focused track)
    cursorTrack = host.createCursorTrack("MIDIPLUS_CURSOR_TRACK", "Cursor Track", 16, 0, true);
    cursorDevice = cursorTrack.createCursorDevice("MIDIPLUS_CURSOR_DEVICE", "Cursor Device", 0, CursorDeviceFollowMode.FIRST_INSTRUMENT_OR_DEVICE);
@@ -3225,6 +3317,50 @@ function init() {
    eqDeviceNameKeywordsSetting.addValueObserver(function (value) {
       EQ_DEVICE_NAME_KEYWORDS = value;
       rebuildEqNameRegexes();
+   });
+
+   // MASTER Wheel: Open/Close Metering Plugin (Controller Preferences ->
+   // "Master Wheel" category) - see masterWheelPluginModeEnabled/
+   // masterMeterDeviceName/masterWheelTriggerRange above and the
+   // masterTrack.volume() observer earlier in this function for the
+   // actual gesture detector. This hardware has no separate physical
+   // master fader - its MASTER wheel-mode substitutes pitch-bend on the
+   // same channel hwMasterFader already binds to masterTrack.volume() -
+   // see the README's Development Notes for how this was found. Off by
+   // default, so master volume stays exactly as reachable as it always
+   // was; on, the same wheel gesture opens/closes a named device's window
+   // on the Master track instead (default: ADPTR MetricAB, a metering
+   // plugin), and master volume itself is held steady the whole time.
+   var masterWheelPluginModeEnabledSetting = host.getPreferences().getBooleanSetting(
+      "Enable MASTER Wheel: Open/Close Metering Plugin", "Master Wheel", false);
+   masterWheelPluginModeEnabledSetting.markInterested();
+   masterWheelPluginModeEnabledSetting.addValueObserver(function (value) {
+      masterWheelPluginModeEnabled = value;
+      masterWheelAccumulator = 0;
+      masterWheelBaseline = value ? masterTrack.volume().value().get() : null;
+   });
+
+   // Which device on the Master track's own chain to open/close - exact
+   // name match, same convention as TOOL_DEVICE_NAME. Change this if you
+   // use a different metering plugin than ADPTR MetricAB, or if Bitwig
+   // reports its name slightly differently than expected once tested on
+   // hardware.
+   var masterMeterDeviceNameSetting = host.getPreferences().getStringSetting(
+      "Master Wheel: Metering Plugin Name", "Master Wheel", 100, masterMeterDeviceName);
+   masterMeterDeviceNameSetting.markInterested();
+   masterMeterDeviceNameSetting.addValueObserver(function (value) {
+      masterMeterDeviceName = value;
+   });
+
+   // How far (as a fraction of the master volume parameter's full 0-100%
+   // range) the wheel has to move, accumulated, before an open/close
+   // fires - shown here as a percentage for readability, converted to the
+   // 0..1 fraction masterWheelTriggerRange actually uses.
+   var masterWheelTriggerPercentSetting = host.getPreferences().getNumberSetting(
+      "Master Wheel: Movement to Trigger (%)", "Master Wheel", 5, 50, 1, "%", 15);
+   masterWheelTriggerPercentSetting.markInterested();
+   masterWheelTriggerPercentSetting.addRawValueObserver(function (value) {
+      masterWheelTriggerRange = value / 100;
    });
 
    // Function Keys settings (Controller Preferences panel -> "Function
@@ -4421,6 +4557,38 @@ function findLastEqDeviceIndex() {
       }
    }
    return lastMatch;
+}
+
+// MASTER Wheel: Open/Close Metering Plugin - exact-name match (unlike EQ
+// Mode's keyword search above), same convention as TOOL_DEVICE_NAME's
+// scan. Scans masterMeterDeviceNames fresh on every call rather than
+// caching a live index, so changing the Metering Plugin Name setting at
+// runtime takes effect on the very next wheel gesture with no separate
+// re-scan step needed.
+function findMasterMeterDeviceIndex() {
+   for (var i = 0; i < MASTER_METER_DEVICE_SCAN_DEPTH; i++) {
+      if (masterMeterDeviceNames[i] === masterMeterDeviceName) {
+         return i;
+      }
+   }
+   return -1;
+}
+
+// Opens (openIt=true) or closes (openIt=false) the masterMeterDeviceName
+// device's own plugin window - the actual "call up the metering plugin"
+// action MASTER-wheel gestures trigger, see the masterTrack.volume()
+// observer in init(). Shows a popup either way, including when no
+// matching device is found (same "opening the browser instead" style
+// fallback isn't applicable here since this is Master-track-only and
+// there's no natural chain-end insertion point tied to the gesture).
+function triggerMasterMeterPlugin(openIt) {
+   var deviceIndex = findMasterMeterDeviceIndex();
+   if (deviceIndex < 0) {
+      host.showPopupNotification("No " + masterMeterDeviceName + " on Master track");
+      return;
+   }
+   masterMeterDeviceBank.getItemAt(deviceIndex).isWindowOpen().set(openIt);
+   host.showPopupNotification(masterMeterDeviceName + (openIt ? " Window Opened" : " Window Closed"));
 }
 
 // SHIFT+HOME's "Bar N" cue marker naming (case 89) - Transport only
