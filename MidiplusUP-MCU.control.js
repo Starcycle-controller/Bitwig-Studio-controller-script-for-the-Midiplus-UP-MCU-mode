@@ -2168,6 +2168,18 @@ var masterWheelTriggerRange = 0.15 * 16383;
 // rail produces one large jump. Ignored rather than accumulated, so a
 // rail-clamp can't masquerade as (or corrupt) a real gesture.
 var MASTER_WHEEL_RAW_JUMP_IGNORE_THRESHOLD = 2000;
+// Normal-mode (masterWheelPluginModeEnabled off) master volume control -
+// how much of each raw pitch-bend delta actually reaches
+// masterTrack.volume(), as a fraction. Confirmed on hardware this
+// hardware's MASTER-mode wheel doesn't behave like a true absolute
+// fader - it's a jog wheel emulating one, and its own internal step size
+// per physical detent, combined with Bitwig's non-linear dB display
+// curve, made landing on an exact value (0dB in particular) unreliable
+// at 1:1 (jumps of ~0.2-0.3dB per detent, unevenly sized depending on
+// where on the curve you are). Below 1.0 trades sweep speed (more wheel
+// turning needed to cross the full range) for finer, more predictable
+// per-detent steps - live from its Controller Preferences % setting.
+var masterWheelVolumeSensitivity = 0.3;
 var cursorTrack = null;
 var cursorDevice = null;
 var cursorDeviceBank = null; // 8-slot device chain bank for the F1-F8 (notes 54-61) direct device-select feature
@@ -3356,6 +3368,13 @@ function init() {
    // was; on, the same wheel gesture opens/closes a named device's window
    // on the Master track instead (default: ADPTR MetricAB, a metering
    // plugin), and master volume itself is never written to at all.
+   // Confirmed on hardware: flipping this checkbox alone did not reliably
+   // switch live behavior back to direct volume control - a script reload
+   // (Settings -> Controllers, the reload icon on this controller's entry)
+   // was needed for the wheel to drive masterTrack.volume() again, even
+   // though addValueObserver below does fire and update
+   // masterWheelPluginModeEnabled immediately. Root cause not isolated;
+   // documented as a known caveat in the README rather than assumed fixed.
    var masterWheelPluginModeEnabledSetting = host.getPreferences().getBooleanSetting(
       "Enable MASTER Wheel: Open/Close Metering Plugin", "Master Wheel", false);
    masterWheelPluginModeEnabledSetting.markInterested();
@@ -3377,6 +3396,20 @@ function init() {
    masterMeterDeviceNameSetting.markInterested();
    masterMeterDeviceNameSetting.addValueObserver(function (value) {
       masterMeterDeviceName = value;
+   });
+
+   // How much of the wheel's own raw movement actually reaches master
+   // volume when this mode is off (normal MASTER-wheel behavior) - see
+   // masterWheelVolumeSensitivity above for why a straight 1:1 mapping
+   // wasn't good enough on hardware. Lower = finer per-detent steps but
+   // more turning needed to sweep the full range; higher = faster sweep
+   // but coarser, harder-to-land-exactly steps (100% is the old 1:1
+   // absolute-jump behavior).
+   var masterWheelVolumeSensitivitySetting = host.getPreferences().getNumberSetting(
+      "Master Wheel: Volume Sensitivity (%)", "Master Wheel", 5, 100, 1, "%", 30);
+   masterWheelVolumeSensitivitySetting.markInterested();
+   masterWheelVolumeSensitivitySetting.addRawValueObserver(function (value) {
+      masterWheelVolumeSensitivity = value / 100;
    });
 
    // How far (as a percentage of the wheel's full 14-bit pitch-bend
@@ -4994,13 +5027,20 @@ function onMidi(status, data1, data2) {
             host.scheduleTask(function () { triggerMasterMeterPlugin(false); }, 0);
          }
       } else {
-         // Normal behavior (mode off, the default) - the wheel acts as a
-         // master fader, exactly as if it were a native HardwareSlider
-         // bound to masterTrack.volume(). No physical master fader exists
-         // on this hardware to give motor feedback to, so a plain .set()
-         // is all that's needed - see updateFaderOutputs() for the
-         // separate LCD-facing readback of this same parameter.
-         masterTrack.volume().set(masterRaw14 / 16383);
+         // Normal behavior (mode off, the default) - the wheel nudges
+         // master volume by a scaled-down fraction of its own raw
+         // movement (see masterWheelVolumeSensitivity above for why a
+         // plain 1:1 absolute mapping wasn't good enough on hardware).
+         // Relative, not absolute: this accumulates onto wherever volume
+         // currently is rather than jumping to match the wheel's own
+         // raw position, which also means it can never produce a large
+         // unexpected jump if the wheel's internal counter and Bitwig's
+         // volume drift apart (e.g. while switching back from the
+         // metering-plugin mode above). No physical master fader exists
+         // on this hardware to give motor feedback to, so a plain
+         // .inc() is all that's needed - see updateFaderOutputs() for
+         // the separate LCD-facing readback of this same parameter.
+         masterTrack.volume().inc((masterRawDelta / 16383) * masterWheelVolumeSensitivity, 1);
       }
       return;
    }

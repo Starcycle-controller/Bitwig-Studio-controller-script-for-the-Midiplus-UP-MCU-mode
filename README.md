@@ -759,7 +759,18 @@ already works - the raw bytes are read and interpreted first, and
 it's on, the open/close accumulator runs entirely off the raw pitch-bend
 stream and the volume parameter is never referenced in that code path at
 all, so there's no longer a "correction" racing anything - there's simply
-nothing left to correct.
+nothing left to correct. **Confirmed working on hardware**: repeated
+open/close cycles via the wheel both fire correctly, and master volume
+was watched the entire time and genuinely never moved.
+
+**Known caveat, confirmed on hardware:** toggling this checkbox off did
+not reliably switch the wheel back to controlling master volume live -
+a script reload (Settings -> Controllers -> the reload icon on this
+controller's entry) was needed before the wheel drove
+`masterTrack.volume()` again, even though the setting's own observer does
+fire and update the script's internal state immediately. Root cause not
+isolated. If turning this off doesn't restore normal volume control,
+reload the script rather than assuming something is broken.
 
 **Master Wheel: Metering Plugin Name** (text, default `ADPTR MetricAB`) -
 which device on the Master track's own chain to open/close, matched by
@@ -784,7 +795,21 @@ the two paths are genuinely independent, as designed.
 **Master Wheel: Movement to Trigger (%)** (default 15%, range 5-50%) - how
 far the wheel has to move, accumulated, before an open or close actually
 fires - tune lower for a lighter flick, higher to require a more
-deliberate turn. Not yet tested on hardware.
+deliberate turn. **Confirmed working on hardware** at the default value.
+
+**Master Wheel: Volume Sensitivity (%)** (default 30%, range 5-100%) -
+only applies with the metering-plugin mode above **off** (normal MASTER
+mode, driving master volume). Confirmed on hardware that a straight 1:1
+mapping of the wheel's raw movement to volume (100%) made it hard to land
+on an exact value, 0dB especially - the wheel isn't a true absolute-
+position fader, it's a jog wheel emulating one, and its own per-detent
+step size runs into Bitwig's non-linear dB display curve, so identical
+physical clicks can produce noticeably different, "randomly" sized dB
+jumps depending where on the curve you are. This setting scales down how
+much of each raw movement actually reaches volume - lower values need
+more turning to sweep the full range but land far more precisely; 100%
+restores the original 1:1 feel. Tune to taste; not yet confirmed which
+value best balances speed vs. precision on real hardware.
 
 ### Debug
 
