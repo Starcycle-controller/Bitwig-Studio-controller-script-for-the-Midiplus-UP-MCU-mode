@@ -22,7 +22,7 @@
 // unchanged; only the comments below have been updated to note the button's
 // real printed MCU label alongside its Bitwig-repurposed behavior.
 //
-// Faders (see hwFaders/hwMasterFader and rebindFaders() below) use Bitwig's
+// The 8 track faders (see hwFaders and rebindFaders() below) use Bitwig's
 // native hardware-binding API (HardwareSurface.createHardwareSlider() +
 // setBinding()) rather than manually parsing/sending pitch-bend - Bitwig
 // itself keeps the motorized fader position in sync with whatever Parameter
@@ -80,16 +80,17 @@ var TOOL_DEVICE_SCAN_DEPTH = 32;
 // for the LAST device whose name matches EQ_DEVICE_NAME_KEYWORDS. Raise
 // if your chains routinely run deeper than this.
 var EQ_DEVICE_SCAN_DEPTH = 32;
-// MASTER Wheel: Open/Close Metering Plugin (see setupMasterWheelPluginMode()
-// and the masterTrack.volume() observer in init() below) - this hardware
-// has no separate physical master fader (see the README's "Development
-// Notes" for how this was found); its MASTER wheel-mode substitutes
-// pitch-bend on the same channel this script's hwMasterFader already
-// binds to masterTrack.volume(). Off by default, so master volume stays
-// exactly as reachable as it always was. On, that same wheel gesture is
+// MASTER Wheel: Open/Close Metering Plugin (see the pitch-bend channel 9
+// handling in onMidi() below) - this hardware has no separate physical
+// master fader (see the README's "Development Notes" for how this was
+// found); its MASTER wheel-mode substitutes pitch-bend on the same
+// channel this script's master-fader input reads. Off by default, so
+// that pitch-bend still drives masterTrack.volume() exactly as it always
+// has (read and written manually in onMidi(), not via a native
+// HardwareSlider binding - see init()). On, that same wheel input is
 // reinterpreted as open/close for a named device on the Master track
-// (default a metering plugin) instead - see the Master Wheel Controller
-// Preferences category.
+// (default a metering plugin) instead, and masterTrack.volume() is never
+// touched at all - see the Master Wheel Controller Preferences category.
 var masterWheelPluginModeEnabled = false;
 // Device name to search for on the Master track's own chain. Match is
 // case-sensitive and exact, same convention as TOOL_DEVICE_NAME above -
@@ -1352,11 +1353,12 @@ function scheduleFaderSnapDbMarkCheck(index, target, isVolumeTarget) {
 // IMPORTANT CAVEAT, logged and worth repeating here: volume().get()
 // right after volume().set() can only confirm Bitwig's own parameter
 // model holds the value this script itself just wrote - it is NOT an
-// independent physical-position readback. This hardware's motorized
-// fader input is handled entirely through the native setBinding()/
+// independent physical-position readback. This test only covers the 8
+// channel faders (there is no physical master fader on this hardware),
+// whose input is handled entirely through the native setBinding()/
 // setAdjustValueMatcher() plumbing (see the "Motorized Pitchbend
 // Faders" comment in onMidi() above), with no raw pitch-bend byte ever
-// reaching this script's own code - there is no software-visible signal
+// reaching this script's own code for those 8 - there is no software-visible signal
 // distinct from "what we told Bitwig the value is" to compare a
 // physical motor position against. The .get() readback below is still
 // worth logging - it would catch a write silently failing to take
@@ -2131,35 +2133,41 @@ var bankScrollRightSelectIndex = 7;
 var masterTrack = null;
 // MASTER Wheel: Open/Close Metering Plugin - runtime state, see
 // masterWheelPluginModeEnabled/masterMeterDeviceName above and
-// setupMasterWheelPluginMode()/findMasterMeterDeviceIndex() below.
-// masterMeterDeviceNames[i] is kept live by one name() observer per scanned
-// slot (empty string = no device there), same pattern as eqDeviceNames -
-// findMasterMeterDeviceIndex() scans it fresh on demand rather than
-// caching a live index, so a runtime change to masterMeterDeviceName takes
-// effect on the very next wheel gesture with no extra bookkeeping.
-// masterWheelBaseline is the master volume value to hold steady while this
-// mode is on (null when off, meaning the wheel drives masterTrack.volume()
-// completely normally, exactly as before this feature existed);
-// masterWheelAccumulator tracks net wheel movement since the last
-// open/close trigger.
+// findMasterMeterDeviceIndex()/onMidi()'s pitch-bend channel 9 handling
+// below. masterMeterDeviceNames[i] is kept live by one name() observer
+// per scanned slot (empty string = no device there), same pattern as
+// eqDeviceNames - findMasterMeterDeviceIndex() scans it fresh on demand
+// rather than caching a live index, so a runtime change to
+// masterMeterDeviceName takes effect on the very next wheel gesture with
+// no extra bookkeeping.
 var masterMeterDeviceBank = null;
 var masterMeterDeviceNames = [];
-var masterWheelBaseline = null;
+// Raw 14-bit pitch-bend value (0-16383) last seen on channel 9, or null
+// right after masterWheelPluginModeEnabled was toggled (either
+// direction) - the first message after a toggle has nothing meaningful
+// to diff against, so it's used only to seed lastMasterWheelRaw, never
+// to compute a delta. Manual, not part of any HardwareControl binding -
+// see onMidi()'s pitch-bend channel 9 handling and the big comment where
+// the 8 track faders are created in init() for why.
+var lastMasterWheelRaw = null;
+// Net accumulated movement (in raw 14-bit units) since the last
+// open/close trigger, or since lastMasterWheelRaw was last reset.
 var masterWheelAccumulator = 0;
-var masterWheelTriggerRange = 0.15; // fraction of the 0..1 volume range - live from its Controller Preferences % setting
-// Idle-debounce generation token for the volume-hold correction - see
-// the masterTrack.volume() observer in init(). Same pattern as
-// encoderSnapGeneration/scheduleEncoderSnapCheck() above.
-var masterWheelCorrectionGeneration = 0;
-// How long the wheel has to sit idle before the volume-hold correction
-// actually writes - confirmed on hardware this can't be 0/immediate:
-// this wheel sends a rapid, continuous stream of pitch-bend updates for
-// the whole duration of a turn (not one message per detent), so a
-// correction issued mid-gesture just gets overwritten by the next
-// incoming message a few ms later. Not exposed as a Controller
-// Preferences setting - matches ENCODER_SNAP_IDLE_MS's own default,
-// internal tuning rather than a user-facing feel choice.
-var MASTER_WHEEL_CORRECTION_IDLE_MS = 300;
+// How far (in raw 14-bit units, 0-16383 range) the wheel has to move,
+// accumulated, before an open/close fires - live from its Controller
+// Preferences % setting (stored as a fraction there for readability,
+// converted to raw units here since gesture detection now runs directly
+// off the raw pitch-bend stream, not a normalized Parameter value).
+var masterWheelTriggerRange = 0.15 * 16383;
+// A single incoming pitch-bend message's raw value jumping by more than
+// this from the previous one is treated as the wheel's own internal
+// position counter hitting its floor (0) or ceiling (16383) and
+// snapping/clamping, not a real physical tick - confirmed on hardware
+// via an independent OS-level MIDI monitor (receivemidi) that ordinary
+// turning produces steps well under 1000 per message, while hitting a
+// rail produces one large jump. Ignored rather than accumulated, so a
+// rail-clamp can't masquerade as (or corrupt) a real gesture.
+var MASTER_WHEEL_RAW_JUMP_IGNORE_THRESHOLD = 2000;
 var cursorTrack = null;
 var cursorDevice = null;
 var cursorDeviceBank = null; // 8-slot device chain bank for the F1-F8 (notes 54-61) direct device-select feature
@@ -2180,8 +2188,10 @@ var midiIn = null;
 // automation-driven value changes on the physical fader, not just changes
 // that originated from the hardware itself.
 var hwSurface = null;
-var hwFaders = []; // 8 track faders, index 0-7
-var hwMasterFader = null;
+var hwFaders = []; // 8 track faders, index 0-7 - no hwMasterFader here,
+// deliberately: the master fader (pitch-bend channel 9) is handled
+// manually in onMidi() instead of a native HardwareSlider binding - see
+// the big comment where the 8 track faders above are created in init().
 
 // Last pitch-bend value (0-16383) sent to each fader's motor, indexed 0-7
 // for tracks and 8 for master - see updateFaderOutputs() below. Reset to
@@ -3126,8 +3136,9 @@ function init() {
    // Initialize Master Track
    masterTrack = host.createMasterTrack(0);
 
-   // Native hardware-bound faders (see hwFaders/hwMasterFader above and
-   // rebindFaders() below). Each slider's input side is wired once here to
+   // Native hardware-bound faders (see hwFaders above and rebindFaders()
+   // below - the master fader is handled separately, manually, further
+   // down). Each slider's input side is wired once here to
    // its fixed pitch-bend channel (0-7 for tracks, 8 for master - confirmed
    // via console log, unchanged between this hardware's Live and MCU
    // modes); the *target parameter* side is rebound dynamically by
@@ -3144,10 +3155,24 @@ function init() {
          hwFaders[channel] = slider;
       })(faderIdx);
    }
-   hwMasterFader = hwSurface.createHardwareSlider("faderMaster");
-   hwMasterFader.setAdjustValueMatcher(midiIn.createAbsolutePitchBendValueMatcher(8));
-   hwMasterFader.disableTakeOver();
-   hwMasterFader.setBinding(masterTrack.volume());
+   // Master fader input (pitch-bend channel 9, same channel as the 8
+   // track faders' own channel-per-index scheme) is DELIBERATELY handled
+   // manually in onMidi() below, not via a native HardwareSlider
+   // binding/matcher like the 8 track faders above. This hardware has no
+   // separate physical master fader - the MASTER wheel-mode substitutes
+   // this exact channel for one (see the README's Development Notes) -
+   // and the MASTER Wheel: Open/Close Metering Plugin feature needs to
+   // read every incoming message itself and decide what to do with it
+   // BEFORE anything touches masterTrack.volume(), which a native
+   // setAdjustValueMatcher()/setBinding() pair can't do: Bitwig applies a
+   // natively-bound value directly, opaque to script logic, with no hook
+   // to intercept it first. Confirmed on hardware across three rounds of
+   // attempted fixes that trying to "correct" a natively-bound
+   // masterTrack.volume() back after the fact is fundamentally unreliable
+   // and produces visible/audible volume movement during the correction
+   // window - unacceptable for a feature whose whole purpose is
+   // metering the mix without disturbing it. See the pitch-bend channel 9
+   // handling in onMidi() for the actual manual implementation.
 
    // MASTER Wheel: Open/Close Metering Plugin (and ALT+B.T.A. below) -
    // device bank over the Master track's own chain, purely for the
@@ -3171,87 +3196,18 @@ function init() {
       })(meterScanIdx);
    }
 
-   // MASTER Wheel: Open/Close Metering Plugin - the actual gesture
-   // detector. Deliberately does NOT touch hwMasterFader's own binding
-   // above (rebinding a HardwareSlider to a synthetic, non-Parameter
-   // target is not a confirmed-safe Controller API pattern) - instead,
-   // the wheel keeps driving masterTrack.volume() exactly as it always
-   // has, and this observer watches the resulting value for the
-   // masterWheelPluginModeEnabled case only. Each observed delta is
-   // accumulated (masterWheelAccumulator); once it crosses +/-
-   // masterWheelTriggerRange (a fraction of the 0..1 volume range,
-   // configurable via "Master Wheel: Movement to Trigger (%)"), it opens
-   // (positive/right) or closes (negative/left) the configured metering
-   // plugin's window.
-   //
-   // Three rounds of hardware-confirmed fixes here, all now applied:
-   //
-   // 1. triggerMasterMeterPlugin() is deferred to a fresh tick via
-   //    host.scheduleTask(fn, 0) rather than called synchronously from
-   //    inside this observer - calling it directly here left the plugin
-   //    never opening/closing at all (despite a popup confirming the
-   //    code path ran), most likely because this observer fires from
-   //    deep inside the wheel's own live hardware-binding update, and
-   //    Bitwig silently ignores further .set() calls issued synchronously
-   //    from within that chain. This fixed the open trigger.
-   // 2. masterWheelPluginModeEnabledSetting's observer above brackets the
-   //    entire "this mode is on" span with touch(true)/touch(false) on
-   //    masterTrack.volume() - per API Feature Request #2, a script write
-   //    to an actively-bound Parameter is silently ignored without this.
-   // 3. Even with both of the above, the volume-hold correction itself
-   //    still didn't stick, and turning left still never closed the
-   //    plugin. Root cause, confirmed via an independent OS-level MIDI
-   //    monitor (receivemidi, bypassing this script and Bitwig's own
-   //    controller-script layer entirely): this wheel sends a rapid,
-   //    continuous stream of pitch-bend messages for the WHOLE duration
-   //    of a turn, not one message per detent - so a correction issued
-   //    on every single observed change (as this did) was immediately
-   //    overwritten by the very next incoming wheel message a few
-   //    milliseconds later, an unwinnable race. The correction below is
-   //    now idle-debounced instead (same generation-token pattern as
-   //    scheduleEncoderSnapCheck()/Encoder Snap to Origin above) - it
-   //    only actually writes once the wheel has been still for
-   //    MASTER_WHEEL_CORRECTION_IDLE_MS, a genuinely quiet moment rather
-   //    than mid-gesture. This also fixes the left-turn/close problem,
-   //    which was really the same root cause: the held baseline drifting
-   //    out of sync with reality (since the correction kept losing the
-   //    race) threw off the accumulator's math for any turn after the
-   //    first. Trade-off: master volume will still show real movement
-   //    for the duration of an active turn, snapping back to
-   //    masterWheelBaseline shortly after the wheel actually stops,
-   //    rather than appearing to never move at all in real time.
-   //
-   // Not yet re-confirmed on hardware since fix #3.
-   masterTrack.volume().value().addValueObserver(function (value) {
-      if (masterWheelBaseline === null) {
-         return;
-      }
-      var delta = value - masterWheelBaseline;
-      if (Math.abs(delta) < 0.0005) {
-         return;
-      }
-      masterWheelAccumulator += delta;
-      if (masterWheelAccumulator >= masterWheelTriggerRange) {
-         masterWheelAccumulator = 0;
-         host.scheduleTask(function () {
-            triggerMasterMeterPlugin(true);
-         }, 0);
-      } else if (masterWheelAccumulator <= -masterWheelTriggerRange) {
-         masterWheelAccumulator = 0;
-         host.scheduleTask(function () {
-            triggerMasterMeterPlugin(false);
-         }, 0);
-      }
-      masterWheelCorrectionGeneration++;
-      var myCorrectionGeneration = masterWheelCorrectionGeneration;
-      host.scheduleTask(function () {
-         if (masterWheelCorrectionGeneration !== myCorrectionGeneration ||
-             masterWheelBaseline === null) {
-            return;
-         }
-         masterTrack.volume().value().set(masterWheelBaseline);
-      }, MASTER_WHEEL_CORRECTION_IDLE_MS);
-   });
+   // MASTER Wheel: Open/Close Metering Plugin - the gesture detector
+   // itself lives in onMidi()'s manual pitch-bend channel 9 handling, not
+   // here. Earlier versions of this feature tried three different ways
+   // to keep the wheel natively bound to masterTrack.volume() and
+   // "correct" it back afterward (deferred writes, touch() bracketing,
+   // idle-debounced correction) - all three were hardware-confirmed to
+   // still let real volume movement through, since the correction can
+   // only ever run AFTER Bitwig's native binding has already applied the
+   // hardware's value. The only way to guarantee masterTrack.volume() is
+   // never touched at all while this mode is on is to never natively
+   // bind that pitch-bend channel to it in the first place - see the
+   // big comment above where the 8 track faders are created.
 
    // Initialize Cursor Track & Send Bank (16 Send slots for focused track)
    cursorTrack = host.createCursorTrack("MIDIPLUS_CURSOR_TRACK", "Cursor Track", 16, 0, true);
@@ -3386,40 +3342,29 @@ function init() {
 
    // MASTER Wheel: Open/Close Metering Plugin (Controller Preferences ->
    // "Master Wheel" category) - see masterWheelPluginModeEnabled/
-   // masterMeterDeviceName/masterWheelTriggerRange above and the
-   // masterTrack.volume() observer earlier in this function for the
-   // actual gesture detector. This hardware has no separate physical
-   // master fader - its MASTER wheel-mode substitutes pitch-bend on the
-   // same channel hwMasterFader already binds to masterTrack.volume() -
-   // see the README's Development Notes for how this was found. Off by
+   // masterMeterDeviceName/masterWheelTriggerRange/lastMasterWheelRaw
+   // above and onMidi()'s pitch-bend channel 9 handling for the actual
+   // gesture detector. This hardware has no separate physical master
+   // fader - its MASTER wheel-mode substitutes pitch-bend on channel 9,
+   // which is why that channel is parsed manually in onMidi() rather than
+   // through a native HardwareSlider binding: only that way can this
+   // script decide what a message means (volume vs. open/close) before
+   // any Bitwig Parameter is touched, which is required to guarantee
+   // master volume is never altered while this mode is enabled - see the
+   // README's Development Notes for the full story of why. Off by
    // default, so master volume stays exactly as reachable as it always
    // was; on, the same wheel gesture opens/closes a named device's window
    // on the Master track instead (default: ADPTR MetricAB, a metering
-   // plugin), and master volume itself is held steady the whole time.
+   // plugin), and master volume itself is never written to at all.
    var masterWheelPluginModeEnabledSetting = host.getPreferences().getBooleanSetting(
       "Enable MASTER Wheel: Open/Close Metering Plugin", "Master Wheel", false);
    masterWheelPluginModeEnabledSetting.markInterested();
    masterWheelPluginModeEnabledSetting.addValueObserver(function (value) {
       masterWheelPluginModeEnabled = value;
       masterWheelAccumulator = 0;
-      if (value) {
-         masterWheelBaseline = masterTrack.volume().value().get();
-         // Confirmed on hardware this is required: masterTrack.volume()
-         // is actively bound to hwMasterFader via setBinding(), and a
-         // script .set() call on it - even deferred to a fresh tick via
-         // scheduleTask() - was silently ignored without this. Same
-         // touch(true)/touch(false)-around-the-gesture fix this project
-         // already needed for Mixer Snapshot recall (see API Feature
-         // Request #2) - bracketing the whole "this mode is active"
-         // span here, since the wheel has no discrete touch-down/up
-         // messages of its own to bracket individual writes with.
-         masterTrack.volume().touch(true);
-      } else {
-         if (masterWheelBaseline !== null) {
-            masterTrack.volume().touch(false);
-         }
-         masterWheelBaseline = null;
-      }
+      // Nothing meaningful to diff the very next channel 9 message
+      // against right after a toggle, in either direction.
+      lastMasterWheelRaw = null;
    });
 
    // Which device on the Master track's own chain to open/close - exact
@@ -3434,15 +3379,15 @@ function init() {
       masterMeterDeviceName = value;
    });
 
-   // How far (as a fraction of the master volume parameter's full 0-100%
+   // How far (as a percentage of the wheel's full 14-bit pitch-bend
    // range) the wheel has to move, accumulated, before an open/close
-   // fires - shown here as a percentage for readability, converted to the
-   // 0..1 fraction masterWheelTriggerRange actually uses.
+   // fires - shown here as a percentage for readability, converted to
+   // the raw 14-bit units masterWheelTriggerRange actually uses.
    var masterWheelTriggerPercentSetting = host.getPreferences().getNumberSetting(
       "Master Wheel: Movement to Trigger (%)", "Master Wheel", 5, 50, 1, "%", 15);
    masterWheelTriggerPercentSetting.markInterested();
    masterWheelTriggerPercentSetting.addRawValueObserver(function (value) {
-      masterWheelTriggerRange = value / 100;
+      masterWheelTriggerRange = (value / 100) * 16383;
    });
 
    // Function Keys settings (Controller Preferences panel -> "Function
@@ -5006,11 +4951,59 @@ function onMidi(status, data1, data2) {
       debugLog(DEBUG_RAW_MIDI, "RAW CC received - CC#: " + data1 + ", Value: " + data2);
    }
 
-   // 1. Motorized Pitchbend Faders - handled entirely by the native
-   // hwFaders/hwMasterFader hardware bindings (see rebindFaders()), not
-   // here. Bitwig reads the incoming pitch-bend and drives the bound
-   // parameter (and the physical motor, for any value change regardless of
-   // its source) automatically once bound via setBinding().
+   // 1. Motorized Pitchbend Faders - the 8 track faders are handled
+   // entirely by the native hwFaders hardware bindings (see
+   // rebindFaders()), not here: Bitwig reads the incoming pitch-bend and
+   // drives the bound parameter (and the physical motor, for any value
+   // change regardless of its source) automatically once bound via
+   // setBinding(). The master fader (pitch-bend channel 9) is the one
+   // exception - handled manually right here instead, deliberately not
+   // through a native binding, so this script can decide what a message
+   // means BEFORE any Bitwig Parameter is touched - see the big comment
+   // where the 8 track faders are created in init() for why.
+   if (msgType === 0xE0 && channel === 8) {
+      var masterRaw14 = data1 | (data2 << 7);
+      if (lastMasterWheelRaw === null) {
+         // First message since startup or since the mode was toggled -
+         // nothing meaningful to diff against yet, just seed it.
+         lastMasterWheelRaw = masterRaw14;
+         return;
+      }
+      var masterRawDelta = masterRaw14 - lastMasterWheelRaw;
+      lastMasterWheelRaw = masterRaw14;
+      if (Math.abs(masterRawDelta) > MASTER_WHEEL_RAW_JUMP_IGNORE_THRESHOLD) {
+         // The wheel's own internal position counter hit its floor/ceiling
+         // and clamped/reset - not a real physical tick. Discarded rather
+         // than accumulated, so a rail-clamp can't masquerade as (or
+         // corrupt) a real gesture - see MASTER_WHEEL_RAW_JUMP_IGNORE_
+         // THRESHOLD's own comment above.
+         return;
+      }
+      if (masterWheelPluginModeEnabled) {
+         // Metering plugin open/close mode. masterTrack.volume() is never
+         // referenced anywhere in this branch - this is the only code in
+         // the whole script that ever sees channel 9's raw bytes, so
+         // there is no path left by which this gesture could alter
+         // master volume.
+         masterWheelAccumulator += masterRawDelta;
+         if (masterWheelAccumulator >= masterWheelTriggerRange) {
+            masterWheelAccumulator = 0;
+            host.scheduleTask(function () { triggerMasterMeterPlugin(true); }, 0);
+         } else if (masterWheelAccumulator <= -masterWheelTriggerRange) {
+            masterWheelAccumulator = 0;
+            host.scheduleTask(function () { triggerMasterMeterPlugin(false); }, 0);
+         }
+      } else {
+         // Normal behavior (mode off, the default) - the wheel acts as a
+         // master fader, exactly as if it were a native HardwareSlider
+         // bound to masterTrack.volume(). No physical master fader exists
+         // on this hardware to give motor feedback to, so a plain .set()
+         // is all that's needed - see updateFaderOutputs() for the
+         // separate LCD-facing readback of this same parameter.
+         masterTrack.volume().set(masterRaw14 / 16383);
+      }
+      return;
+   }
 
    // 2. Rotary Encoders (CC 16-23 on Channel 1: 0xB0)
    if (msgType === 0xB0 && data1 >= 16 && data1 <= 23) {
@@ -5554,8 +5547,10 @@ function onMidi(status, data1, data2) {
       // SELECT1-8 buttons use (note 24-31 above) - inspired by
       // Mossgraber's DrivenByMoss MCU driver, which offers the identical
       // setting. Master (112) always selects the master track, since the
-      // master fader's binding never changes with mode (see hwMasterFader
-      // in init()). The 8 channel faders only select a track while in
+      // master fader's target never changes with mode (it's always
+      // masterTrack.volume(), read/written manually in onMidi() - see the
+      // big comment where the 8 track faders are created in init()). The
+      // 8 channel faders only select a track while in
       // MODE_MIXER - in MODE_SENDS/MODE_DEVICE a fader doesn't correspond
       // to a distinct track per channel (all 8 faders act on the SAME
       // cursor track's sends, or on device macros), so there's nothing
@@ -6626,8 +6621,10 @@ function getFaderTarget(i) {
 
 // Same as getFaderTarget(), except also covers the master fader (index 8,
 // notes 104-112's 9th slot) - which getFaderTarget() itself doesn't handle
-// since it's always bound straight to masterTrack.volume() regardless of
-// mode/FLIP (see hwMasterFader in init()). Used by Fader Snap to Zero
+// since it's always masterTrack.volume() regardless of mode/FLIP, read/
+// written manually in onMidi() rather than via a native binding (see the
+// big comment where the 8 track faders are created in init()). Used by
+// Fader Snap to Zero
 // (scheduleFaderSnapZeroCheck() above) to resolve whichever fader index
 // was actually released to its current live target.
 function getFaderSnapZeroTarget(i) {

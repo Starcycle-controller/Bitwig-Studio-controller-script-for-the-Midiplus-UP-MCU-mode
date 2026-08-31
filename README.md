@@ -721,49 +721,45 @@ line visible. Main tracks only; skipped while viewing Returns.
 
 This unit has no separate physical master fader - the jog wheel under
 MASTER mode substitutes pitch-bend on the same MIDI channel this script's
-existing master-fader binding already listens on, driving
-`masterTrack.volume()` by default (see **Development Notes & Findings**
-below for how this was confirmed). This category lets that same gesture
-be repurposed instead, for a workflow that never rides the master fader
-by hand and would rather use it to call up a metering plugin.
+master-fader input reads, driving `masterTrack.volume()` by default (see
+**Development Notes & Findings** below for how this was confirmed). This
+category lets that same gesture be repurposed instead, for a workflow
+that never rides the master fader by hand and would rather use it to call
+up a metering plugin.
 
 **Enable MASTER Wheel: Open/Close Metering Plugin** (default off) - off,
 MASTER mode behaves exactly as it always has (drives master volume). On,
 the same wheel gesture opens the configured device's plugin window when
-turned right, and closes it when turned left, with master volume held
-steady overall. This went through three rounds of hardware-confirmed
-fixes to get working - worth keeping the history, since the last one
-changes what "held steady" actually means in practice:
+turned right, and closes it when turned left, and master volume is never
+written to at all while it's on - not "held steady," genuinely untouched.
 
-1. **First test: didn't work at all** - master volume kept drifting and
-   the plugin never opened/closed, despite a popup confirming the code
-   ran. Cause: corrective writes issued synchronously from inside the
-   value-observer callback that the wheel's own live hardware-binding
-   update was already firing from get silently ignored by Bitwig. Fixed
-   by deferring both writes to a fresh tick via `host.scheduleTask()`.
-2. **Second test: open worked, but the volume correction still didn't,
-   and left/close still never fired** - `masterTrack.volume()` is
-   actively bound to the physical wheel via `setBinding()`, and per API
-   Feature Request #2, a script write to an actively-bound Parameter is
-   silently ignored without a `Parameter.touch(true)`/`touch(false)`
-   bracket. Fixed by bracketing the entire time the setting is switched
-   on with one touch pair (the wheel has no discrete touch-down/up
-   messages of its own to bracket individual writes with).
-3. **Third test: open/close both worked, but volume still audibly
-   changed on every flick.** Confirmed via an independent OS-level MIDI
-   monitor (`receivemidi`, bypassing this script entirely) that this
-   wheel sends a rapid, continuous stream of pitch-bend messages for the
-   *entire* duration of a turn, not one message per detent - so a
-   correction fired on every observed change was immediately overwritten
-   by the very next incoming wheel message a few milliseconds later, a
-   race the correction could never win. Fixed by making the correction
-   **idle-debounced** instead (same pattern as Encoder Snap to Origin) -
-   it only actually writes once the wheel has been still for 300ms.
-   **Trade-off worth knowing:** master volume will still show real
-   movement for the duration of an active turn, snapping back to where
-   it started shortly after you stop turning - it does not appear frozen
-   in real time. **Not yet re-confirmed on hardware since this third
-   fix.**
+Getting there took three failed attempts, each hardware-confirmed to
+still let real volume movement through, because they all shared the same
+flaw: they kept the wheel's pitch-bend channel natively bound to
+`masterTrack.volume()` via Bitwig's `setAdjustValueMatcher()`/
+`setBinding()`, and tried to "correct" the value back afterward -
+deferring the correction to a fresh tick, bracketing it with
+`Parameter.touch()`, then idle-debouncing it by 300ms. Each got closer,
+but a native binding applies the hardware's value to the Parameter
+directly, at a layer entirely opaque to this script's own code - there is
+no way to intercept or decide what a message means before that happens,
+only to react afterward, and reacting afterward always means the volume
+genuinely moved for at least a moment first. Confirmed via an independent
+OS-level MIDI monitor (`receivemidi`, bypassing this script entirely)
+that the wheel sends a rapid, continuous stream of pitch-bend messages
+for the entire duration of a turn, not one message per detent, so even a
+fast correction was racing a message stream it could never fully win
+against.
+
+The actual fix: stop using a native binding for this channel at all. The
+wheel's pitch-bend channel is now parsed manually in this script's own
+`onMidi()`, exactly like every other control besides the 8 track faders
+already works - the raw bytes are read and interpreted first, and
+`masterTrack.volume()` is written to only when this setting is off. When
+it's on, the open/close accumulator runs entirely off the raw pitch-bend
+stream and the volume parameter is never referenced in that code path at
+all, so there's no longer a "correction" racing anything - there's simply
+nothing left to correct.
 
 **Master Wheel: Metering Plugin Name** (text, default `ADPTR MetricAB`) -
 which device on the Master track's own chain to open/close, matched by

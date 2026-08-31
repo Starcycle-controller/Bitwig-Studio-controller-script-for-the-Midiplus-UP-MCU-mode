@@ -477,7 +477,8 @@ between modes, so this map holds in either.
 <tr><td>112</td><td>Fader touch (Master)</td><td>Optionally selects the master track - not confirmed on this 8-fader unit</td></tr>
 <tr><td>CC 16-23</td><td>Rotary encoders 1-8</td><td>Mode-dependent (pan/send/macro); SHIFT = stepped or fine adjust</td></tr>
 <tr><td>CC 60</td><td>Jog wheel</td><td>Arranger scrub, or bar/loop/tempo nudge with modifiers, or scene navigation in Scene mode</td></tr>
-<tr><td>Pitch bend ch 0-7 / 8</td><td>Faders 1-8 / Master</td><td>Motorized fader input/output - channel 8 (Master) comes from the jog wheel under MASTER mode on this unit, not a separate fader</td></tr>
+<tr><td>Pitch bend ch 0-7</td><td>Faders 1-8</td><td>Motorized fader input/output, native hardware binding</td></tr>
+<tr><td>Pitch bend ch 8</td><td>Master (jog wheel, MASTER mode)</td><td>No separate master fader on this unit - the jog wheel substitutes pitch-bend on this channel instead; parsed manually by the script rather than a native binding, see note below</td></tr>
 </table>
 
 <h2 id="wheel-modes">7. Jog-Wheel "Mode" Buttons</h2>
@@ -504,15 +505,13 @@ subsequently turned.
 mode substitutes the jog wheel for one. Confirmed with an independent
 OS-level MIDI monitor (<code>receivemidi</code>, reading the hardware port
 directly, bypassing this script entirely): turning the wheel with MASTER
-engaged sends absolute pitch-bend on MIDI channel 9 - exactly the channel
-this script's master-fader binding already listens on, so it was already
-driving Bitwig's master volume correctly. Nothing appears in this script's
-own console for it, for the same reason the 8 track faders' own motor
-input doesn't either: pitch-bend claimed by a native hardware binding
-never reaches the script's own MIDI handler. This gesture can optionally
-be repurposed to open/close a metering plugin's window instead of
-touching master volume - see the README's <strong>Master Wheel</strong>
-Controller Preferences section.
+engaged sends absolute pitch-bend on MIDI channel 9. Unlike the 8 track
+faders (which use a native Bitwig hardware binding, invisible to the
+script's own code), this channel is read and interpreted manually by the
+script itself, so it drives master volume by default but can also be
+repurposed to open/close a metering plugin's window instead, without ever
+touching master volume while that's active - see the README's
+<strong>Master Wheel</strong> Controller Preferences section.
 </p>
 </div>
 
