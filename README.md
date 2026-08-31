@@ -843,23 +843,6 @@ same `Fader Snap to dB Marks Range (dB)`/`Fader Snap to dB Marks Delay
 per-target). Off by default, so enabling Fader Snap to dB Marks for the
 channel faders doesn't silently also start snapping the wheel.
 
-**SHIFT+wheel (Fine Mode)**, and **Master Wheel: Fine Mode Sensitivity
-(%)** (default 25%, range 5-100%) - requested directly, since the
-default absolute mapping's per-message resolution (each incoming
-pitch-bend message can move volume by however far the wheel's own raw
-value happened to jump - up to a few tenths of a dB near the top of the
-curve) felt too coarse for careful adjustments. Holding SHIFT while
-turning switches to a relative, scaled-down nudge instead of an absolute
-jump - lower sensitivity values need more turning for the same total
-volume change but land far more subtly; 100% feels identical to plain
-(non-SHIFT) mode. This SHIFT check only ever sees MASTER-mode's
-pitch-bend channel 9 data - it's entirely separate from **SHIFT+Wheel**
-in SCROLL mode (shifts the loop by a bar, see the Jog Wheel Modifier
-Combos table above), which the wheel sends as a completely different
-MIDI message (CC 60) only reachable while the wheel's physical mode
-selector is on SCROLL, not MASTER - the two can never interact. **Not
-yet confirmed on hardware.**
-
 ### Debug
 
 - **Enable Debug Logging** (default ON) - master switch for every category

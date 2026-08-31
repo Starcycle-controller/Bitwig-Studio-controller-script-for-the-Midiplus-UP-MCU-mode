@@ -2218,31 +2218,21 @@ var masterWheelTriggerRange = 0.15 * 16383;
 // rail-clamp can't masquerade as (or corrupt) a real gesture.
 var MASTER_WHEEL_RAW_JUMP_IGNORE_THRESHOLD = 2000;
 // Normal-mode (masterWheelPluginModeEnabled off) master volume control is
-// absolute by default, not relative/delta-based - masterTrack.volume() is
-// set directly from the wheel's own raw position (masterRaw14/16383),
-// same math a native HardwareSlider binding would apply. An
-// accumulate-then-fixed-step relative design was tried and abandoned as
-// the DEFAULT behavior first - confirmed on hardware to barely respond at
-// all, because this wheel's raw reporting isn't a clean, monotonic
-// direction signal even during genuine slow, deliberate one-tick-at-a-time
-// turning (real test: moving tick to tick left for a whole receivemidi
-// capture netted only +128 raw units out of 16383 - requiring a large
-// accumulated movement before any step fired left it feeling dead).
-// Absolute sidesteps that for normal use: it doesn't depend on delta
-// accuracy at all, just "wherever the wheel currently reports" - see the
-// Fader Snap to dB Marks call in onMidi()'s pitch-bend channel 9 handling
-// for how landing on an exact value (0dB especially) is instead handled.
-//
-// SHIFT+wheel (Fine Mode) is the one place a scaled relative delta IS
-// used, deliberately - see masterWheelFineModeSensitivity below. Coarser
-// per-message resolution in absolute mode (each message can move volume
-// by however far the wheel's own raw value jumped, confirmed on hardware
-// to feel noticeably chunky) is the actual thing being fixed here, not
-// responsiveness - a scaled-down delta responds immediately to every
-// message just like absolute mode does, just by a smaller amount each
-// time, so it doesn't hit the same "needs a large accumulated movement
-// before anything happens" dead zone the abandoned fixed-step design did.
-var masterWheelFineModeSensitivity = 0.25;
+// absolute, not relative/delta-based - masterTrack.volume() is set
+// directly from the wheel's own raw position (masterRaw14/16383), same
+// math a native HardwareSlider binding would apply. Two delta/relative
+// designs were tried and abandoned first: a straight scaled fraction of
+// each message's delta, then an accumulate-then-fixed-step version -
+// both confirmed on hardware to barely respond at all, because this
+// wheel's raw reporting isn't a clean, monotonic direction signal even
+// during genuine slow, deliberate one-tick-at-a-time turning (real test:
+// moving tick to tick left for a whole receivemidi capture netted only
+// +128 raw units out of 16383 - the per-message deltas mostly cancelled
+// each other out). Going absolute sidesteps that: it doesn't depend on
+// delta accuracy at all, just "wherever the wheel currently reports" -
+// see the Fader Snap to dB Marks call in onMidi()'s pitch-bend channel 9
+// handling for how landing on an exact value (0dB especially) is instead
+// handled, idle-debounced, rather than by fighting the raw signal itself.
 var cursorTrack = null;
 var cursorDevice = null;
 var cursorDeviceBank = null; // 8-slot device chain bank for the F1-F8 (notes 54-61) direct device-select feature
@@ -3479,19 +3469,6 @@ function init() {
    masterWheelSnapDbMarksLayoutSetting.markInterested();
    masterWheelSnapDbMarksLayoutSetting.addValueObserver(function (value) {
       masterWheelSnapDbMarksLayout = value;
-   });
-
-   // Fine Mode (SHIFT+wheel while MASTER is engaged) - see
-   // masterWheelFineModeSensitivity above and the SHIFT branch in
-   // onMidi()'s pitch-bend channel 9 handling. How much of the wheel's
-   // raw movement reaches volume while SHIFT is held - lower values need
-   // more turning for the same volume change but land more subtly; 100%
-   // would feel identical to plain (non-SHIFT) absolute mode.
-   var masterWheelFineModeSensitivitySetting = host.getPreferences().getNumberSetting(
-      "Master Wheel: Fine Mode Sensitivity (%)", "Master Wheel", 5, 100, 5, "%", 25);
-   masterWheelFineModeSensitivitySetting.markInterested();
-   masterWheelFineModeSensitivitySetting.addRawValueObserver(function (value) {
-      masterWheelFineModeSensitivity = value / 100;
    });
 
    // How far (as a percentage of the wheel's full 14-bit pitch-bend
@@ -5126,26 +5103,7 @@ function onMidi(status, data1, data2) {
          // to give motor feedback to, so a plain .set() is all that's
          // needed - see updateFaderOutputs() for the separate LCD-facing
          // readback of this same parameter.
-         //
-         // SHIFT+wheel (Fine Mode) - requested directly, since the
-         // absolute mapping's per-message resolution (each message can
-         // move volume by however far the wheel's own raw value jumped)
-         // felt too coarse for careful adjustments. Switches to a
-         // relative, scaled-down nudge instead - see
-         // masterWheelFineModeSensitivity above for why this doesn't hit
-         // the same unresponsiveness the abandoned always-on relative
-         // design did. This SHIFT check is scoped entirely to this
-         // pitch-bend channel 9 handler - it can never interact with
-         // SHIFT+Wheel's existing loop-shift behavior in SCROLL mode
-         // (CC 60), since the physical wheel can only be in one local
-         // mode at a time and each mode sends a completely different
-         // MIDI message type.
-         if (isShiftPressed) {
-            shiftUsedForCombo = true;
-            masterTrack.volume().inc(masterRawDelta * masterWheelFineModeSensitivity, 16383);
-         } else {
-            masterTrack.volume().set(masterRaw14 / 16383);
-         }
+         masterTrack.volume().set(masterRaw14 / 16383);
          // Snap to dB Marks (see scheduleFaderSnapDbMarkCheck() above) -
          // reused as-is for the master wheel, gated by its own
          // masterWheelSnapDbMarksLayout setting, independent of the
