@@ -5040,7 +5040,7 @@ function onMidi(status, data1, data2) {
          // on this hardware to give motor feedback to, so a plain
          // .inc() is all that's needed - see updateFaderOutputs() for
          // the separate LCD-facing readback of this same parameter.
-         masterTrack.volume().inc((masterRawDelta / 16383) * masterWheelVolumeSensitivity, 1);
+         masterTrack.volume().inc(masterRawDelta * masterWheelVolumeSensitivity, 16383);
       }
       return;
    }
