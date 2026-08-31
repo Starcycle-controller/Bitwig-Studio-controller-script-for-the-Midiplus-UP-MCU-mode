@@ -1129,15 +1129,46 @@ it's also written up in `BITWIG-API-FEATURE-REQUESTS.md`.
   pause, rather than trying to ride there smoothly. Confirmed working well
   on hardware in this simpler form.
 
-### Open items
+### Hardware test status
 
-- Notes 50/51/80/81/87 are either unbound or need a fresh confirmation
-  sweep against the current overlay placement.
-- Several Function Keys actions (the 33 generic Editing/File actions beyond
-  the 10 with dedicated typed `Application` methods) are not yet
-  hardware-tested one by one.
-- OPTION+DRAW's `toggle_automation_lanes` action id is not yet
-  hardware-confirmed.
-- A different vendor's per-channel color SysEx variant (e.g. Behringer's
-  single-byte 3-bit color index) hasn't been tried, if track color on this
-  hardware still matters enough to keep chasing.
+The single canonical list of what still needs (re-)confirmation on real
+hardware - kept here instead of scattered across feature sections, so a
+debugging session can work through it top to bottom without hunting for
+stray "not yet tested" notes, and so nothing gets silently forgotten
+between sessions. When an item below gets tested, check it off here *and*
+update its own feature section with the confirmed result (or the fix, if
+it turned out broken) - this list tracks status, the feature sections
+carry the detail/evidence. If a later change touches something already
+checked off, uncheck it here until it's retested.
+
+- [ ] CURSOR wheel-mode - mode button and wheel-turn behavior both
+      untested.
+- [ ] NUDGE wheel-mode - mode button and wheel-turn behavior both
+      untested.
+- [ ] MASTER wheel-mode's **wheel click** (pressing the wheel in while
+      it's in MASTER mode) - untested; the mode button and wheel-turn
+      behavior are both confirmed, only the click itself isn't.
+- [ ] Note 112 (the master fader's *touch* note, distinct from turning
+      it) - not confirmed to fire on this 8-fader unit at all.
+- [ ] Notes 50/51/80/81/87 - either unbound or need a fresh confirmation
+      sweep against the current overlay placement.
+- [ ] ~33 generic Function Keys Editing/File actions (the ones without a
+      dedicated typed `Application` method) - not hardware-tested one by
+      one.
+- [ ] OPTION+DRAW's `toggle_automation_lanes` action id - not
+      hardware-confirmed.
+- [ ] A different vendor's per-channel color SysEx variant (e.g.
+      Behringer's single-byte 3-bit color index) - never tried; only
+      relevant if track-color display still matters enough to chase
+      further.
+- [ ] Takeover Mode Catch vs. Jump, side-by-side, for Mixer Snapshot
+      recall - one clean Catch-mode retest passed, but a deliberate
+      side-by-side (same session, same snapshot, nothing else changed)
+      was never done - see `patches/README.md`.
+- [ ] **Master Wheel: Snap to dB Marks** dropdown (Off/Hardware
+      Scale/Musical) - the underlying snap behavior was confirmed working
+      before this was split out into its own dedicated per-target
+      setting; the split itself hasn't been separately retested.
+- [ ] **Fader Snap to dB Marks Range (dB)** - switched from a % tolerance
+      to an actual dB one; math should be equivalent in intent, but not
+      retested on hardware since the change.
