@@ -3171,22 +3171,32 @@ function init() {
    // (positive/right) or closes (negative/left) the configured metering
    // plugin's window and resets.
    //
-   // Both the corrective "hold master volume steady" write and
-   // triggerMasterMeterPlugin() itself are deferred to a fresh tick via
-   // host.scheduleTask(fn, 0) rather than called synchronously from
-   // inside this observer. First-shipped version called both directly
-   // here and was confirmed broken on hardware - master volume kept
-   // drifting AND the plugin window never actually opened/closed, even
-   // though a popup confirmed the code path ran and the identical
-   // isWindowOpen().set() call works fine from a clean, standalone
-   // context (ALT+B.T.A.'s toggleMasterMeterPluginWindow(), confirmed
-   // working). Most likely cause: this observer itself fires from deep
-   // inside the wheel's own live hardware-binding update, and further
-   // .set() calls issued synchronously from within that chain are
-   // silently ignored - the same class of Bitwig write-reliability issue
-   // this project already hit and worked around (with scheduleTask, and
-   // separately with touch()) for Mixer Snapshot recall - see API
-   // Feature Request #2. Not yet re-confirmed on hardware since this fix.
+   // Two rounds of hardware-confirmed fixes here, both already applied:
+   //
+   // 1. Both the corrective "hold master volume steady" write and
+   //    triggerMasterMeterPlugin() itself are deferred to a fresh tick
+   //    via host.scheduleTask(fn, 0) rather than called synchronously
+   //    from inside this observer - calling them directly here left the
+   //    plugin never opening/closing at all (despite a popup confirming
+   //    the code path ran), most likely because this observer fires from
+   //    deep inside the wheel's own live hardware-binding update, and
+   //    Bitwig silently ignores further .set() calls issued synchronously
+   //    from within that chain. Deferring fixed the open/close trigger.
+   // 2. The corrective volume write on its own still didn't stick even
+   //    once deferred - masterTrack.volume() is actively bound to
+   //    hwMasterFader via setBinding(), and per API Feature Request #2,
+   //    script writes to an actively-bound Parameter are silently ignored
+   //    without a touch(true)/touch(false) bracket. The wheel has no
+   //    discrete touch-down/up messages of its own, so
+   //    masterWheelPluginModeEnabledSetting's observer above brackets the
+   //    entire "this mode is on" span with one touch(true)/touch(false)
+   //    instead of per-write. This should also fix turning left never
+   //    closing the plugin, which was really a symptom of the same root
+   //    cause: masterWheelBaseline never actually tracked reality once
+   //    the correction silently failed, throwing off the accumulator's
+   //    math for any turn after the first.
+   //
+   // Not yet re-confirmed on hardware since fix #2.
    masterTrack.volume().value().addValueObserver(function (value) {
       if (masterWheelBaseline === null) {
          return;
@@ -3362,7 +3372,24 @@ function init() {
    masterWheelPluginModeEnabledSetting.addValueObserver(function (value) {
       masterWheelPluginModeEnabled = value;
       masterWheelAccumulator = 0;
-      masterWheelBaseline = value ? masterTrack.volume().value().get() : null;
+      if (value) {
+         masterWheelBaseline = masterTrack.volume().value().get();
+         // Confirmed on hardware this is required: masterTrack.volume()
+         // is actively bound to hwMasterFader via setBinding(), and a
+         // script .set() call on it - even deferred to a fresh tick via
+         // scheduleTask() - was silently ignored without this. Same
+         // touch(true)/touch(false)-around-the-gesture fix this project
+         // already needed for Mixer Snapshot recall (see API Feature
+         // Request #2) - bracketing the whole "this mode is active"
+         // span here, since the wheel has no discrete touch-down/up
+         // messages of its own to bracket individual writes with.
+         masterTrack.volume().touch(true);
+      } else {
+         if (masterWheelBaseline !== null) {
+            masterTrack.volume().touch(false);
+         }
+         masterWheelBaseline = null;
+      }
    });
 
    // Which device on the Master track's own chain to open/close - exact

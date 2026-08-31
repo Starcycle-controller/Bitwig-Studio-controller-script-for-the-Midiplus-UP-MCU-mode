@@ -741,8 +741,20 @@ callback that the wheel's own live hardware-binding update was already
 firing from, and Bitwig silently ignores `.set()` calls made from within
 that chain (the same class of write-reliability issue as API Feature
 Request #2). Reworked to defer both writes to a fresh tick via
-`host.scheduleTask()` instead - **not yet re-confirmed on hardware since
-this fix.**
+`host.scheduleTask()` instead - **second hardware test confirmed the
+open trigger now works, but the volume-hold correction still didn't,
+and turning left still never closed the plugin.** Root cause of the
+remaining half: `masterTrack.volume()` is actively bound to the physical
+wheel via `setBinding()`, and per API Feature Request #2, a script write
+to an actively-bound Parameter is silently ignored without bracketing it
+in `Parameter.touch(true)`/`touch(false)` - the wheel has no discrete
+touch-down/up messages of its own to bracket individual writes with, so
+this now brackets the entire time the setting is switched on instead of
+per-write. This should also fix the left-turn/close problem, which was
+really the same root cause: the held baseline drifting out of sync with
+reality once the correction silently failed, throwing off the
+accumulator's math for any turn after the first. **Not yet re-confirmed
+on hardware since this second fix.**
 
 **Master Wheel: Metering Plugin Name** (text, default `ADPTR MetricAB`) -
 which device on the Master track's own chain to open/close, matched by
