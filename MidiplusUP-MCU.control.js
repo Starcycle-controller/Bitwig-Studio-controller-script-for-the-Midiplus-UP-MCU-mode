@@ -4305,6 +4305,7 @@ function init() {
    // Transport & Application Controls
    transport = host.createTransport();
    application = host.createApplication();
+   application.panelLayout().markInterested(); // SESS/ARR (case 74) reads this to know which layout to toggle to
    arranger = host.createArranger();
    mixer = host.createMixer(); // F1-F8 Mixer Layout Presets/Toggles - see getMixerSectionValue() above
 
@@ -6509,9 +6510,23 @@ function handleButtonPressInner(note) {
       // 62-69 (confirmed via console testing - see README; not yet bound
       // to anything). Do not bind anything to note 53 itself.
 
-      case 74: // SESS/ARR -> Toggle Clip Launcher / Arranger View
-         arranger.isClipLauncherVisible().toggle();
-         host.showPopupNotification("Toggle Session / Arranger View");
+      case 74: // SESS/ARR -> Toggle Mix (Session-style: mixer + clip
+               // launcher) / Arrange panel layout. Previously only
+               // toggled clip launcher visibility within whatever panel
+               // layout happened to already be active, which didn't
+               // match this button's own printed purpose - confirmed on
+               // hardware pressing it didn't actually get back to the
+               // Arranger view. application.panelLayout() (a readable
+               // StringValue, markInterested()'d in init()) lets this
+               // toggle off the real current layout instead of guessing
+               // or tracking separate state.
+         var sessArrCurrentLayout = application.panelLayout().get();
+         try {
+            application.setPanelLayout(sessArrCurrentLayout === "ARRANGE" ? "MIX" : "ARRANGE");
+         } catch (e) {
+            println("Error toggling panel layout: " + e);
+         }
+         host.showPopupNotification(sessArrCurrentLayout === "ARRANGE" ? "Panel: Mix" : "Panel: Arrange");
          break;
 
       case 75: // CLIP/FX -> Toggle Device / Clip View (confirmed note via debug log)
@@ -6582,19 +6597,16 @@ function handleButtonPressInner(note) {
                // and the jog wheel selects/launches scenes instead of its
                // usual transport scrub (see the jog wheel handler and note
                // 87's press handler). Second press exits back to Mixer mode
-               // and hides the clip launcher again, but deliberately does
-               // NOT force any particular panel layout on the way out (see
-               // below) - every other mode-switch button in this file
-               // (TRACK/IO, SEND, PAN, RETURNS, PLUG-INS/F1-F8) already
-               // leaves panel layout alone, only entering Scene mode ever
-               // forces one; forcing "ARRANGE" here too used to hide the
-               // Mixer panel again right as you left the one mode that
-               // guaranteed it was visible - confirmed on hardware this
-               // fought against Mixer Layout Presets/Toggles (F1-F8 above),
-               // which need the Mixer panel to actually stay on screen to
-               // be useful. Not "same toggle pattern as PLUGIN/SEND" (the
-               // old claim here) - neither of those touch panel layout at
-               // all, so this now matches them instead of contradicting them.
+               // AND back to the Arrange panel layout - this is the user's
+               // actual way back to the Arranger view, confirmed on
+               // hardware (a brief attempt at removing this forced switch,
+               // reasoning it fought against Mixer Layout Presets/Toggles
+               // needing the Mixer panel visible, broke that workflow -
+               // reverted). Mixer Layout Presets/Toggles (F1-F8 below) now
+               // covers MODE_SCENE directly instead, so there's no longer
+               // any need to leave B.T.A.'s mode just to use them - this
+               // toggle's own job stays exactly what it always was, purely
+               // getting back to Arranging.
                //
                // ALT+B.T.A. = toggleMasterMeterPluginWindow() - a second,
                // independent access path to the MASTER Wheel feature's
@@ -6624,6 +6636,11 @@ function handleButtonPressInner(note) {
          } else {
             currentMode = MODE_MIXER;
             arranger.isClipLauncherVisible().set(false);
+            try {
+               application.setPanelLayout("ARRANGE");
+            } catch (e) {
+               println("Error setting panel layout to ARRANGE: " + e);
+            }
             host.showPopupNotification("Mode: Mixer (Track Volume / Pan)");
          }
          applyModeChange(null);

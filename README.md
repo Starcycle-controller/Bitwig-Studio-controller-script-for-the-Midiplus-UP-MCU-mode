@@ -191,25 +191,26 @@ Wheel Modifier Combos** and **Confirmed Button Map** below):
   scoping this to `MODE_MIXER` alone would only fire in a mode where the
   mixer might not even be visible.
 - `MODE_SCENE` - entered via B.T.A. (note 79): shows the clip launcher,
-  switches Bitwig to the Mix panel layout (the only mode-switch button in
-  this script that forces a specific Bitwig panel layout at all), and the
-  jog wheel selects/launches scenes instead of scrubbing. A second B.T.A.
-  press exits back to `MODE_MIXER` and hides the clip launcher again, but
-  deliberately does **not** force any panel layout on the way out -
-  confirmed on hardware that it used to force `"ARRANGE"`, which hid the
-  Mixer panel again right as you left the one mode that guaranteed it was
-  visible, fighting against Mixer Layout Presets/Toggles above. **Known
-  minor gap, not yet fixed:** leaving `MODE_SCENE` via a *different*
-  button than B.T.A. (e.g. pressing TRACK/IO or PLUG-INS directly while
-  still in Scene mode) skips this clip-launcher-hide entirely, since it
-  only runs inside B.T.A.'s own toggle-off branch - the clip launcher can
-  stay visibly on screen after switching modes that way. Cosmetic (doesn't
-  affect fader/encoder behavior), but worth fixing by centralizing it in
-  `applyModeChange()` if it turns out to bother anyone in practice.
-  SHIFT+wheel and/or CTRL+wheel can each optionally also move track
-  selection without
-  disturbing the current scene row - see **Scene Mode: SHIFT+Wheel
-  Selects** / **Scene Mode: CTRL+Wheel Selects** in Mixer settings below.
+  switches Bitwig to the Mix panel layout, and the jog wheel
+  selects/launches scenes instead of scrubbing. A second B.T.A. press
+  exits back to `MODE_MIXER`, hides the clip launcher again, and switches
+  back to the Arrange panel layout - this really is B.T.A.'s own way back
+  to the Arranger view, and forcing it on exit is deliberate (a brief
+  attempt at removing it, reasoning it fought against Mixer Layout
+  Presets/Toggles needing the Mixer panel visible, broke that expected
+  workflow on hardware and was reverted - Mixer Layout Presets/Toggles now
+  covers `MODE_SCENE` directly instead, so there's no need to leave
+  B.T.A.'s mode just to use them). **Known minor gap, not yet fixed:**
+  leaving `MODE_SCENE` via a *different* button than B.T.A. (e.g. pressing
+  TRACK/IO or PLUG-INS directly while still in Scene mode) skips the
+  clip-launcher-hide entirely, since it only runs inside B.T.A.'s own
+  toggle-off branch - the clip launcher can stay visibly on screen after
+  switching modes that way. Cosmetic (doesn't affect fader/encoder
+  behavior), but worth fixing by centralizing it in `applyModeChange()` if
+  it turns out to bother anyone in practice. SHIFT+wheel and/or CTRL+wheel
+  can each optionally also move track selection without disturbing the
+  current scene row - see **Scene Mode: SHIFT+Wheel Selects** / **Scene
+  Mode: CTRL+Wheel Selects** in Mixer settings below.
 
 FLIP (note 43) swaps faders and encoders between volume and pan in
 `MODE_MIXER`, and faders only between volume and macros in `MODE_DEVICE`.
@@ -248,7 +249,7 @@ between modes, so this map holds in either.
 | 54-61 | F1-F8 (default/orange-lit state) | Select device 1-8 directly on the current track (enters `MODE_DEVICE` if needed) and open its window; pressing the already-selected device's key again toggles its window instead. In `MODE_MIXER`, a key with a Mixer Layout Preset/Toggle assigned does that instead - see Mixer settings below |
 | 62-69 | F1-F8 (green-lit state, toggled via SMPTE/BEATS) | Configurable editing function per key, see Function Keys settings below (defaults: F1=Duplicate, F2=Consolidate, F3-F8=None) |
 | 70-73 | SHIFT / OPTION / CTRL / ALT | Modifier hold state; standalone tap action is configurable, see Plugin Mode settings below |
-| 74 | (Live label: SESS/ARR) | Toggle clip launcher / arranger view |
+| 74 | (Live label: SESS/ARR) | Toggle the Mix (Session-style) / Arrange panel layout - reads `application.panelLayout()` to know which way to switch, rather than assuming |
 | 75 | (Live label: CLIP/FX) | Toggle device / clip view |
 | 76 | DRAW | Plain: cycle the automation write mode (Latch -> Touch -> Write). SHIFT: toggle Arranger Automation Write on/off. OPTION: show/hide automation lanes. See **Automation and mode switches** below |
 | 77 | (Live label: BROWSER) | Toggle browser panel |
@@ -1241,14 +1242,23 @@ checked off, uncheck it here until it's retested.
 - [ ] **Mixer Layout Presets & Toggles** (F1-F8 in `MODE_MIXER` and
       `MODE_SCENE`) - first version only checked `MODE_MIXER`, confirmed
       on hardware to fire in the wrong mode (B.T.A./`MODE_SCENE` is the
-      mode that actually shows the Mixer panel); now fixed to cover both,
-      and B.T.A.'s toggle-off no longer forces `"ARRANGE"` panel layout.
-      Needs a full hardware retest: confirm F1/F2's 3-slot presets apply
-      all configured slots in order and land on the exact same layout
-      every press in both modes; confirm F3-F8 each toggle only their
-      assigned section; confirm an unconfigured (`None`) F-key still
-      selects a device exactly as before; confirm leaving/re-entering
-      B.T.A. no longer fights over the visible panel layout.
+      mode that actually shows the Mixer panel); now fixed to cover both.
+      A second attempted fix (removing B.T.A.'s forced `"ARRANGE"` on
+      toggle-off) was confirmed on hardware to break the user's actual way
+      back to the Arranger view, and was reverted - B.T.A.'s toggle-off
+      still forces `"ARRANGE"`, unchanged from the original design. Needs
+      a full hardware retest: confirm F1/F2's 3-slot presets apply all
+      configured slots in order and land on the exact same layout every
+      press in both `MODE_MIXER` and `MODE_SCENE`; confirm F3-F8 each
+      toggle only their assigned section; confirm an unconfigured (`None`)
+      F-key still selects a device exactly as before; confirm B.T.A.
+      itself still reliably gets back to the Arranger view.
+- [ ] **SESS/ARR (note 74)** - changed from a plain clip-launcher-
+      visibility toggle to a real Mix/Arrange panel layout toggle, reading
+      `application.panelLayout()` to know which way to switch - brand new,
+      not yet tested on hardware at all. Confirm it actually switches
+      Bitwig's panel layout both directions, and that the popup text
+      matches what's actually shown.
 - [ ] CURSOR wheel-mode - mode button and wheel-turn behavior both
       untested.
 - [ ] NUDGE wheel-mode - mode button and wheel-turn behavior both
