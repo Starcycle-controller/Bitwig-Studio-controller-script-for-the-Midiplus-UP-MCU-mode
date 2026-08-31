@@ -2299,6 +2299,50 @@ var cueMarkerBank = null; // for SHIFT+HOME's "Bar N" auto-named cue marker feat
 var midiOut = null;
 var midiIn = null;
 
+// MODE_MIXER F1-F8: Mixer Layout Presets/Toggles - requested directly.
+// mixer (host.createMixer(), created in init()) exposes 6 real settable
+// booleans for the Bitwig Mixer panel's own show/hide sections (Clip
+// Launcher, Cross-Fade, Devices, I/O, Sends, Meter) - unlike the mixer-
+// row toggle *actions* in bitwig-actions-reference.txt (Show Sends etc.),
+// these are genuine SettableBooleanValues (.set()/.toggle()), so a preset
+// can force an exact, reliable Show/Hide state rather than just flipping
+// whatever's currently showing. F1/F2 each get a 3-slot "layout preset"
+// (mixerFKeyLayoutPresets below) - up to 3 independent Show/Hide actions
+// applied in slot order (1 then 2 then 3), so two conflicting slots on
+// the same key resolve predictably (last one wins) rather than ambiguously.
+// F3-F8 each get a single section to toggle open/closed one at a time
+// (mixerFKeySingleToggle below). Both are opt-in per key: "None"
+// everywhere (the default) leaves F1-F8 exactly as they've always been
+// (direct device select) - see case 54-61 in the button switch.
+var mixer = null;
+var mixerFKeyLayoutPresets = [["None", "None", "None"], ["None", "None", "None"]]; // index 0 = F1, index 1 = F2
+var mixerFKeySingleToggle = ["None", "None", "None", "None", "None", "None"]; // index 0 = F3 ... index 5 = F8
+
+// The 6 real Mixer panel sections, by plain name (used in both the F1/F2
+// preset slots' "Show X"/"Hide X" values and F3-F8's single-toggle value).
+function getMixerSectionValue(sectionName) {
+   switch (sectionName) {
+      case "Clip Launcher": return mixer.isClipLauncherSectionVisible();
+      case "Cross-Fade": return mixer.isCrossFadeSectionVisible();
+      case "Devices": return mixer.isDeviceSectionVisible();
+      case "I/O": return mixer.isIoSectionVisible();
+      case "Sends": return mixer.isSendSectionVisible();
+      case "Meter": return mixer.isMeterSectionVisible();
+      default: return null;
+   }
+}
+
+// One F1/F2 preset slot's value, e.g. "Show Sends"/"Hide Devices" -
+// "None" (a no-op slot) is checked by the caller, never reaches here.
+function applyMixerLayoutSlot(slotValue) {
+   var isShow = slotValue.indexOf("Show ") === 0;
+   var sectionName = slotValue.substring(5); // "Show "/"Hide " are both 5 chars
+   var sectionValue = getMixerSectionValue(sectionName);
+   if (sectionValue) {
+      sectionValue.set(isShow);
+   }
+}
+
 // Native Bitwig hardware-binding faders (see rebindFaders() below). Motor
 // feedback is handled entirely by Bitwig itself once a slider is bound to a
 // Parameter via setBinding() - no manual sendMidi() needed, and (unlike the
@@ -4120,6 +4164,55 @@ function init() {
       sceneModeTrackStepAccumulator = 0;
    });
 
+   // MODE_MIXER F1-F8: Mixer Layout Presets/Toggles - see
+   // mixerFKeyLayoutPresets/mixerFKeySingleToggle/getMixerSectionValue()
+   // above and case 54-61 in the button switch. Requested directly: F1
+   // and F2 each get a 3-slot preset (up to 3 Show/Hide actions applied
+   // together, e.g. a "mixing" layout and a "arranging" layout the user
+   // sets up once); F3-F8 each get one section to toggle open/closed
+   // individually. "None" everywhere (the default) leaves F1-F8 exactly
+   // as they've always been (direct device select) - only a key that's
+   // actually been given a real action here changes behavior, and only
+   // while in Mixer mode.
+   var MIXER_SECTION_SLOT_OPTIONS = ["None",
+      "Show Clip Launcher", "Hide Clip Launcher",
+      "Show Cross-Fade", "Hide Cross-Fade",
+      "Show Devices", "Hide Devices",
+      "Show I/O", "Hide I/O",
+      "Show Sends", "Hide Sends",
+      "Show Meter", "Hide Meter"];
+   var MIXER_FKEY_LAYOUT_LABELS = ["F1", "F2"];
+   for (var mixerLayoutKeyIdx = 0; mixerLayoutKeyIdx < 2; mixerLayoutKeyIdx++) {
+      (function (keyIdx) {
+         for (var slotIdx = 0; slotIdx < 3; slotIdx++) {
+            (function (slot) {
+               var settingName = "Mixer Layout " + MIXER_FKEY_LAYOUT_LABELS[keyIdx] +
+                  ": Slot " + (slot + 1);
+               var setting = host.getPreferences().getEnumSetting(
+                  settingName, "Mixer", MIXER_SECTION_SLOT_OPTIONS, "None");
+               setting.markInterested();
+               setting.addValueObserver(function (value) {
+                  mixerFKeyLayoutPresets[keyIdx][slot] = value;
+               });
+            })(slotIdx);
+         }
+      })(mixerLayoutKeyIdx);
+   }
+
+   var MIXER_SECTION_TOGGLE_OPTIONS = ["None", "Clip Launcher", "Cross-Fade", "Devices", "I/O", "Sends", "Meter"];
+   var MIXER_FKEY_SINGLE_LABELS = ["F3", "F4", "F5", "F6", "F7", "F8"];
+   for (var mixerSingleKeyIdx = 0; mixerSingleKeyIdx < 6; mixerSingleKeyIdx++) {
+      (function (keyIdx) {
+         var settingName = "Mixer Layout " + MIXER_FKEY_SINGLE_LABELS[keyIdx] + ": Toggle Section";
+         var setting = host.getPreferences().getEnumSetting(
+            settingName, "Mixer", MIXER_SECTION_TOGGLE_OPTIONS, "None");
+         setting.markInterested();
+         setting.addValueObserver(function (value) {
+            mixerFKeySingleToggle[keyIdx] = value;
+         });
+      })(mixerSingleKeyIdx);
+   }
+
    // See selectLedVelocityFor()/armedLedBlinkTick() above. Turning this
    // off immediately restores every SELECT LED to its plain isSelected
    // state via refreshChannelStripLEDs() (selectLedVelocityFor() checks
@@ -4206,6 +4299,7 @@ function init() {
    transport = host.createTransport();
    application = host.createApplication();
    arranger = host.createArranger();
+   mixer = host.createMixer(); // MODE_MIXER F1-F8 layout presets/toggles - see getMixerSectionValue() above
 
    // ZOOM+LEFT/RIGHT (see case 98/99 below) - Arranger extends
    // TimelineEditor, whose getHorizontalScrollbarModel() exposes the
@@ -6195,6 +6289,41 @@ function handleButtonPressInner(note) {
          // device, whether that means entering Device mode fresh or just
          // switching devices while already in it.
          var fkeyDeviceIdx = note - 54;
+         // MODE_MIXER F1-F8: Mixer Layout Presets/Toggles - see
+         // mixerFKeyLayoutPresets/mixerFKeySingleToggle/
+         // getMixerSectionValue() above. Opt-in per key: only intercepts
+         // here if this specific key actually has something configured
+         // (not all "None") - otherwise falls through to the normal
+         // device-select behavior below, unchanged, exactly as it's
+         // always worked in Mixer mode until now.
+         if (currentMode === MODE_MIXER) {
+            if (fkeyDeviceIdx < 2) {
+               var mixerPreset = mixerFKeyLayoutPresets[fkeyDeviceIdx];
+               if (mixerPreset[0] !== "None" || mixerPreset[1] !== "None" || mixerPreset[2] !== "None") {
+                  // Applied in slot order (1 then 2 then 3) - if two slots
+                  // on the same key contradict each other (e.g. "Show
+                  // Sends" then "Hide Sends"), the later slot simply wins,
+                  // a well-defined outcome rather than an ambiguous one.
+                  for (var mixerSlotIdx = 0; mixerSlotIdx < 3; mixerSlotIdx++) {
+                     if (mixerPreset[mixerSlotIdx] !== "None") {
+                        applyMixerLayoutSlot(mixerPreset[mixerSlotIdx]);
+                     }
+                  }
+                  host.showPopupNotification("Mixer Layout " + (fkeyDeviceIdx + 1));
+                  break;
+               }
+            } else {
+               var mixerSingleSection = mixerFKeySingleToggle[fkeyDeviceIdx - 2];
+               if (mixerSingleSection !== "None") {
+                  var mixerSingleValue = getMixerSectionValue(mixerSingleSection);
+                  if (mixerSingleValue) {
+                     mixerSingleValue.toggle();
+                     host.showPopupNotification("Mixer: Toggled " + mixerSingleSection);
+                  }
+                  break;
+               }
+            }
+         }
          var wasAlreadyInDeviceMode = currentMode === MODE_DEVICE;
          // Requested directly: pressing the SAME F-key again, for the
          // device that's already selected, toggles that device's own

@@ -180,7 +180,12 @@ Wheel Modifier Combos** and **Confirmed Button Map** below):
   54-61), which also jump directly to device 1-8 on the chain and open its
   plugin window. Pressing the SAME F-key again for the already-selected
   device toggles its window closed/open instead of reselecting it; pressing
-  a *different* F-key selects that device and opens its window.
+  a *different* F-key selects that device and opens its window. **In
+  `MODE_MIXER` specifically**, an F-key that's been given a Mixer Layout
+  Preset/Toggle assignment (see **Mixer Layout Presets & Toggles** in
+  Mixer settings below) does that instead of selecting a device - opt-in
+  per key, so an unconfigured F-key keeps this exact device-select
+  behavior even while in Mixer mode.
 - `MODE_SCENE` - entered via B.T.A. (note 79): shows the clip launcher,
   switches Bitwig to the Mix panel layout, and the jog wheel
   selects/launches scenes instead of scrubbing. SHIFT+wheel and/or
@@ -222,7 +227,7 @@ between modes, so this map holds in either.
 | 51 | REDO | `application.redo()` |
 | 52 | NAME/VALUE | Unbound (no Bitwig equivalent) |
 | 53 | SMPTE/BEATS | Pure hardware mode key - toggles the F1-F8 row's backlight and note range in firmware only; not bound to anything in Bitwig |
-| 54-61 | F1-F8 (default/orange-lit state) | Select device 1-8 directly on the current track (enters `MODE_DEVICE` if needed) and open its window; pressing the already-selected device's key again toggles its window instead |
+| 54-61 | F1-F8 (default/orange-lit state) | Select device 1-8 directly on the current track (enters `MODE_DEVICE` if needed) and open its window; pressing the already-selected device's key again toggles its window instead. In `MODE_MIXER`, a key with a Mixer Layout Preset/Toggle assigned does that instead - see Mixer settings below |
 | 62-69 | F1-F8 (green-lit state, toggled via SMPTE/BEATS) | Configurable editing function per key, see Function Keys settings below (defaults: F1=Duplicate, F2=Consolidate, F3-F8=None) |
 | 70-73 | SHIFT / OPTION / CTRL / ALT | Modifier hold state; standalone tap action is configurable, see Plugin Mode settings below |
 | 74 | (Live label: SESS/ARR) | Toggle clip launcher / arranger view |
@@ -700,6 +705,36 @@ for paging the whole bank). SHIFT is checked first if both happen to be
 enabled and held at once. Shares the same underlying track-slot state
 with SHIFT+Wheel, so switching which modifier you hold mid-session
 continues from wherever the other left off rather than resetting.
+
+**Mixer Layout Presets & Toggles** (F1-F8, only active in `MODE_MIXER`) -
+requested directly: repurposes the orange F1-F8 row, while in Mixer mode
+specifically, to show/hide sections of Bitwig's own Mixer panel instead
+of selecting a device. Built on `host.createMixer()`'s 6 real settable
+booleans (`isClipLauncherSectionVisible()`, `isCrossFadeSectionVisible()`,
+`isDeviceSectionVisible()`, `isIoSectionVisible()`, `isSendSectionVisible()`,
+`isMeterSectionVisible()`) - genuine `.set()`/`.toggle()` calls, not the
+generic "Show Sends"-style Actions (which are plain toggles with no way
+to force a specific state) - so a preset always lands on the exact same
+result regardless of what was showing before.
+- **`Mixer Layout F1: Slot 1/2/3`** / **`Mixer Layout F2: Slot 1/2/3`**
+  (each `None` / `Show`/`Hide` × the 6 sections, default `None`) - F1 and
+  F2 each get a 3-slot preset, for the two layouts used most (e.g. a
+  "mixing" layout and an "arranging" layout). Slots apply in order
+  (1 then 2 then 3) on a single press; if two slots on the same key
+  contradict each other (e.g. slot 1 = Show Sends, slot 2 = Hide Sends),
+  the later slot simply wins - a well-defined outcome, not an error.
+  Bitwig's Controller Preferences dropdowns can't prevent picking
+  contradictory values across a key's own 3 slots (no API to prune
+  already-picked options from the others), so this ordering rule is what
+  keeps a misconfiguration harmless rather than ambiguous.
+- **`Mixer Layout F3-F8: Toggle Section`** (`None` / one of the 6
+  sections, default `None`) - each of the remaining 6 F-keys gets exactly
+  one section to flip open/closed by itself, for quickly toggling a
+  single row without disturbing the rest of the layout.
+- Leaving an F-key's setting(s) as `None` (the default) leaves it exactly
+  as it's always behaved in Mixer mode - direct device select, same as
+  every other mode. Only a key that's actually been assigned something
+  here changes behavior, and only while `MODE_MIXER` is active.
 
 **Blink Armed Track's SELECT LED** (on/off, default ON) - any channel armed
 for recording blinks its SELECT LED, regardless of whether it's also
@@ -1179,6 +1214,12 @@ checked off, uncheck it here until it's retested.
       disturbing the current scene row, both step directions, that the two
       modifiers share state sensibly, and that plain wheel/wheel-push
       behavior is completely unaffected.
+- [ ] **Mixer Layout Presets & Toggles** (F1-F8 in `MODE_MIXER`) - brand
+      new, not yet tested on hardware at all. Confirm F1/F2's 3-slot
+      presets apply all configured slots in order and land on the exact
+      same layout every press; confirm F3-F8 each toggle only their
+      assigned section; confirm an unconfigured (`None`) F-key still
+      selects a device exactly as before, both in and out of Mixer mode.
 - [ ] CURSOR wheel-mode - mode button and wheel-turn behavior both
       untested.
 - [ ] NUDGE wheel-mode - mode button and wheel-turn behavior both
