@@ -1805,22 +1805,58 @@ var sceneCursorIndex = 0;
 var sceneStepAccumulator = 0;
 var SCENE_STEP_MESSAGES = 4;
 
-// MODE_SCENE SHIFT+Wheel: Track Selection - requested directly, so track
-// selection feels reachable straight from the wheel while browsing scenes
-// (already possible via BANK/CHANNEL wheel-modes or the SELECT1-8 buttons,
-// but those need leaving Scene mode's own SCROLL wheel-mode). Deliberately
-// a separate accumulator/index from sceneCursorIndex/sceneStepAccumulator
-// above - SHIFT+wheel must never disturb the current scene row, and vice
-// versa, so the two dimensions stay fully independent. "Off" (see
-// sceneModeShiftWheelAction below) means SHIFT+wheel does nothing extra in
+// MODE_SCENE SHIFT+Wheel / CTRL+Wheel: Track Selection - requested
+// directly, so track selection feels reachable straight from the wheel
+// while browsing scenes (already possible via BANK/CHANNEL wheel-modes or
+// the SELECT1-8 buttons, but those need leaving Scene mode's own SCROLL
+// wheel-mode; Scene mode itself already shows the mixer view alongside
+// the clip launcher, per its own Mix panel layout switch, which is why
+// this is worth reaching straight from here). Two independently
+// configurable modifiers, SHIFT and CTRL, each with their own Off/
+// "Select Track"/"Page Track Bank" choice (sceneModeShiftWheelAction/
+// sceneModeCtrlWheelAction below) - e.g. one modifier could page the
+// track bank while the other selects a single track, or only one might be
+// enabled at all. SHIFT is checked first, so if a workflow ever enables
+// both at once, holding just CTRL (not SHIFT) is what reaches the CTRL
+// action. Both share the same sceneModeTrackSlotIndex/
+// sceneModeTrackStepAccumulator pair below - deliberately separate from
+// sceneCursorIndex/sceneStepAccumulator above, so neither modifier's track
+// navigation can ever disturb the current scene row, and vice versa.
+// "Off" on both (the default) means SHIFT/CTRL+wheel do nothing extra in
 // Scene mode, same as before this feature existed.
 var sceneModeShiftWheelAction = "Off";
-// Which of the current 8-track bank's slots (0-7) is "selected" via this
-// feature specifically - only meaningful/used when sceneModeShiftWheelAction
-// is "Select Track". Reset to 0 whenever Scene mode is (re-)entered, same
-// as sceneCursorIndex.
+var sceneModeCtrlWheelAction = "Off";
+// Which of the current 8-track bank's slots (0-7) is "selected" via
+// either modifier above - only meaningful/used when the active modifier's
+// action is "Select Track". Reset to 0 whenever Scene mode is (re-)entered,
+// same as sceneCursorIndex.
 var sceneModeTrackSlotIndex = 0;
 var sceneModeTrackStepAccumulator = 0;
+
+// Shared by both the SHIFT and CTRL variants of MODE_SCENE's track-
+// selection option above - action is whichever modifier's own configured
+// value fired ("Select Track" or "Page Track Bank"; never called for
+// "Off", the caller already checked that).
+function performSceneModeTrackSelectAction(action, backwards) {
+   if (action === "Page Track Bank") {
+      if (backwards) {
+         scrollActiveBankStepBackward();
+         host.showPopupNotification("Nudge Channel Left");
+      } else {
+         scrollActiveBankStepForward();
+         host.showPopupNotification("Nudge Channel Right");
+      }
+      return;
+   }
+   sceneModeTrackSlotIndex = backwards ?
+      Math.max(0, sceneModeTrackSlotIndex - 1) :
+      Math.min(7, sceneModeTrackSlotIndex + 1);
+   selectBankSlot(sceneModeTrackSlotIndex);
+   var selectedSlotTrack = activeTrackAt(sceneModeTrackSlotIndex);
+   var selectedSlotTrackName = (selectedSlotTrack && selectedSlotTrack.name().get()) ||
+      ("Track " + (sceneModeTrackSlotIndex + 1));
+   host.showPopupNotification("Track " + (sceneModeTrackSlotIndex + 1) + ": " + selectedSlotTrackName);
+}
 
 // BANK PREV/NEXT Buttons (Notes 46/47): a press still reaches
 // handleButtonPress() for their own bank-paging action, but held state is
@@ -4070,6 +4106,20 @@ function init() {
       sceneModeTrackStepAccumulator = 0;
    });
 
+   // Same as SHIFT+Wheel above, an independent second modifier - default
+   // Off since SHIFT already covers "Select Track" out of the box; enable
+   // this too if a workflow wants both modifiers mapped at once (e.g.
+   // SHIFT for a single track, CTRL for paging the whole bank).
+   var sceneModeCtrlWheelActionSetting = host.getPreferences().getEnumSetting(
+      "Scene Mode: CTRL+Wheel Selects", "Mixer",
+      ["Off", "Select Track", "Page Track Bank"], "Off");
+   sceneModeCtrlWheelActionSetting.markInterested();
+   sceneModeCtrlWheelActionSetting.addValueObserver(function (value) {
+      sceneModeCtrlWheelAction = value;
+      sceneModeTrackSlotIndex = 0;
+      sceneModeTrackStepAccumulator = 0;
+   });
+
    // See selectLedVelocityFor()/armedLedBlinkTick() above. Turning this
    // off immediately restores every SELECT LED to its plain isSelected
    // state via refreshChannelStripLEDs() (selectLedVelocityFor() checks
@@ -5224,36 +5274,27 @@ function onMidi(status, data1, data2) {
          // above) - takes priority over every other modifier combo below,
          // since none of them make sense while browsing scenes. Launching
          // is done separately by note 101's press handler. This default
-         // behavior is never replaced by the SHIFT+wheel option below -
-         // it's purely an added alternative, opt-in, a workflow choice for
-         // the user rather than a takeover of the plain wheel or the
-         // wheel-push launch action.
+         // behavior is never replaced by the SHIFT+wheel/CTRL+wheel
+         // options below - purely an added alternative, opt-in, a
+         // workflow choice for the user rather than a takeover of the
+         // plain wheel or the wheel-push launch action. SHIFT checked
+         // first, then CTRL - see performSceneModeTrackSelectAction()
+         // above for the shared implementation both call into.
          if (isShiftPressed && sceneModeShiftWheelAction !== "Off") {
             shiftUsedForCombo = true;
             sceneModeTrackStepAccumulator += Math.abs(rawStep);
             if (sceneModeTrackStepAccumulator >= SCENE_STEP_MESSAGES) {
                sceneModeTrackStepAccumulator -= SCENE_STEP_MESSAGES;
-               if (sceneModeShiftWheelAction === "Page Track Bank") {
-                  if (backwards) {
-                     scrollActiveBankStepBackward();
-                     host.showPopupNotification("Nudge Channel Left");
-                  } else {
-                     scrollActiveBankStepForward();
-                     host.showPopupNotification("Nudge Channel Right");
-                  }
-               } else {
-                  // "Select Track" - moves which single slot (0-7) of the
-                  // current 8-track bank is selected, without paging the
-                  // bank window itself - see sceneModeTrackSlotIndex above.
-                  sceneModeTrackSlotIndex = backwards ?
-                     Math.max(0, sceneModeTrackSlotIndex - 1) :
-                     Math.min(7, sceneModeTrackSlotIndex + 1);
-                  selectBankSlot(sceneModeTrackSlotIndex);
-                  var selectedSlotTrack = activeTrackAt(sceneModeTrackSlotIndex);
-                  var selectedSlotTrackName = (selectedSlotTrack && selectedSlotTrack.name().get()) ||
-                     ("Track " + (sceneModeTrackSlotIndex + 1));
-                  host.showPopupNotification("Track " + (sceneModeTrackSlotIndex + 1) + ": " + selectedSlotTrackName);
-               }
+               performSceneModeTrackSelectAction(sceneModeShiftWheelAction, backwards);
+            }
+            return;
+         }
+         if (isControlPressed && sceneModeCtrlWheelAction !== "Off") {
+            ctrlUsedForCombo = true;
+            sceneModeTrackStepAccumulator += Math.abs(rawStep);
+            if (sceneModeTrackStepAccumulator >= SCENE_STEP_MESSAGES) {
+               sceneModeTrackStepAccumulator -= SCENE_STEP_MESSAGES;
+               performSceneModeTrackSelectAction(sceneModeCtrlWheelAction, backwards);
             }
             return;
          }

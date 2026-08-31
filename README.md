@@ -183,10 +183,10 @@ Wheel Modifier Combos** and **Confirmed Button Map** below):
   a *different* F-key selects that device and opens its window.
 - `MODE_SCENE` - entered via B.T.A. (note 79): shows the clip launcher,
   switches Bitwig to the Mix panel layout, and the jog wheel
-  selects/launches scenes instead of scrubbing. SHIFT+wheel can
-  optionally also move track selection without disturbing the current
-  scene row - see **Scene Mode: SHIFT+Wheel Selects** in Mixer settings
-  below.
+  selects/launches scenes instead of scrubbing. SHIFT+wheel and/or
+  CTRL+wheel can each optionally also move track selection without
+  disturbing the current scene row - see **Scene Mode: SHIFT+Wheel
+  Selects** / **Scene Mode: CTRL+Wheel Selects** in Mixer settings below.
 
 FLIP (note 43) swaps faders and encoders between volume and pan in
 `MODE_MIXER`, and faders only between volume and macros in `MODE_DEVICE`.
@@ -691,6 +691,16 @@ setting.
   effect as CHANNEL wheel-mode's own step), without necessarily selecting
   one specific track.
 
+**Scene Mode: CTRL+Wheel Selects** (`Off` / `Select Track` / `Page Track
+Bank`, default `Off`) - the same options as SHIFT+Wheel above, but as an
+independent second modifier - default off since SHIFT+Wheel already
+covers `Select Track` out of the box, but enable this too if a workflow
+wants both modifiers mapped at once (e.g. SHIFT for a single track, CTRL
+for paging the whole bank). SHIFT is checked first if both happen to be
+enabled and held at once. Shares the same underlying track-slot state
+with SHIFT+Wheel, so switching which modifier you hold mid-session
+continues from wherever the other left off rather than resetting.
+
 **Blink Armed Track's SELECT LED** (on/off, default ON) - any channel armed
 for recording blinks its SELECT LED, regardless of whether it's also
 selected, so the SELECT row doubles as an always-visible "which tracks are
@@ -1163,10 +1173,11 @@ it turned out broken) - this list tracks status, the feature sections
 carry the detail/evidence. If a later change touches something already
 checked off, uncheck it here until it's retested.
 
-- [ ] **Scene Mode: SHIFT+Wheel Selects** (`Select Track`/`Page Track
-      Bank`) - brand new, not yet tested on hardware at all. Confirm
-      SHIFT+wheel moves track selection without disturbing the current
-      scene row, both step directions, and that plain wheel/wheel-push
+- [ ] **Scene Mode: SHIFT+Wheel Selects** / **CTRL+Wheel Selects**
+      (`Select Track`/`Page Track Bank`) - brand new, not yet tested on
+      hardware at all. Confirm each modifier moves track selection without
+      disturbing the current scene row, both step directions, that the two
+      modifiers share state sensibly, and that plain wheel/wheel-push
       behavior is completely unaffected.
 - [ ] CURSOR wheel-mode - mode button and wheel-turn behavior both
       untested.
