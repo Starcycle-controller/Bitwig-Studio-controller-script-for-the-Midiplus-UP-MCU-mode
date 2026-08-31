@@ -2199,6 +2199,27 @@ var masterMeterDeviceNames = [];
 // see onMidi()'s pitch-bend channel 9 handling and the big comment where
 // the 8 track faders are created in init() for why.
 var lastMasterWheelRaw = null;
+// Exponentially-smoothed version of the same raw value - confirmed on
+// hardware (both plain absolute mode and SHIFT Fine Mode) that reacting
+// to every raw message directly, even scaled down, still visibly
+// "flickers": this wheel's raw reporting jitters up and down by real
+// step-sized amounts even during genuine continuous one-direction
+// turning, and any un-smoothed per-message delta reproduces that jitter
+// 1:1 in the output, however small the overall scale. A simple low-pass
+// filter (see masterWheelSmoothingAlpha below) damps that out - each new
+// raw value only nudges the smoothed value part of the way there, so a
+// single noisy reading can't cause a full-sized visible reversal, while a
+// sustained real trend still comes through over a few messages. Reset to
+// null alongside lastMasterWheelRaw whenever masterWheelPluginModeEnabled
+// is toggled (nothing meaningful to smooth toward yet).
+var masterWheelSmoothedRaw = null;
+// How much each new raw reading moves the smoothed value, 0..1 - 1.0
+// disables smoothing entirely (identical to the old un-smoothed
+// behavior), lower values smooth more but add more lag between actually
+// turning the wheel and volume responding - live from its Controller
+// Preferences % setting ("Responsiveness", framed as the inverse so a
+// higher setting intuitively means "more responsive/less smoothed").
+var masterWheelSmoothingAlpha = 0.4;
 // Net accumulated movement (in raw 14-bit units) since the last
 // open/close trigger, or since lastMasterWheelRaw was last reset.
 var masterWheelAccumulator = 0;
@@ -3444,9 +3465,10 @@ function init() {
    masterWheelPluginModeEnabledSetting.addValueObserver(function (value) {
       masterWheelPluginModeEnabled = value;
       masterWheelAccumulator = 0;
-      // Nothing meaningful to diff the very next channel 9 message
+      // Nothing meaningful to diff/smooth the very next channel 9 message
       // against right after a toggle, in either direction.
       lastMasterWheelRaw = null;
+      masterWheelSmoothedRaw = null;
    });
 
    // Which device on the Master track's own chain to open/close - exact
@@ -3492,6 +3514,23 @@ function init() {
    masterWheelFineModeSensitivitySetting.markInterested();
    masterWheelFineModeSensitivitySetting.addRawValueObserver(function (value) {
       masterWheelFineModeSensitivity = value / 100;
+   });
+
+   // How much of each new raw pitch-bend reading immediately reaches
+   // masterWheelSmoothedRaw - see the low-pass filter in onMidi()'s
+   // pitch-bend channel 9 handling, and masterWheelSmoothedRaw/
+   // masterWheelSmoothingAlpha above. Framed as "Responsiveness" (higher
+   // = less smoothing/more immediate, matching the raw alpha value
+   // directly) rather than "Smoothing", since that's the more intuitive
+   // direction to turn the dial in. Applies in both plain and Fine Mode -
+   // confirmed on hardware that un-smoothed per-message jitter was
+   // visible in both, not just Fine Mode. 100% disables smoothing
+   // entirely (identical to the original un-smoothed behavior).
+   var masterWheelResponsivenessSetting = host.getPreferences().getNumberSetting(
+      "Master Wheel: Responsiveness (%)", "Master Wheel", 10, 100, 5, "%", 40);
+   masterWheelResponsivenessSetting.markInterested();
+   masterWheelResponsivenessSetting.addRawValueObserver(function (value) {
+      masterWheelSmoothingAlpha = value / 100;
    });
 
    // How far (as a percentage of the wheel's full 14-bit pitch-bend
@@ -5093,16 +5132,30 @@ function onMidi(status, data1, data2) {
          lastMasterWheelRaw = masterRaw14;
          return;
       }
-      var masterRawDelta = masterRaw14 - lastMasterWheelRaw;
+      var masterRawJump = masterRaw14 - lastMasterWheelRaw;
       lastMasterWheelRaw = masterRaw14;
-      if (Math.abs(masterRawDelta) > MASTER_WHEEL_RAW_JUMP_IGNORE_THRESHOLD) {
+      if (Math.abs(masterRawJump) > MASTER_WHEEL_RAW_JUMP_IGNORE_THRESHOLD) {
          // The wheel's own internal position counter hit its floor/ceiling
          // and clamped/reset - not a real physical tick. Discarded rather
          // than accumulated, so a rail-clamp can't masquerade as (or
          // corrupt) a real gesture - see MASTER_WHEEL_RAW_JUMP_IGNORE_
-         // THRESHOLD's own comment above.
+         // THRESHOLD's own comment above. Checked against the raw jump,
+         // before smoothing, so one clamp/reset can't drag the smoothed
+         // value toward it either.
          return;
       }
+      // Low-pass filter the raw value before using it for anything else -
+      // see masterWheelSmoothedRaw/masterWheelSmoothingAlpha above for
+      // why (confirmed on hardware that reacting to raw messages
+      // directly, even scaled down for Fine Mode, still visibly
+      // "flickered"). masterRawDelta below is the smoothed value's own
+      // movement, not the raw jump.
+      if (masterWheelSmoothedRaw === null) {
+         masterWheelSmoothedRaw = masterRaw14;
+      }
+      var previousSmoothedRaw = masterWheelSmoothedRaw;
+      masterWheelSmoothedRaw = previousSmoothedRaw + (masterRaw14 - previousSmoothedRaw) * masterWheelSmoothingAlpha;
+      var masterRawDelta = masterWheelSmoothedRaw - previousSmoothedRaw;
       if (masterWheelPluginModeEnabled) {
          // Metering plugin open/close mode. masterTrack.volume() is never
          // referenced anywhere in this branch - this is the only code in
@@ -5144,7 +5197,7 @@ function onMidi(status, data1, data2) {
             shiftUsedForCombo = true;
             masterTrack.volume().inc(masterRawDelta * masterWheelFineModeSensitivity, 16383);
          } else {
-            masterTrack.volume().set(masterRaw14 / 16383);
+            masterTrack.volume().set(masterWheelSmoothedRaw / 16383);
          }
          // Snap to dB Marks (see scheduleFaderSnapDbMarkCheck() above) -
          // reused as-is for the master wheel, gated by its own

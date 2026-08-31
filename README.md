@@ -857,8 +857,28 @@ pitch-bend channel 9 data - it's entirely separate from **SHIFT+Wheel**
 in SCROLL mode (shifts the loop by a bar, see the Jog Wheel Modifier
 Combos table above), which the wheel sends as a completely different
 MIDI message (CC 60) only reachable while the wheel's physical mode
-selector is on SCROLL, not MASTER - the two can never interact. **Not
-yet confirmed on hardware.**
+selector is on SCROLL, not MASTER - the two can never interact.
+**Confirmed on hardware that scaling alone wasn't enough** - direction
+tracking worked, but the wheel's own raw jitter still came through as a
+visible flicker even scaled down, since every raw message (however
+noisy) was still applied immediately. See Responsiveness below for the
+actual fix.
+
+**Master Wheel: Responsiveness (%)** (default 40%, range 10-100%) - a
+low-pass filter applied to the wheel's raw pitch-bend value before it's
+used for anything else (plain mode, Fine Mode, and the metering-plugin
+gesture above all read the filtered value, not the raw one). Confirmed
+on hardware that this wheel's raw reporting jitters up and down by real
+step-sized amounts even during genuine continuous one-direction turning,
+and reacting to every message directly - even scaled down for Fine Mode -
+reproduced that jitter as visible flicker. Each new raw reading only
+moves the filtered value this % of the way toward it, so a single noisy
+reading can't cause a full-sized reversal while a sustained real turn
+still comes through over a few messages. Lower values smooth more but
+add more lag between turning the wheel and volume responding; 100%
+disables smoothing entirely (the original, unfiltered behavior). **Not
+yet confirmed on hardware since this specific fix** - test with both
+plain and SHIFT Fine Mode turning and see whether the flicker is gone.
 
 ### Debug
 
