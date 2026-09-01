@@ -22,7 +22,7 @@
 // unchanged; only the comments below have been updated to note the button's
 // real printed MCU label alongside its Bitwig-repurposed behavior.
 //
-// Faders (see hwFaders/hwMasterFader and rebindFaders() below) use Bitwig's
+// The 8 track faders (see hwFaders and rebindFaders() below) use Bitwig's
 // native hardware-binding API (HardwareSurface.createHardwareSlider() +
 // setBinding()) rather than manually parsing/sending pitch-bend - Bitwig
 // itself keeps the motorized fader position in sync with whatever Parameter
@@ -80,6 +80,29 @@ var TOOL_DEVICE_SCAN_DEPTH = 32;
 // for the LAST device whose name matches EQ_DEVICE_NAME_KEYWORDS. Raise
 // if your chains routinely run deeper than this.
 var EQ_DEVICE_SCAN_DEPTH = 32;
+// MASTER Wheel: Open/Close Metering Plugin (see the pitch-bend channel 9
+// handling in onMidi() below) - this hardware has no separate physical
+// master fader (see the README's "Development Notes" for how this was
+// found); its MASTER wheel-mode substitutes pitch-bend on the same
+// channel this script's master-fader input reads. Off by default, so
+// that pitch-bend still drives masterTrack.volume() exactly as it always
+// has (read and written manually in onMidi(), not via a native
+// HardwareSlider binding - see init()). On, that same wheel input is
+// reinterpreted as open/close for a named device on the Master track
+// (default a metering plugin) instead, and masterTrack.volume() is never
+// touched at all - see the Master Wheel Controller Preferences category.
+var masterWheelPluginModeEnabled = false;
+// Device name to search for on the Master track's own chain. Match is
+// case-sensitive and exact, same convention as TOOL_DEVICE_NAME above -
+// change this (Controller Preferences -> Master Wheel -> Metering Plugin
+// Name) if you use a different metering plugin than ADPTR MetricAB, or if
+// Bitwig reports its name slightly differently than expected once tested
+// on hardware.
+var masterMeterDeviceName = "ADPTR MetricAB";
+// How many devices deep into the Master track's chain to search for a
+// device named masterMeterDeviceName - same default as
+// TOOL_DEVICE_SCAN_DEPTH/EQ_DEVICE_SCAN_DEPTH above.
+var MASTER_METER_DEVICE_SCAN_DEPTH = 32;
 // How many cue markers deep SHIFT+HOME's "Bar N" auto-naming (see
 // findAndRenamePendingCueMarker()/case 89 below) searches to find the
 // marker it just created. Raise if a project routinely has more markers
@@ -1227,7 +1250,7 @@ function scheduleFaderSnapZeroCheck(index, target) {
 // Zero (own generation counter, not shared with it), just against a
 // fixed list of dB marks (see FADER_SNAP_DB_MARKS_MUSICAL/_HARDWARE and
 // faderSnapDbMarkLayout below) instead of a single target. When enabled
-// (default OFF - opt-in), releasing within FADER_SNAP_DB_MARK_RANGE of
+// (default OFF - opt-in), releasing within FADER_SNAP_DB_MARK_RANGE_DB of
 // one of the active layout's marks schedules a check
 // FADER_SNAP_DB_MARK_DELAY_MS later; if the fader is still untouched
 // and still in range, it snaps to that mark's exact value.
@@ -1260,7 +1283,18 @@ function scheduleFaderSnapZeroCheck(index, target) {
 // within ~0.02dB across that range - inverted to
 // normalized = 10^((dB - 6.0206) / 60).
 var faderSnapToDbMarksEnabled = false;
-var FADER_SNAP_DB_MARK_RANGE = 0.03;
+// How close the fader/wheel has to land to a mark to snap to it, in
+// actual dB - not a fraction of the fader's normalized 0..1 travel.
+// Deliberately dB, not normalized %: Bitwig's volume curve is non-linear
+// (steep up near 0dB, much flatter down near -60dB), so a fixed
+// normalized-% tolerance would mean a much wider effective dB window down
+// low than up high - inconsistent and hard to reason about. A dB
+// tolerance stays exactly what it says regardless of where a mark sits on
+// the curve. Default 0.5dB matches a commonly-cited threshold for
+// perceiving a volume difference by ear - requested directly, since a
+// wider window could snap somewhere audibly different from where the
+// fader/wheel actually was.
+var FADER_SNAP_DB_MARK_RANGE_DB = 0.5;
 var FADER_SNAP_DB_MARK_DELAY_MS = 500;
 var FADER_SNAP_DB_MARKS_MUSICAL = [0, -6, -12, -18, -24, -30, -36];
 var FADER_SNAP_DB_MARKS_HARDWARE = [5, 0, -10, -20, -30, -50, -60];
@@ -1272,8 +1306,40 @@ function dbMarkToNormalized(db) {
    return Math.max(0, Math.min(1, Math.pow(10, (db - FADER_SNAP_DB_CURVE_OFFSET) / FADER_SNAP_DB_CURVE_SLOPE)));
 }
 
+// Inverse of dbMarkToNormalized() - used to express the current fader/
+// wheel position in dB so it can be compared against a mark using an
+// actual dB tolerance (FADER_SNAP_DB_MARK_RANGE_DB) instead of a
+// normalized-% one. normalized <= 0 is true silence (-inf dB, below the
+// curve's own domain) - never within range of any real mark, so it can
+// never accidentally match one this way.
+function normalizedToDb(normalized) {
+   if (normalized <= 0) {
+      return -Infinity;
+   }
+   return FADER_SNAP_DB_CURVE_SLOPE * Math.log(normalized) / Math.LN10 + FADER_SNAP_DB_CURVE_OFFSET;
+}
+
 function activeFaderSnapDbMarks() {
    return faderSnapDbMarkLayout === "Hardware Scale" ? FADER_SNAP_DB_MARKS_HARDWARE : FADER_SNAP_DB_MARKS_MUSICAL;
+}
+
+// Master wheel (index 8) has its own independent Snap to dB Marks
+// on/off + layout choice (Master Wheel Controller Preferences category),
+// deliberately separate from the channel faders' faderSnapToDbMarksEnabled/
+// faderSnapDbMarkLayout above - requested directly, since someone may want
+// e.g. channel faders snapping to Hardware Scale while the wheel is either
+// off or on a different layout. "Off" here (the default) returns null,
+// which scheduleFaderSnapDbMarkCheck() below treats as disabled for index 8
+// specifically, independent of the channel faders' own toggle.
+var masterWheelSnapDbMarksLayout = "Off";
+function activeMasterWheelSnapDbMarks() {
+   if (masterWheelSnapDbMarksLayout === "Hardware Scale") {
+      return FADER_SNAP_DB_MARKS_HARDWARE;
+   }
+   if (masterWheelSnapDbMarksLayout === "Musical (Standard)") {
+      return FADER_SNAP_DB_MARKS_MUSICAL;
+   }
+   return null;
 }
 
 // True for whichever fader index/mode combination is plain Track Volume
@@ -1297,15 +1363,21 @@ function scheduleFaderSnapDbMarkCheck(index, target, isVolumeTarget) {
       if (faderSnapDbMarkGeneration[index] !== myGeneration) {
          return;
       }
-      if (!faderSnapToDbMarksEnabled || faderTouchHeld[index] || !isVolumeTarget || !target) {
+      // Master (index 8, the wheel) uses its own independent enable/
+      // layout - see masterWheelSnapDbMarksLayout/activeMasterWheelSnapDbMarks()
+      // above - completely separate from the channel faders' own toggle
+      // below. faderTouchHeld[8] is always undefined/falsy (that array
+      // only covers the 8 real faders), so the touch-held guard never
+      // blocks index 8.
+      var marks = index === 8 ? activeMasterWheelSnapDbMarks() :
+         (faderSnapToDbMarksEnabled ? activeFaderSnapDbMarks() : null);
+      if (!marks || faderTouchHeld[index] || !isVolumeTarget || !target) {
          return;
       }
-      var current = target.get();
-      var marks = activeFaderSnapDbMarks();
+      var currentDb = normalizedToDb(target.get());
       for (var i = 0; i < marks.length; i++) {
-         var markValue = dbMarkToNormalized(marks[i]);
-         if (Math.abs(current - markValue) <= FADER_SNAP_DB_MARK_RANGE) {
-            target.set(markValue);
+         if (Math.abs(currentDb - marks[i]) <= FADER_SNAP_DB_MARK_RANGE_DB) {
+            target.set(dbMarkToNormalized(marks[i]));
             return;
          }
       }
@@ -1330,11 +1402,12 @@ function scheduleFaderSnapDbMarkCheck(index, target, isVolumeTarget) {
 // IMPORTANT CAVEAT, logged and worth repeating here: volume().get()
 // right after volume().set() can only confirm Bitwig's own parameter
 // model holds the value this script itself just wrote - it is NOT an
-// independent physical-position readback. This hardware's motorized
-// fader input is handled entirely through the native setBinding()/
+// independent physical-position readback. This test only covers the 8
+// channel faders (there is no physical master fader on this hardware),
+// whose input is handled entirely through the native setBinding()/
 // setAdjustValueMatcher() plumbing (see the "Motorized Pitchbend
 // Faders" comment in onMidi() above), with no raw pitch-bend byte ever
-// reaching this script's own code - there is no software-visible signal
+// reaching this script's own code for those 8 - there is no software-visible signal
 // distinct from "what we told Bitwig the value is" to compare a
 // physical motor position against. The .get() readback below is still
 // worth logging - it would catch a write silently failing to take
@@ -1732,6 +1805,59 @@ var sceneCursorIndex = 0;
 var sceneStepAccumulator = 0;
 var SCENE_STEP_MESSAGES = 4;
 
+// MODE_SCENE SHIFT+Wheel / CTRL+Wheel: Track Selection - requested
+// directly, so track selection feels reachable straight from the wheel
+// while browsing scenes (already possible via BANK/CHANNEL wheel-modes or
+// the SELECT1-8 buttons, but those need leaving Scene mode's own SCROLL
+// wheel-mode; Scene mode itself already shows the mixer view alongside
+// the clip launcher, per its own Mix panel layout switch, which is why
+// this is worth reaching straight from here). Two independently
+// configurable modifiers, SHIFT and CTRL, each with their own Off/
+// "Select Track"/"Page Track Bank" choice (sceneModeShiftWheelAction/
+// sceneModeCtrlWheelAction below) - e.g. one modifier could page the
+// track bank while the other selects a single track, or only one might be
+// enabled at all. SHIFT is checked first, so if a workflow ever enables
+// both at once, holding just CTRL (not SHIFT) is what reaches the CTRL
+// action. Both share the same sceneModeTrackSlotIndex/
+// sceneModeTrackStepAccumulator pair below - deliberately separate from
+// sceneCursorIndex/sceneStepAccumulator above, so neither modifier's track
+// navigation can ever disturb the current scene row, and vice versa.
+// "Off" on both (the default) means SHIFT/CTRL+wheel do nothing extra in
+// Scene mode, same as before this feature existed.
+var sceneModeShiftWheelAction = "Off";
+var sceneModeCtrlWheelAction = "Off";
+// Which of the current 8-track bank's slots (0-7) is "selected" via
+// either modifier above - only meaningful/used when the active modifier's
+// action is "Select Track". Reset to 0 whenever Scene mode is (re-)entered,
+// same as sceneCursorIndex.
+var sceneModeTrackSlotIndex = 0;
+var sceneModeTrackStepAccumulator = 0;
+
+// Shared by both the SHIFT and CTRL variants of MODE_SCENE's track-
+// selection option above - action is whichever modifier's own configured
+// value fired ("Select Track" or "Page Track Bank"; never called for
+// "Off", the caller already checked that).
+function performSceneModeTrackSelectAction(action, backwards) {
+   if (action === "Page Track Bank") {
+      if (backwards) {
+         scrollActiveBankStepBackward();
+         host.showPopupNotification("Nudge Channel Left");
+      } else {
+         scrollActiveBankStepForward();
+         host.showPopupNotification("Nudge Channel Right");
+      }
+      return;
+   }
+   sceneModeTrackSlotIndex = backwards ?
+      Math.max(0, sceneModeTrackSlotIndex - 1) :
+      Math.min(7, sceneModeTrackSlotIndex + 1);
+   selectBankSlot(sceneModeTrackSlotIndex);
+   var selectedSlotTrack = activeTrackAt(sceneModeTrackSlotIndex);
+   var selectedSlotTrackName = (selectedSlotTrack && selectedSlotTrack.name().get()) ||
+      ("Track " + (sceneModeTrackSlotIndex + 1));
+   host.showPopupNotification("Track " + (sceneModeTrackSlotIndex + 1) + ": " + selectedSlotTrackName);
+}
+
 // BANK PREV/NEXT Buttons (Notes 46/47): a press still reaches
 // handleButtonPress() for their own bank-paging action, but held state is
 // also tracked (either one) so the jog wheel can page through the current
@@ -2107,6 +2233,59 @@ var displayRefreshRetryGeneration = 0;
 var bankScrollLeftSelectIndex = 0;
 var bankScrollRightSelectIndex = 7;
 var masterTrack = null;
+// MASTER Wheel: Open/Close Metering Plugin - runtime state, see
+// masterWheelPluginModeEnabled/masterMeterDeviceName above and
+// findMasterMeterDeviceIndex()/onMidi()'s pitch-bend channel 9 handling
+// below. masterMeterDeviceNames[i] is kept live by one name() observer
+// per scanned slot (empty string = no device there), same pattern as
+// eqDeviceNames - findMasterMeterDeviceIndex() scans it fresh on demand
+// rather than caching a live index, so a runtime change to
+// masterMeterDeviceName takes effect on the very next wheel gesture with
+// no extra bookkeeping.
+var masterMeterDeviceBank = null;
+var masterMeterDeviceNames = [];
+// Raw 14-bit pitch-bend value (0-16383) last seen on channel 9, or null
+// right after masterWheelPluginModeEnabled was toggled (either
+// direction) - the first message after a toggle has nothing meaningful
+// to diff against, so it's used only to seed lastMasterWheelRaw, never
+// to compute a delta. Manual, not part of any HardwareControl binding -
+// see onMidi()'s pitch-bend channel 9 handling and the big comment where
+// the 8 track faders are created in init() for why.
+var lastMasterWheelRaw = null;
+// Net accumulated movement (in raw 14-bit units) since the last
+// open/close trigger, or since lastMasterWheelRaw was last reset.
+var masterWheelAccumulator = 0;
+// How far (in raw 14-bit units, 0-16383 range) the wheel has to move,
+// accumulated, before an open/close fires - live from its Controller
+// Preferences % setting (stored as a fraction there for readability,
+// converted to raw units here since gesture detection now runs directly
+// off the raw pitch-bend stream, not a normalized Parameter value).
+var masterWheelTriggerRange = 0.15 * 16383;
+// A single incoming pitch-bend message's raw value jumping by more than
+// this from the previous one is treated as the wheel's own internal
+// position counter hitting its floor (0) or ceiling (16383) and
+// snapping/clamping, not a real physical tick - confirmed on hardware
+// via an independent OS-level MIDI monitor (receivemidi) that ordinary
+// turning produces steps well under 1000 per message, while hitting a
+// rail produces one large jump. Ignored rather than accumulated, so a
+// rail-clamp can't masquerade as (or corrupt) a real gesture.
+var MASTER_WHEEL_RAW_JUMP_IGNORE_THRESHOLD = 2000;
+// Normal-mode (masterWheelPluginModeEnabled off) master volume control is
+// absolute, not relative/delta-based - masterTrack.volume() is set
+// directly from the wheel's own raw position (masterRaw14/16383), same
+// math a native HardwareSlider binding would apply. Two delta/relative
+// designs were tried and abandoned first: a straight scaled fraction of
+// each message's delta, then an accumulate-then-fixed-step version -
+// both confirmed on hardware to barely respond at all, because this
+// wheel's raw reporting isn't a clean, monotonic direction signal even
+// during genuine slow, deliberate one-tick-at-a-time turning (real test:
+// moving tick to tick left for a whole receivemidi capture netted only
+// +128 raw units out of 16383 - the per-message deltas mostly cancelled
+// each other out). Going absolute sidesteps that: it doesn't depend on
+// delta accuracy at all, just "wherever the wheel currently reports" -
+// see the Fader Snap to dB Marks call in onMidi()'s pitch-bend channel 9
+// handling for how landing on an exact value (0dB especially) is instead
+// handled, idle-debounced, rather than by fighting the raw signal itself.
 var cursorTrack = null;
 var cursorDevice = null;
 var cursorDeviceBank = null; // 8-slot device chain bank for the F1-F8 (notes 54-61) direct device-select feature
@@ -2120,6 +2299,56 @@ var cueMarkerBank = null; // for SHIFT+HOME's "Bar N" auto-named cue marker feat
 var midiOut = null;
 var midiIn = null;
 
+// Mixer Layout Presets/Toggles (F1-F8 in MODE_MIXER and MODE_SCENE) -
+// requested directly. mixer (host.createMixer(), created in init())
+// exposes 6 real settable booleans for the Bitwig Mixer panel's own
+// show/hide sections (Clip Launcher, Cross-Fade, Devices, I/O, Sends,
+// Meter) - unlike the mixer-row toggle *actions* in
+// bitwig-actions-reference.txt (Show Sends etc.), these are genuine
+// SettableBooleanValues (.set()/.toggle()), so a preset can force an
+// exact, reliable Show/Hide state rather than just flipping whatever's
+// currently showing. F1/F2 each get a 3-slot "layout preset"
+// (mixerFKeyLayoutPresets below) - up to 3 independent Show/Hide actions
+// applied in slot order (1 then 2 then 3), so two conflicting slots on
+// the same key resolve predictably (last one wins) rather than ambiguously.
+// F3-F8 each get a single section to toggle open/closed one at a time
+// (mixerFKeySingleToggle below). Both are opt-in per key: "None"
+// everywhere (the default) leaves F1-F8 exactly as they've always been
+// (direct device select) - see case 54-61 in the button switch. Covers
+// both MODE_MIXER and MODE_SCENE (B.T.A.) rather than MODE_MIXER alone -
+// MODE_SCENE is the one mode that actually guarantees the Mixer panel is
+// on screen (forces Bitwig's "MIX" panel layout on entry), so scoping
+// this to MODE_MIXER only would fire in a mode where the mixer might not
+// even be visible.
+var mixer = null;
+var mixerFKeyLayoutPresets = [["None", "None", "None"], ["None", "None", "None"]]; // index 0 = F1, index 1 = F2
+var mixerFKeySingleToggle = ["None", "None", "None", "None", "None", "None"]; // index 0 = F3 ... index 5 = F8
+
+// The 6 real Mixer panel sections, by plain name (used in both the F1/F2
+// preset slots' "Show X"/"Hide X" values and F3-F8's single-toggle value).
+function getMixerSectionValue(sectionName) {
+   switch (sectionName) {
+      case "Clip Launcher": return mixer.isClipLauncherSectionVisible();
+      case "Cross-Fade": return mixer.isCrossFadeSectionVisible();
+      case "Devices": return mixer.isDeviceSectionVisible();
+      case "I/O": return mixer.isIoSectionVisible();
+      case "Sends": return mixer.isSendSectionVisible();
+      case "Meter": return mixer.isMeterSectionVisible();
+      default: return null;
+   }
+}
+
+// One F1/F2 preset slot's value, e.g. "Show Sends"/"Hide Devices" -
+// "None" (a no-op slot) is checked by the caller, never reaches here.
+function applyMixerLayoutSlot(slotValue) {
+   var isShow = slotValue.indexOf("Show ") === 0;
+   var sectionName = slotValue.substring(5); // "Show "/"Hide " are both 5 chars
+   var sectionValue = getMixerSectionValue(sectionName);
+   if (sectionValue) {
+      sectionValue.set(isShow);
+   }
+}
+
 // Native Bitwig hardware-binding faders (see rebindFaders() below). Motor
 // feedback is handled entirely by Bitwig itself once a slider is bound to a
 // Parameter via setBinding() - no manual sendMidi() needed, and (unlike the
@@ -2127,8 +2356,10 @@ var midiIn = null;
 // automation-driven value changes on the physical fader, not just changes
 // that originated from the hardware itself.
 var hwSurface = null;
-var hwFaders = []; // 8 track faders, index 0-7
-var hwMasterFader = null;
+var hwFaders = []; // 8 track faders, index 0-7 - no hwMasterFader here,
+// deliberately: the master fader (pitch-bend channel 9) is handled
+// manually in onMidi() instead of a native HardwareSlider binding - see
+// the big comment where the 8 track faders above are created in init().
 
 // Last pitch-bend value (0-16383) sent to each fader's motor, indexed 0-7
 // for tracks and 8 for master - see updateFaderOutputs() below. Reset to
@@ -3073,8 +3304,9 @@ function init() {
    // Initialize Master Track
    masterTrack = host.createMasterTrack(0);
 
-   // Native hardware-bound faders (see hwFaders/hwMasterFader above and
-   // rebindFaders() below). Each slider's input side is wired once here to
+   // Native hardware-bound faders (see hwFaders above and rebindFaders()
+   // below - the master fader is handled separately, manually, further
+   // down). Each slider's input side is wired once here to
    // its fixed pitch-bend channel (0-7 for tracks, 8 for master - confirmed
    // via console log, unchanged between this hardware's Live and MCU
    // modes); the *target parameter* side is rebound dynamically by
@@ -3091,10 +3323,59 @@ function init() {
          hwFaders[channel] = slider;
       })(faderIdx);
    }
-   hwMasterFader = hwSurface.createHardwareSlider("faderMaster");
-   hwMasterFader.setAdjustValueMatcher(midiIn.createAbsolutePitchBendValueMatcher(8));
-   hwMasterFader.disableTakeOver();
-   hwMasterFader.setBinding(masterTrack.volume());
+   // Master fader input (pitch-bend channel 9, same channel as the 8
+   // track faders' own channel-per-index scheme) is DELIBERATELY handled
+   // manually in onMidi() below, not via a native HardwareSlider
+   // binding/matcher like the 8 track faders above. This hardware has no
+   // separate physical master fader - the MASTER wheel-mode substitutes
+   // this exact channel for one (see the README's Development Notes) -
+   // and the MASTER Wheel: Open/Close Metering Plugin feature needs to
+   // read every incoming message itself and decide what to do with it
+   // BEFORE anything touches masterTrack.volume(), which a native
+   // setAdjustValueMatcher()/setBinding() pair can't do: Bitwig applies a
+   // natively-bound value directly, opaque to script logic, with no hook
+   // to intercept it first. Confirmed on hardware across three rounds of
+   // attempted fixes that trying to "correct" a natively-bound
+   // masterTrack.volume() back after the fact is fundamentally unreliable
+   // and produces visible/audible volume movement during the correction
+   // window - unacceptable for a feature whose whole purpose is
+   // metering the mix without disturbing it. See the pitch-bend channel 9
+   // handling in onMidi() for the actual manual implementation.
+
+   // MASTER Wheel: Open/Close Metering Plugin (and ALT+B.T.A. below) -
+   // device bank over the Master track's own chain, purely for the
+   // masterMeterDeviceName search (same "one name() observer per slot"
+   // pattern as eqDeviceBank above/scanTrackForToolDevice() below).
+   // isWindowOpen() is markInterested() here (not just .set() elsewhere)
+   // because ALT+B.T.A.'s toggle needs to read the current state first,
+   // unlike the wheel gesture's unconditional open/close. Confirmed on
+   // hardware: operating on the bank item's own isWindowOpen() directly
+   // works fine from a clean context like a button press (ALT+B.T.A.) -
+   // see the wheel gesture's own observer below for the one context where
+   // this needed a different fix instead.
+   masterMeterDeviceBank = masterTrack.createDeviceBank(MASTER_METER_DEVICE_SCAN_DEPTH);
+   for (var meterScanIdx = 0; meterScanIdx < MASTER_METER_DEVICE_SCAN_DEPTH; meterScanIdx++) {
+      (function (idx) {
+         var meterDevice = masterMeterDeviceBank.getItemAt(idx);
+         meterDevice.isWindowOpen().markInterested();
+         meterDevice.name().addValueObserver(function (name) {
+            masterMeterDeviceNames[idx] = name;
+         });
+      })(meterScanIdx);
+   }
+
+   // MASTER Wheel: Open/Close Metering Plugin - the gesture detector
+   // itself lives in onMidi()'s manual pitch-bend channel 9 handling, not
+   // here. Earlier versions of this feature tried three different ways
+   // to keep the wheel natively bound to masterTrack.volume() and
+   // "correct" it back afterward (deferred writes, touch() bracketing,
+   // idle-debounced correction) - all three were hardware-confirmed to
+   // still let real volume movement through, since the correction can
+   // only ever run AFTER Bitwig's native binding has already applied the
+   // hardware's value. The only way to guarantee masterTrack.volume() is
+   // never touched at all while this mode is on is to never natively
+   // bind that pitch-bend channel to it in the first place - see the
+   // big comment above where the 8 track faders are created.
 
    // Initialize Cursor Track & Send Bank (16 Send slots for focused track)
    cursorTrack = host.createCursorTrack("MIDIPLUS_CURSOR_TRACK", "Cursor Track", 16, 0, true);
@@ -3225,6 +3506,83 @@ function init() {
    eqDeviceNameKeywordsSetting.addValueObserver(function (value) {
       EQ_DEVICE_NAME_KEYWORDS = value;
       rebuildEqNameRegexes();
+   });
+
+   // MASTER Wheel: Open/Close Metering Plugin (Controller Preferences ->
+   // "Master Wheel" category) - see masterWheelPluginModeEnabled/
+   // masterMeterDeviceName/masterWheelTriggerRange/lastMasterWheelRaw
+   // above and onMidi()'s pitch-bend channel 9 handling for the actual
+   // gesture detector. This hardware has no separate physical master
+   // fader - its MASTER wheel-mode substitutes pitch-bend on channel 9,
+   // which is why that channel is parsed manually in onMidi() rather than
+   // through a native HardwareSlider binding: only that way can this
+   // script decide what a message means (volume vs. open/close) before
+   // any Bitwig Parameter is touched, which is required to guarantee
+   // master volume is never altered while this mode is enabled - see the
+   // README's Development Notes for the full story of why. Off by
+   // default, so master volume stays exactly as reachable as it always
+   // was; on, the same wheel gesture opens/closes a named device's window
+   // on the Master track instead (default: ADPTR MetricAB, a metering
+   // plugin), and master volume itself is never written to at all.
+   // Confirmed on hardware: flipping this checkbox alone did not reliably
+   // switch live behavior back to direct volume control - a script reload
+   // (Settings -> Controllers, the reload icon on this controller's entry)
+   // was needed for the wheel to drive masterTrack.volume() again, even
+   // though addValueObserver below does fire and update
+   // masterWheelPluginModeEnabled immediately. Root cause not isolated;
+   // documented as a known caveat in the README rather than assumed fixed.
+   var masterWheelPluginModeEnabledSetting = host.getPreferences().getBooleanSetting(
+      "Enable MASTER Wheel: Open/Close Metering Plugin", "Master Wheel", false);
+   masterWheelPluginModeEnabledSetting.markInterested();
+   masterWheelPluginModeEnabledSetting.addValueObserver(function (value) {
+      masterWheelPluginModeEnabled = value;
+      masterWheelAccumulator = 0;
+      // Nothing meaningful to diff the very next channel 9 message
+      // against right after a toggle, in either direction.
+      lastMasterWheelRaw = null;
+   });
+
+   // Which device on the Master track's own chain to open/close - exact
+   // name match, same convention as TOOL_DEVICE_NAME. Change this if you
+   // use a different metering plugin than ADPTR MetricAB, or if Bitwig
+   // reports its name slightly differently than expected once tested on
+   // hardware.
+   var masterMeterDeviceNameSetting = host.getPreferences().getStringSetting(
+      "Master Wheel: Metering Plugin Name", "Master Wheel", 100, masterMeterDeviceName);
+   masterMeterDeviceNameSetting.markInterested();
+   masterMeterDeviceNameSetting.addValueObserver(function (value) {
+      masterMeterDeviceName = value;
+   });
+
+   // Normal-mode (metering-plugin mode off) master volume control is
+   // absolute, driven directly off the wheel's own raw position - see the
+   // big comment above where masterWheelAccumulator etc. are declared,
+   // and the pitch-bend channel 9 handling in onMidi(), for why. Landing
+   // on an exact value is handled by reusing the existing Fader Snap to
+   // dB Marks feature (Mixer category below), but with its own
+   // independent enable/layout here rather than sharing the channel
+   // faders' toggle - requested directly, since the two may want
+   // different settings (e.g. channel faders snapping while the wheel
+   // doesn't, or each on a different layout). "Off" (the default) means
+   // the wheel never snaps, regardless of the channel faders' own
+   // setting.
+   var masterWheelSnapDbMarksLayoutSetting = host.getPreferences().getEnumSetting(
+      "Master Wheel: Snap to dB Marks", "Master Wheel",
+      ["Off", "Hardware Scale", "Musical (Standard)"], "Off");
+   masterWheelSnapDbMarksLayoutSetting.markInterested();
+   masterWheelSnapDbMarksLayoutSetting.addValueObserver(function (value) {
+      masterWheelSnapDbMarksLayout = value;
+   });
+
+   // How far (as a percentage of the wheel's full 14-bit pitch-bend
+   // range) the wheel has to move, accumulated, before an open/close
+   // fires - shown here as a percentage for readability, converted to
+   // the raw 14-bit units masterWheelTriggerRange actually uses.
+   var masterWheelTriggerPercentSetting = host.getPreferences().getNumberSetting(
+      "Master Wheel: Movement to Trigger (%)", "Master Wheel", 5, 50, 1, "%", 15);
+   masterWheelTriggerPercentSetting.markInterested();
+   masterWheelTriggerPercentSetting.addRawValueObserver(function (value) {
+      masterWheelTriggerRange = (value / 100) * 16383;
    });
 
    // Function Keys settings (Controller Preferences panel -> "Function
@@ -3658,7 +4016,7 @@ function init() {
    });
 
    // Fader Snap to dB Marks - see faderSnapToDbMarksEnabled/
-   // FADER_SNAP_DB_MARK_RANGE/FADER_SNAP_DB_MARK_DELAY_MS and
+   // FADER_SNAP_DB_MARK_RANGE_DB/FADER_SNAP_DB_MARK_DELAY_MS and
    // scheduleFaderSnapDbMarkCheck() above. Independent toggle from Fader
    // Snap to Zero above (default OFF - opt-in) - someone may want -inf
    // snapping without every round dB number grabbing the fader too.
@@ -3669,11 +4027,20 @@ function init() {
       faderSnapToDbMarksEnabled = value;
    });
 
+   // In actual dB, not a fraction of the fader's normalized travel - see
+   // FADER_SNAP_DB_MARK_RANGE_DB/normalizedToDb() above for why a dB
+   // tolerance is used instead of the original normalized-% one (a fixed
+   // % translated to inconsistent, much wider dB windows lower on
+   // Bitwig's non-linear volume curve). Range goes down to 0.1dB for
+   // listeners who can reliably hear finer differences than the 0.5dB
+   // default (a commonly-cited threshold) - shared by both the channel
+   // faders here and the master wheel's own Snap to dB Marks setting
+   // above.
    var faderSnapDbMarkRangeSetting = host.getPreferences().getNumberSetting(
-      "Fader Snap to dB Marks Range (%)", "Mixer", 0, 10, 0.5, "%", 3);
+      "Fader Snap to dB Marks Range (dB)", "Mixer", 0.1, 5, 0.1, "dB", 0.5);
    faderSnapDbMarkRangeSetting.markInterested();
    faderSnapDbMarkRangeSetting.addRawValueObserver(function(value) {
-      FADER_SNAP_DB_MARK_RANGE = value / 100;
+      FADER_SNAP_DB_MARK_RANGE_DB = value;
    });
 
    var faderSnapDbMarkDelaySetting = host.getPreferences().getNumberSetting(
@@ -3767,6 +4134,92 @@ function init() {
       bankScrollRightSelectIndex = value === "None" ? -1 : (parseInt(value, 10) - 1);
    });
 
+   // Scene Mode (BTA) SHIFT+Wheel: Track Selection - see
+   // sceneModeShiftWheelAction/sceneModeTrackSlotIndex above and the
+   // MODE_SCENE branch of onMidi()'s jog wheel handling. Purely additive -
+   // "Off" (the default) leaves Scene mode exactly as it was: plain wheel
+   // still selects scenes, the wheel push still launches, unaffected by
+   // this setting either way. The other two options let SHIFT+wheel also
+   // move track selection without disturbing the current scene row, in
+   // one of two ways: "Select Track" moves which single slot of the
+   // current 8-track bank is selected/highlighted (same effect as
+   // clicking a track or the SELECT1-8 buttons); "Page Track Bank" instead
+   // pages which 8 tracks are visible (same effect as CHANNEL wheel-mode's
+   // own step), without necessarily selecting one specific track.
+   var sceneModeShiftWheelActionSetting = host.getPreferences().getEnumSetting(
+      "Scene Mode: SHIFT+Wheel Selects", "Mixer",
+      ["Off", "Select Track", "Page Track Bank"], "Select Track");
+   sceneModeShiftWheelActionSetting.markInterested();
+   sceneModeShiftWheelActionSetting.addValueObserver(function (value) {
+      sceneModeShiftWheelAction = value;
+      sceneModeTrackSlotIndex = 0;
+      sceneModeTrackStepAccumulator = 0;
+   });
+
+   // Same as SHIFT+Wheel above, an independent second modifier - default
+   // Off since SHIFT already covers "Select Track" out of the box; enable
+   // this too if a workflow wants both modifiers mapped at once (e.g.
+   // SHIFT for a single track, CTRL for paging the whole bank).
+   var sceneModeCtrlWheelActionSetting = host.getPreferences().getEnumSetting(
+      "Scene Mode: CTRL+Wheel Selects", "Mixer",
+      ["Off", "Select Track", "Page Track Bank"], "Off");
+   sceneModeCtrlWheelActionSetting.markInterested();
+   sceneModeCtrlWheelActionSetting.addValueObserver(function (value) {
+      sceneModeCtrlWheelAction = value;
+      sceneModeTrackSlotIndex = 0;
+      sceneModeTrackStepAccumulator = 0;
+   });
+
+   // Mixer Layout Presets/Toggles (F1-F8, MODE_MIXER and MODE_SCENE) -
+   // see mixerFKeyLayoutPresets/mixerFKeySingleToggle/getMixerSectionValue()
+   // above and case 54-61 in the button switch. Requested directly: F1
+   // and F2 each get a 3-slot preset (up to 3 Show/Hide actions applied
+   // together, e.g. a "mixing" layout and a "arranging" layout the user
+   // sets up once); F3-F8 each get one section to toggle open/closed
+   // individually. "None" everywhere (the default) leaves F1-F8 exactly
+   // as they've always been (direct device select) - only a key that's
+   // actually been given a real action here changes behavior, and only
+   // while in Mixer or Scene mode (see the big comment where mixer is
+   // declared above for why Scene mode is included).
+   var MIXER_SECTION_SLOT_OPTIONS = ["None",
+      "Show Clip Launcher", "Hide Clip Launcher",
+      "Show Cross-Fade", "Hide Cross-Fade",
+      "Show Devices", "Hide Devices",
+      "Show I/O", "Hide I/O",
+      "Show Sends", "Hide Sends",
+      "Show Meter", "Hide Meter"];
+   var MIXER_FKEY_LAYOUT_LABELS = ["F1", "F2"];
+   for (var mixerLayoutKeyIdx = 0; mixerLayoutKeyIdx < 2; mixerLayoutKeyIdx++) {
+      (function (keyIdx) {
+         for (var slotIdx = 0; slotIdx < 3; slotIdx++) {
+            (function (slot) {
+               var settingName = "Mixer Layout " + MIXER_FKEY_LAYOUT_LABELS[keyIdx] +
+                  ": Slot " + (slot + 1);
+               var setting = host.getPreferences().getEnumSetting(
+                  settingName, "Mixer", MIXER_SECTION_SLOT_OPTIONS, "None");
+               setting.markInterested();
+               setting.addValueObserver(function (value) {
+                  mixerFKeyLayoutPresets[keyIdx][slot] = value;
+               });
+            })(slotIdx);
+         }
+      })(mixerLayoutKeyIdx);
+   }
+
+   var MIXER_SECTION_TOGGLE_OPTIONS = ["None", "Clip Launcher", "Cross-Fade", "Devices", "I/O", "Sends", "Meter"];
+   var MIXER_FKEY_SINGLE_LABELS = ["F3", "F4", "F5", "F6", "F7", "F8"];
+   for (var mixerSingleKeyIdx = 0; mixerSingleKeyIdx < 6; mixerSingleKeyIdx++) {
+      (function (keyIdx) {
+         var settingName = "Mixer Layout " + MIXER_FKEY_SINGLE_LABELS[keyIdx] + ": Toggle Section";
+         var setting = host.getPreferences().getEnumSetting(
+            settingName, "Mixer", MIXER_SECTION_TOGGLE_OPTIONS, "None");
+         setting.markInterested();
+         setting.addValueObserver(function (value) {
+            mixerFKeySingleToggle[keyIdx] = value;
+         });
+      })(mixerSingleKeyIdx);
+   }
+
    // See selectLedVelocityFor()/armedLedBlinkTick() above. Turning this
    // off immediately restores every SELECT LED to its plain isSelected
    // state via refreshChannelStripLEDs() (selectLedVelocityFor() checks
@@ -3852,7 +4305,9 @@ function init() {
    // Transport & Application Controls
    transport = host.createTransport();
    application = host.createApplication();
+   application.panelLayout().markInterested(); // SESS/ARR (case 74) reads this to know which layout to toggle to
    arranger = host.createArranger();
+   mixer = host.createMixer(); // F1-F8 Mixer Layout Presets/Toggles - see getMixerSectionValue() above
 
    // ZOOM+LEFT/RIGHT (see case 98/99 below) - Arranger extends
    // TimelineEditor, whose getHorizontalScrollbarModel() exposes the
@@ -4423,6 +4878,62 @@ function findLastEqDeviceIndex() {
    return lastMatch;
 }
 
+// MASTER Wheel: Open/Close Metering Plugin - exact-name match (unlike EQ
+// Mode's keyword search above), same convention as TOOL_DEVICE_NAME's
+// scan. Scans masterMeterDeviceNames fresh on every call rather than
+// caching a live index, so changing the Metering Plugin Name setting at
+// runtime takes effect on the very next wheel gesture with no separate
+// re-scan step needed.
+function findMasterMeterDeviceIndex() {
+   for (var i = 0; i < MASTER_METER_DEVICE_SCAN_DEPTH; i++) {
+      if (masterMeterDeviceNames[i] === masterMeterDeviceName) {
+         return i;
+      }
+   }
+   return -1;
+}
+
+// Opens (openIt=true) or closes (openIt=false) the masterMeterDeviceName
+// device's own plugin window - the actual "call up the metering plugin"
+// action MASTER-wheel gestures trigger, see the masterTrack.volume()
+// observer in init(). Shows a popup either way, including when no
+// matching device is found (same "opening the browser instead" style
+// fallback isn't applicable here since this is Master-track-only and
+// there's no natural chain-end insertion point tied to the gesture).
+function triggerMasterMeterPlugin(openIt) {
+   var deviceIndex = findMasterMeterDeviceIndex();
+   if (deviceIndex < 0) {
+      host.showPopupNotification("No " + masterMeterDeviceName + " on Master track");
+      return;
+   }
+   masterMeterDeviceBank.getItemAt(deviceIndex).isWindowOpen().set(openIt);
+   host.showPopupNotification(masterMeterDeviceName + (openIt ? " Window Opened" : " Window Closed"));
+}
+
+// ALT+B.T.A. (case 79 below) - a second, independent access path to the
+// same metering plugin the MASTER wheel gesture above targets, requested
+// specifically to monitor the master bus while mixing without it being
+// tied to Plugin/Device mode at all: unlike PLUG-INS/F1-F8/EQ Mode, this
+// never touches currentMode, cursorDevice, or
+// closeOtherDeviceWindowsIfConfigured() - opening it never closes any
+// other plugin window, and it doesn't switch away from whatever mode is
+// already active. A plain toggle (unlike the wheel's separate open/close
+// directions) since it's a single button tap - reads the window's actual
+// current state first rather than assuming, so it stays correct even if
+// the window was opened/closed some other way (double-clicking the
+// device in Bitwig itself, for instance) since this was last pressed.
+function toggleMasterMeterPluginWindow() {
+   var deviceIndex = findMasterMeterDeviceIndex();
+   if (deviceIndex < 0) {
+      host.showPopupNotification("No " + masterMeterDeviceName + " on Master track");
+      return;
+   }
+   var meterDevice = masterMeterDeviceBank.getItemAt(deviceIndex);
+   var isOpen = meterDevice.isWindowOpen().get();
+   meterDevice.isWindowOpen().set(!isOpen);
+   host.showPopupNotification(masterMeterDeviceName + (isOpen ? " Window Closed" : " Window Opened"));
+}
+
 // SHIFT+HOME's "Bar N" cue marker naming (case 89) - Transport only
 // offers a bare addCueMarkerAtPlaybackPosition(), no "add and return the
 // new marker"/"add with this name" call, so the only way to reach the
@@ -4732,11 +5243,74 @@ function onMidi(status, data1, data2) {
       debugLog(DEBUG_RAW_MIDI, "RAW CC received - CC#: " + data1 + ", Value: " + data2);
    }
 
-   // 1. Motorized Pitchbend Faders - handled entirely by the native
-   // hwFaders/hwMasterFader hardware bindings (see rebindFaders()), not
-   // here. Bitwig reads the incoming pitch-bend and drives the bound
-   // parameter (and the physical motor, for any value change regardless of
-   // its source) automatically once bound via setBinding().
+   // 1. Motorized Pitchbend Faders - the 8 track faders are handled
+   // entirely by the native hwFaders hardware bindings (see
+   // rebindFaders()), not here: Bitwig reads the incoming pitch-bend and
+   // drives the bound parameter (and the physical motor, for any value
+   // change regardless of its source) automatically once bound via
+   // setBinding(). The master fader (pitch-bend channel 9) is the one
+   // exception - handled manually right here instead, deliberately not
+   // through a native binding, so this script can decide what a message
+   // means BEFORE any Bitwig Parameter is touched - see the big comment
+   // where the 8 track faders are created in init() for why.
+   if (msgType === 0xE0 && channel === 8) {
+      var masterRaw14 = data1 | (data2 << 7);
+      if (lastMasterWheelRaw === null) {
+         // First message since startup or since the mode was toggled -
+         // nothing meaningful to diff against yet, just seed it.
+         lastMasterWheelRaw = masterRaw14;
+         return;
+      }
+      var masterRawDelta = masterRaw14 - lastMasterWheelRaw;
+      lastMasterWheelRaw = masterRaw14;
+      if (Math.abs(masterRawDelta) > MASTER_WHEEL_RAW_JUMP_IGNORE_THRESHOLD) {
+         // The wheel's own internal position counter hit its floor/ceiling
+         // and clamped/reset - not a real physical tick. Discarded rather
+         // than accumulated, so a rail-clamp can't masquerade as (or
+         // corrupt) a real gesture - see MASTER_WHEEL_RAW_JUMP_IGNORE_
+         // THRESHOLD's own comment above.
+         return;
+      }
+      if (masterWheelPluginModeEnabled) {
+         // Metering plugin open/close mode. masterTrack.volume() is never
+         // referenced anywhere in this branch - this is the only code in
+         // the whole script that ever sees channel 9's raw bytes, so
+         // there is no path left by which this gesture could alter
+         // master volume.
+         masterWheelAccumulator += masterRawDelta;
+         if (masterWheelAccumulator >= masterWheelTriggerRange) {
+            masterWheelAccumulator = 0;
+            host.scheduleTask(function () { triggerMasterMeterPlugin(true); }, 0);
+         } else if (masterWheelAccumulator <= -masterWheelTriggerRange) {
+            masterWheelAccumulator = 0;
+            host.scheduleTask(function () { triggerMasterMeterPlugin(false); }, 0);
+         }
+      } else {
+         // Normal behavior (mode off, the default) - absolute position
+         // control, exactly like a native HardwareSlider binding would
+         // apply (see the big comment above where masterWheelAccumulator
+         // etc. are declared for why this is absolute, not relative/
+         // delta-based). No physical master fader exists on this hardware
+         // to give motor feedback to, so a plain .set() is all that's
+         // needed - see updateFaderOutputs() for the separate LCD-facing
+         // readback of this same parameter.
+         masterTrack.volume().set(masterRaw14 / 16383);
+         // Snap to dB Marks (see scheduleFaderSnapDbMarkCheck() above) -
+         // reused as-is for the master wheel, gated by its own
+         // masterWheelSnapDbMarksLayout setting, independent of the
+         // channel faders' own toggle. Calling it on every message rather
+         // than just on release (as the 8 real faders do) works because
+         // it's already its own idle-debounce: each call just re-arms the
+         // FADER_SNAP_DB_MARK_DELAY_MS timer, so as long as messages keep
+         // arriving nothing fires - only once the wheel actually goes
+         // quiet does the scheduled check run and (if still in range)
+         // snap.
+         if (masterWheelSnapDbMarksLayout !== "Off") {
+            scheduleFaderSnapDbMarkCheck(8, masterTrack.volume(), true);
+         }
+      }
+      return;
+   }
 
    // 2. Rotary Encoders (CC 16-23 on Channel 1: 0xB0)
    if (msgType === 0xB0 && data1 >= 16 && data1 <= 23) {
@@ -4801,7 +5375,31 @@ function onMidi(status, data1, data2) {
          // cursor within the 8-scene bank window (see sceneCursorIndex
          // above) - takes priority over every other modifier combo below,
          // since none of them make sense while browsing scenes. Launching
-         // is done separately by note 101's press handler.
+         // is done separately by note 101's press handler. This default
+         // behavior is never replaced by the SHIFT+wheel/CTRL+wheel
+         // options below - purely an added alternative, opt-in, a
+         // workflow choice for the user rather than a takeover of the
+         // plain wheel or the wheel-push launch action. SHIFT checked
+         // first, then CTRL - see performSceneModeTrackSelectAction()
+         // above for the shared implementation both call into.
+         if (isShiftPressed && sceneModeShiftWheelAction !== "Off") {
+            shiftUsedForCombo = true;
+            sceneModeTrackStepAccumulator += Math.abs(rawStep);
+            if (sceneModeTrackStepAccumulator >= SCENE_STEP_MESSAGES) {
+               sceneModeTrackStepAccumulator -= SCENE_STEP_MESSAGES;
+               performSceneModeTrackSelectAction(sceneModeShiftWheelAction, backwards);
+            }
+            return;
+         }
+         if (isControlPressed && sceneModeCtrlWheelAction !== "Off") {
+            ctrlUsedForCombo = true;
+            sceneModeTrackStepAccumulator += Math.abs(rawStep);
+            if (sceneModeTrackStepAccumulator >= SCENE_STEP_MESSAGES) {
+               sceneModeTrackStepAccumulator -= SCENE_STEP_MESSAGES;
+               performSceneModeTrackSelectAction(sceneModeCtrlWheelAction, backwards);
+            }
+            return;
+         }
          sceneStepAccumulator += Math.abs(rawStep);
          if (sceneStepAccumulator >= SCENE_STEP_MESSAGES) {
             sceneStepAccumulator -= SCENE_STEP_MESSAGES;
@@ -5280,8 +5878,10 @@ function onMidi(status, data1, data2) {
       // SELECT1-8 buttons use (note 24-31 above) - inspired by
       // Mossgraber's DrivenByMoss MCU driver, which offers the identical
       // setting. Master (112) always selects the master track, since the
-      // master fader's binding never changes with mode (see hwMasterFader
-      // in init()). The 8 channel faders only select a track while in
+      // master fader's target never changes with mode (it's always
+      // masterTrack.volume(), read/written manually in onMidi() - see the
+      // big comment where the 8 track faders are created in init()). The
+      // 8 channel faders only select a track while in
       // MODE_MIXER - in MODE_SENDS/MODE_DEVICE a fader doesn't correspond
       // to a distinct track per channel (all 8 faders act on the SAME
       // cursor track's sends, or on device macros), so there's nothing
@@ -5697,6 +6297,44 @@ function handleButtonPressInner(note) {
          // device, whether that means entering Device mode fresh or just
          // switching devices while already in it.
          var fkeyDeviceIdx = note - 54;
+         // Mixer Layout Presets/Toggles - see mixerFKeyLayoutPresets/
+         // mixerFKeySingleToggle/getMixerSectionValue() above. Live in
+         // MODE_MIXER AND MODE_SCENE, deliberately - MODE_SCENE (B.T.A.)
+         // is the one mode that actually guarantees Bitwig's Mixer panel
+         // is on screen (it forces the "MIX" panel layout on entry), so
+         // scoping this to MODE_MIXER alone would only ever fire in a
+         // mode where the mixer might not even be visible. Opt-in per
+         // key: only intercepts here if this specific key actually has
+         // something configured (not all "None") - otherwise falls
+         // through to the normal device-select behavior below, unchanged.
+         if (currentMode === MODE_MIXER || currentMode === MODE_SCENE) {
+            if (fkeyDeviceIdx < 2) {
+               var mixerPreset = mixerFKeyLayoutPresets[fkeyDeviceIdx];
+               if (mixerPreset[0] !== "None" || mixerPreset[1] !== "None" || mixerPreset[2] !== "None") {
+                  // Applied in slot order (1 then 2 then 3) - if two slots
+                  // on the same key contradict each other (e.g. "Show
+                  // Sends" then "Hide Sends"), the later slot simply wins,
+                  // a well-defined outcome rather than an ambiguous one.
+                  for (var mixerSlotIdx = 0; mixerSlotIdx < 3; mixerSlotIdx++) {
+                     if (mixerPreset[mixerSlotIdx] !== "None") {
+                        applyMixerLayoutSlot(mixerPreset[mixerSlotIdx]);
+                     }
+                  }
+                  host.showPopupNotification("Mixer Layout " + (fkeyDeviceIdx + 1));
+                  break;
+               }
+            } else {
+               var mixerSingleSection = mixerFKeySingleToggle[fkeyDeviceIdx - 2];
+               if (mixerSingleSection !== "None") {
+                  var mixerSingleValue = getMixerSectionValue(mixerSingleSection);
+                  if (mixerSingleValue) {
+                     mixerSingleValue.toggle();
+                     host.showPopupNotification("Mixer: Toggled " + mixerSingleSection);
+                  }
+                  break;
+               }
+            }
+         }
          var wasAlreadyInDeviceMode = currentMode === MODE_DEVICE;
          // Requested directly: pressing the SAME F-key again, for the
          // device that's already selected, toggles that device's own
@@ -5872,9 +6510,36 @@ function handleButtonPressInner(note) {
       // 62-69 (confirmed via console testing - see README; not yet bound
       // to anything). Do not bind anything to note 53 itself.
 
-      case 74: // SESS/ARR -> Toggle Clip Launcher / Arranger View
-         arranger.isClipLauncherVisible().toggle();
-         host.showPopupNotification("Toggle Session / Arranger View");
+      case 74: // SESS/ARR -> plain: Toggle Mix (Session-style: mixer +
+               // clip launcher) / Arrange panel layout. Previously only
+               // toggled clip launcher visibility within whatever panel
+               // layout happened to already be active, which didn't
+               // match this button's own printed purpose - confirmed on
+               // hardware pressing it didn't actually get back to the
+               // Arranger view. application.panelLayout() (a readable
+               // StringValue, markInterested()'d in init()) lets this
+               // toggle off the real current layout instead of guessing
+               // or tracking separate state.
+               //
+               // SHIFT+SESS/ARR -> requested directly: reintroduces that
+               // original clip-launcher-visibility toggle instead of
+               // losing it, for showing/hiding the small clip-launcher
+               // sidebar while already in Arrange view specifically,
+               // without leaving it (a full Mix-layout switch would show
+               // the whole mixer too, not just the clip slots).
+         if (isShiftPressed) {
+            shiftUsedForCombo = true;
+            arranger.isClipLauncherVisible().toggle();
+            host.showPopupNotification("Toggle Clip Launcher (Arranger)");
+            break;
+         }
+         var sessArrCurrentLayout = application.panelLayout().get();
+         try {
+            application.setPanelLayout(sessArrCurrentLayout === "ARRANGE" ? "MIX" : "ARRANGE");
+         } catch (e) {
+            println("Error toggling panel layout: " + e);
+         }
+         host.showPopupNotification(sessArrCurrentLayout === "ARRANGE" ? "Panel: Mix" : "Panel: Arrange");
          break;
 
       case 75: // CLIP/FX -> Toggle Device / Clip View (confirmed note via debug log)
@@ -5945,14 +6610,35 @@ function handleButtonPressInner(note) {
                // and the jog wheel selects/launches scenes instead of its
                // usual transport scrub (see the jog wheel handler and note
                // 87's press handler). Second press exits back to Mixer mode
-               // AND back to the Arrange panel layout, same toggle pattern
-               // as PLUGIN/SEND.
+               // AND back to the Arrange panel layout - this is the user's
+               // actual way back to the Arranger view, confirmed on
+               // hardware (a brief attempt at removing this forced switch,
+               // reasoning it fought against Mixer Layout Presets/Toggles
+               // needing the Mixer panel visible, broke that workflow -
+               // reverted). Mixer Layout Presets/Toggles (F1-F8 below) now
+               // covers MODE_SCENE directly instead, so there's no longer
+               // any need to leave B.T.A.'s mode just to use them - this
+               // toggle's own job stays exactly what it always was, purely
+               // getting back to Arranging.
+               //
+               // ALT+B.T.A. = toggleMasterMeterPluginWindow() - a second,
+               // independent access path to the MASTER Wheel feature's
+               // metering plugin (see above), requested directly for
+               // monitoring the master bus while mixing without switching
+               // modes at all. Checked first, before the mode toggle.
+         if (isAltPressed) {
+            altUsedForCombo = true;
+            toggleMasterMeterPluginWindow();
+            break;
+         }
          if (currentMode !== MODE_SCENE) {
             currentMode = MODE_SCENE;
             sendBankPage = 0;
             isToolVolumeMode = false;
             sceneCursorIndex = 0;
             sceneStepAccumulator = 0;
+            sceneModeTrackSlotIndex = 0;
+            sceneModeTrackStepAccumulator = 0;
             arranger.isClipLauncherVisible().set(true);
             try {
                application.setPanelLayout("MIX");
@@ -6341,8 +7027,10 @@ function getFaderTarget(i) {
 
 // Same as getFaderTarget(), except also covers the master fader (index 8,
 // notes 104-112's 9th slot) - which getFaderTarget() itself doesn't handle
-// since it's always bound straight to masterTrack.volume() regardless of
-// mode/FLIP (see hwMasterFader in init()). Used by Fader Snap to Zero
+// since it's always masterTrack.volume() regardless of mode/FLIP, read/
+// written manually in onMidi() rather than via a native binding (see the
+// big comment where the 8 track faders are created in init()). Used by
+// Fader Snap to Zero
 // (scheduleFaderSnapZeroCheck() above) to resolve whichever fader index
 // was actually released to its current live target.
 function getFaderSnapZeroTarget(i) {

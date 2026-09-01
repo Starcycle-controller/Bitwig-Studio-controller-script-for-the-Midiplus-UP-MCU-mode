@@ -180,10 +180,37 @@ Wheel Modifier Combos** and **Confirmed Button Map** below):
   54-61), which also jump directly to device 1-8 on the chain and open its
   plugin window. Pressing the SAME F-key again for the already-selected
   device toggles its window closed/open instead of reselecting it; pressing
-  a *different* F-key selects that device and opens its window.
+  a *different* F-key selects that device and opens its window. **In
+  `MODE_MIXER` or `MODE_SCENE` specifically**, an F-key that's been given
+  a Mixer Layout Preset/Toggle assignment (see **Mixer Layout Presets &
+  Toggles** in Mixer settings below) does that instead of selecting a
+  device - opt-in per key, so an unconfigured F-key keeps this exact
+  device-select behavior even in those two modes. Covers `MODE_SCENE` as
+  well as `MODE_MIXER` deliberately - `MODE_SCENE` is the one mode that
+  actually guarantees Bitwig's Mixer panel is on screen (see below), so
+  scoping this to `MODE_MIXER` alone would only fire in a mode where the
+  mixer might not even be visible.
 - `MODE_SCENE` - entered via B.T.A. (note 79): shows the clip launcher,
   switches Bitwig to the Mix panel layout, and the jog wheel
-  selects/launches scenes instead of scrubbing.
+  selects/launches scenes instead of scrubbing. A second B.T.A. press
+  exits back to `MODE_MIXER`, hides the clip launcher again, and switches
+  back to the Arrange panel layout - this really is B.T.A.'s own way back
+  to the Arranger view, and forcing it on exit is deliberate (a brief
+  attempt at removing it, reasoning it fought against Mixer Layout
+  Presets/Toggles needing the Mixer panel visible, broke that expected
+  workflow on hardware and was reverted - Mixer Layout Presets/Toggles now
+  covers `MODE_SCENE` directly instead, so there's no need to leave
+  B.T.A.'s mode just to use them). **Known minor gap, not yet fixed:**
+  leaving `MODE_SCENE` via a *different* button than B.T.A. (e.g. pressing
+  TRACK/IO or PLUG-INS directly while still in Scene mode) skips the
+  clip-launcher-hide entirely, since it only runs inside B.T.A.'s own
+  toggle-off branch - the clip launcher can stay visibly on screen after
+  switching modes that way. Cosmetic (doesn't affect fader/encoder
+  behavior), but worth fixing by centralizing it in `applyModeChange()` if
+  it turns out to bother anyone in practice. SHIFT+wheel and/or CTRL+wheel
+  can each optionally also move track selection without disturbing the
+  current scene row - see **Scene Mode: SHIFT+Wheel Selects** / **Scene
+  Mode: CTRL+Wheel Selects** in Mixer settings below.
 
 FLIP (note 43) swaps faders and encoders between volume and pan in
 `MODE_MIXER`, and faders only between volume and macros in `MODE_DEVICE`.
@@ -219,15 +246,15 @@ between modes, so this map holds in either.
 | 51 | REDO | `application.redo()` |
 | 52 | NAME/VALUE | Unbound (no Bitwig equivalent) |
 | 53 | SMPTE/BEATS | Pure hardware mode key - toggles the F1-F8 row's backlight and note range in firmware only; not bound to anything in Bitwig |
-| 54-61 | F1-F8 (default/orange-lit state) | Select device 1-8 directly on the current track (enters `MODE_DEVICE` if needed) and open its window; pressing the already-selected device's key again toggles its window instead |
+| 54-61 | F1-F8 (default/orange-lit state) | Select device 1-8 directly on the current track (enters `MODE_DEVICE` if needed) and open its window; pressing the already-selected device's key again toggles its window instead. In `MODE_MIXER`, a key with a Mixer Layout Preset/Toggle assigned does that instead - see Mixer settings below |
 | 62-69 | F1-F8 (green-lit state, toggled via SMPTE/BEATS) | Configurable editing function per key, see Function Keys settings below (defaults: F1=Duplicate, F2=Consolidate, F3-F8=None) |
 | 70-73 | SHIFT / OPTION / CTRL / ALT | Modifier hold state; standalone tap action is configurable, see Plugin Mode settings below |
-| 74 | (Live label: SESS/ARR) | Toggle clip launcher / arranger view |
+| 74 | (Live label: SESS/ARR) | Toggle the Mix (Session-style) / Arrange panel layout - reads `application.panelLayout()` to know which way to switch, rather than assuming. SHIFT+press instead toggles the clip launcher sidebar's visibility within Arrange view specifically |
 | 75 | (Live label: CLIP/FX) | Toggle device / clip view |
 | 76 | DRAW | Plain: cycle the automation write mode (Latch -> Touch -> Write). SHIFT: toggle Arranger Automation Write on/off. OPTION: show/hide automation lanes. See **Automation and mode switches** below |
 | 77 | (Live label: BROWSER) | Toggle browser panel |
 | 78 | (Live label: DETAIL) | Toggle note/automation editor panel |
-| 79 | B.T.A. | Toggle `MODE_SCENE` |
+| 79 | B.T.A. (ALT+B.T.A. = toggle metering plugin window) | Toggle `MODE_SCENE`; ALT+press toggles the Master Wheel metering plugin's window, independent of mode - see Master Wheel below |
 | 80 | Unconfirmed | Unbound - needs testing |
 | 81 | Unconfirmed | Unbound - needs testing |
 | 82 | PAGE (left arrow) | `MODE_DEVICE`: page macro bank back. `MODE_MIXER`: jump to previous cue marker and move the loop to follow it - see Mixer Mode PAGE below |
@@ -247,10 +274,10 @@ between modes, so this map holds in either.
 | 100 | ZOOM | Toggle zoom mode for cursor arrows |
 | 101 | Jog wheel push | Momentary "Pan Mode" hold; ALT+press = select item at playhead; SHIFT+CTRL+press = same, one-shot; launches selected scene in `MODE_SCENE` |
 | 104-111 | Fader touch 1-8 | Optionally selects that channel's track, see Mixer settings below |
-| 112 | Fader touch (Master) | Optionally selects the master track |
+| 112 | Fader touch (Master) | Optionally selects the master track - **not confirmed to fire on this 8-fader unit**, see the wheel note below |
 | CC 16-23 | Rotary encoders 1-8 | Mode-dependent (pan/send/macro); SHIFT = stepped or fine adjust, see Encoders settings below |
 | CC 60 | Jog wheel | Arranger scrub, or bar/loop/tempo nudge with modifiers held, or scene navigation in `MODE_SCENE` |
-| Pitch bend ch 0-7 / 8 | Faders 1-8 / Master | Motorized fader input/output |
+| Pitch bend ch 0-7 / 8 | Faders 1-8 / Master | Motorized fader input/output - **channel 8 (Master) is supplied by the jog wheel under MASTER mode on this unit, not a separate physical fader** - see the Jog-Wheel "Mode" Buttons section below |
 
 This hardware also has its own local "mode" buttons for the jog wheel
 (CURSOR / SCROLL / ZOOM / MASTER / MARKER / NUDGE / BANK / CHANNEL, per the
@@ -265,8 +292,28 @@ sends when subsequently turned. Confirmed behavior per mode:
 | MARKER | No MIDI at all | Nothing | Note-On 84/85 - jumps to previous/next cue marker, already bound above |
 | BANK | Note 46/47 (also its own PREV/NEXT press action) | Nothing | Note-On 46/47 - already bound above |
 | CHANNEL | Note 48/49 (also its own PREV/NEXT press action) | Nothing | Note-On 48/49 - already bound above |
+| MASTER | No MIDI at all | Not yet tested | **Pitch-bend, channel 9** - already bound above (see the Master fader note below) |
 
-(CURSOR, MASTER, and NUDGE modes not yet tested.)
+(CURSOR and NUDGE modes not yet tested.)
+
+**This unit has no separate physical master fader - MASTER mode substitutes
+the wheel for one.** Confirmed via an independent OS-level MIDI monitor
+(`receivemidi`, bypassing this script entirely) while turning the wheel
+with MASTER engaged: it sends absolute pitch-bend on MIDI channel 9 -
+exactly the channel `hwMasterFader` was already bound to
+(`createAbsolutePitchBendValueMatcher(8)`, 0-indexed -> real channel 9 ->
+`masterTrack.volume()`), written assuming a literal 9th physical fader.
+That binding was already picking this up correctly and driving Bitwig's
+master track volume as designed - nothing was broken, the "9th fader" was
+just the wheel-under-MASTER-mode all along on this particular unit. This
+also explains why nothing showed in this script's own console while
+testing: pitch-bend claimed by a native `HardwareControl` binding is
+consumed entirely by Bitwig's binding pipeline and never reaches this
+script's `onMidi()` handler at all, the same reason the 8 track faders'
+own motor input never appears in the raw MIDI log either. Since this
+finding, MASTER mode's gesture can optionally be repurposed to open/close
+a metering plugin's window instead of touching master volume at all - see
+**Master Wheel** below.
 
 ---
 
@@ -649,6 +696,71 @@ window gets selected (so Bitwig's own view follows the hardware) after a
 BANK/CHANNEL scroll in that direction. `None` skips selection on that
 scroll direction entirely, leaving whatever was already selected alone.
 
+**Scene Mode: SHIFT+Wheel Selects** (`Off` / `Select Track` / `Page Track
+Bank`, default `Select Track`) - requested directly, a workflow choice for
+the user rather than a replacement of anything: track selection is already
+reachable in Scene mode via BANK/CHANNEL wheel-modes or the SELECT1-8
+buttons, but those need leaving Scene mode's own SCROLL wheel-mode. This
+setting adds an option to reach it straight from SHIFT+wheel instead,
+without ever touching the current scene row - the plain wheel still
+selects scenes and the wheel push still launches regardless of this
+setting.
+- **`Off`** - SHIFT+wheel does nothing extra in Scene mode (same as before
+  this feature existed).
+- **`Select Track`** (default) - moves which single slot (0-7) of the
+  current 8-track bank is selected/highlighted, the same effect as
+  clicking a track or pressing a SELECT1-8 button, without paging which 8
+  tracks are visible.
+- **`Page Track Bank`** - instead pages which 8 tracks are visible (same
+  effect as CHANNEL wheel-mode's own step), without necessarily selecting
+  one specific track.
+
+**Scene Mode: CTRL+Wheel Selects** (`Off` / `Select Track` / `Page Track
+Bank`, default `Off`) - the same options as SHIFT+Wheel above, but as an
+independent second modifier - default off since SHIFT+Wheel already
+covers `Select Track` out of the box, but enable this too if a workflow
+wants both modifiers mapped at once (e.g. SHIFT for a single track, CTRL
+for paging the whole bank). SHIFT is checked first if both happen to be
+enabled and held at once. Shares the same underlying track-slot state
+with SHIFT+Wheel, so switching which modifier you hold mid-session
+continues from wherever the other left off rather than resetting.
+
+**Mixer Layout Presets & Toggles** (F1-F8, active in `MODE_MIXER` **and**
+`MODE_SCENE`) - requested directly: repurposes the orange F1-F8 row, while
+in Mixer or Scene mode, to show/hide sections of Bitwig's own Mixer panel
+instead of selecting a device. Deliberately covers `MODE_SCENE` too, not
+just `MODE_MIXER` - `MODE_SCENE` (B.T.A.) is the one mode that actually
+guarantees the Mixer panel is on screen (it forces Bitwig's "MIX" panel
+layout on entry - see the Modes list above), so scoping this to
+`MODE_MIXER` alone left it firing in a mode where the mixer might not
+even be visible, and silent in the one mode where it was. Built on
+`host.createMixer()`'s 6 real settable
+booleans (`isClipLauncherSectionVisible()`, `isCrossFadeSectionVisible()`,
+`isDeviceSectionVisible()`, `isIoSectionVisible()`, `isSendSectionVisible()`,
+`isMeterSectionVisible()`) - genuine `.set()`/`.toggle()` calls, not the
+generic "Show Sends"-style Actions (which are plain toggles with no way
+to force a specific state) - so a preset always lands on the exact same
+result regardless of what was showing before.
+- **`Mixer Layout F1: Slot 1/2/3`** / **`Mixer Layout F2: Slot 1/2/3`**
+  (each `None` / `Show`/`Hide` × the 6 sections, default `None`) - F1 and
+  F2 each get a 3-slot preset, for the two layouts used most (e.g. a
+  "mixing" layout and an "arranging" layout). Slots apply in order
+  (1 then 2 then 3) on a single press; if two slots on the same key
+  contradict each other (e.g. slot 1 = Show Sends, slot 2 = Hide Sends),
+  the later slot simply wins - a well-defined outcome, not an error.
+  Bitwig's Controller Preferences dropdowns can't prevent picking
+  contradictory values across a key's own 3 slots (no API to prune
+  already-picked options from the others), so this ordering rule is what
+  keeps a misconfiguration harmless rather than ambiguous.
+- **`Mixer Layout F3-F8: Toggle Section`** (`None` / one of the 6
+  sections, default `None`) - each of the remaining 6 F-keys gets exactly
+  one section to flip open/closed by itself, for quickly toggling a
+  single row without disturbing the rest of the layout.
+- Leaving an F-key's setting(s) as `None` (the default) leaves it exactly
+  as it's always behaved in Mixer mode - direct device select, same as
+  every other mode. Only a key that's actually been assigned something
+  here changes behavior, and only while `MODE_MIXER` is active.
+
 **Blink Armed Track's SELECT LED** (on/off, default ON) - any channel armed
 for recording blinks its SELECT LED, regardless of whether it's also
 selected, so the SELECT row doubles as an always-visible "which tracks are
@@ -673,10 +785,16 @@ further touch. Applies to whatever the fader currently controls
 
 **Fader Snap to dB Marks** (on/off, **default OFF**) - same
 release-triggered mechanics, snapping instead to one of a set of "round"
-dB marks once released within **Fader Snap to dB Marks Range (%)** (default
-3%) and left untouched for **Fader Snap to dB Marks Delay (ms)** (default
-500ms). Scoped to plain **Track Volume only**. **Fader Snap to dB Marks
-Layout** (default **Hardware Scale**) picks which marks:
+dB marks once released within **Fader Snap to dB Marks Range (dB)**
+(default 0.5dB, range 0.1-5dB - a commonly-cited threshold for hearing a
+volume difference by ear; go lower if you can reliably hear finer than
+that) and left untouched for **Fader Snap to dB Marks Delay (ms)**
+(default 500ms). The range is an actual dB tolerance, not a fraction of
+the fader's physical travel - deliberate, since Bitwig's volume curve is
+non-linear (steep near 0dB, much flatter down near -60dB), so a fixed
+travel-% tolerance would mean a far wider, inconsistent dB window low on
+the fader than up high. Scoped to plain **Track Volume only**. **Fader
+Snap to dB Marks Layout** (default **Hardware Scale**) picks which marks:
 
 - **Hardware Scale** (default) - `5, 0, -10, -20, -30, -50, -60` dB, the
   marks actually printed on this hardware's own fader scale.
@@ -696,6 +814,126 @@ line visible. Main tracks only; skipped while viewing Returns.
 
 **Disable Automation Write on Mode Change** (default off) - see
 **Automation and mode switches** below.
+
+### Master Wheel
+
+This unit has no separate physical master fader - the jog wheel under
+MASTER mode substitutes pitch-bend on the same MIDI channel this script's
+master-fader input reads, driving `masterTrack.volume()` by default (see
+**Development Notes & Findings** below for how this was confirmed). This
+category lets that same gesture be repurposed instead, for a workflow
+that never rides the master fader by hand and would rather use it to call
+up a metering plugin.
+
+**Enable MASTER Wheel: Open/Close Metering Plugin** (default off) - off,
+MASTER mode behaves exactly as it always has (drives master volume). On,
+the same wheel gesture opens the configured device's plugin window when
+turned right, and closes it when turned left, and master volume is never
+written to at all while it's on - not "held steady," genuinely untouched.
+
+Getting there took three failed attempts, each hardware-confirmed to
+still let real volume movement through, because they all shared the same
+flaw: they kept the wheel's pitch-bend channel natively bound to
+`masterTrack.volume()` via Bitwig's `setAdjustValueMatcher()`/
+`setBinding()`, and tried to "correct" the value back afterward -
+deferring the correction to a fresh tick, bracketing it with
+`Parameter.touch()`, then idle-debouncing it by 300ms. Each got closer,
+but a native binding applies the hardware's value to the Parameter
+directly, at a layer entirely opaque to this script's own code - there is
+no way to intercept or decide what a message means before that happens,
+only to react afterward, and reacting afterward always means the volume
+genuinely moved for at least a moment first. Confirmed via an independent
+OS-level MIDI monitor (`receivemidi`, bypassing this script entirely)
+that the wheel sends a rapid, continuous stream of pitch-bend messages
+for the entire duration of a turn, not one message per detent, so even a
+fast correction was racing a message stream it could never fully win
+against.
+
+The actual fix: stop using a native binding for this channel at all. The
+wheel's pitch-bend channel is now parsed manually in this script's own
+`onMidi()`, exactly like every other control besides the 8 track faders
+already works - the raw bytes are read and interpreted first, and
+`masterTrack.volume()` is written to only when this setting is off. When
+it's on, the open/close accumulator runs entirely off the raw pitch-bend
+stream and the volume parameter is never referenced in that code path at
+all, so there's no longer a "correction" racing anything - there's simply
+nothing left to correct. **Confirmed working on hardware**: repeated
+open/close cycles via the wheel both fire correctly, and master volume
+was watched the entire time and genuinely never moved.
+
+**Known caveat, confirmed on hardware:** toggling this checkbox off did
+not reliably switch the wheel back to controlling master volume live -
+a script reload (Settings -> Controllers -> the reload icon on this
+controller's entry) was needed before the wheel drove
+`masterTrack.volume()` again, even though the setting's own observer does
+fire and update the script's internal state immediately. Root cause not
+isolated. If turning this off doesn't restore normal volume control,
+reload the script rather than assuming something is broken.
+
+**Master Wheel: Metering Plugin Name** (text, default `ADPTR MetricAB`) -
+which device on the Master track's own chain to open/close, matched by
+exact name (case-sensitive), same convention as the `TRLVL` gain-staging
+device. The default matched cleanly against a real ADPTR MetricAB
+instance on hardware - change this only if you use a different metering
+plugin. This same setting also governs **ALT+B.T.A.** (note 79), a
+second, independent way to reach the same plugin: toggles that device's
+window open/closed with a single button press, requested specifically so
+it can stay open while mixing without being tied to Plugin/Device mode at
+all - unlike PLUG-INS/F1-F8/EQ Mode, it never switches `currentMode` and
+never closes any other plugin window (doesn't call
+`closeOtherDeviceWindowsIfConfigured()`), regardless of the **Close Other
+Plugin Windows** setting. Available regardless of whether **Enable MASTER
+Wheel: Open/Close Metering Plugin** above is on - the wheel gesture and
+ALT+B.T.A. are two separate paths to the same device. **Confirmed working
+on hardware**: ALT+B.T.A. opened/closed the metering plugin correctly,
+and stayed open while separately opening/closing other devices' windows
+via the F1-F8 orange direct-select buttons in Plugin Mode - confirming
+the two paths are genuinely independent, as designed.
+
+**Master Wheel: Movement to Trigger (%)** (default 15%, range 5-50%) - how
+far the wheel has to move, accumulated, before an open or close actually
+fires - tune lower for a lighter flick, higher to require a more
+deliberate turn. **Confirmed working on hardware** at the default value.
+
+**Landing on an exact volume value (0dB especially):** with the
+metering-plugin mode above off (normal MASTER mode, driving master
+volume), the wheel maps its raw pitch-bend position straight onto
+`masterTrack.volume()`, the same absolute mapping a native hardware
+binding would use. Two relative/delta-based alternatives were tried
+first and abandoned - scaling each message's own movement down, then an
+accumulate-and-step version - both confirmed on hardware to barely
+respond at all: a real `receivemidi` capture of slow, deliberate,
+one-tick-at-a-time turning (not even a fast flick) netted only +128 raw
+units out of a possible 16383 across the whole capture, because this
+wheel's raw reporting jitters up and down enough, even mid-turn in a
+single direction, that per-message deltas mostly cancel each other out.
+Absolute positioning sidesteps that dead end entirely, since it doesn't
+depend on delta accuracy at all - whatever the wheel currently reports
+simply is the volume.
+
+That still leaves the wheel's own per-detent step size an imprecise way
+to land on a specific number by hand (Bitwig's dB display is a
+non-linear curve, so identical raw steps read as different-sized dB
+jumps depending where on the curve you are). Rather than fight that, the
+existing **Fader Snap to dB Marks** feature (Mixer category above) is
+reused for the master wheel too: getting "close enough" and pausing
+snaps precisely to the nearest mark once the wheel goes idle for
+`Fader Snap to dB Marks Delay` - master (index 8) was already one of the
+feature's supported targets, and simply calling the existing check on
+every incoming wheel message (rather than only on a physical fader's
+touch-release, which this wheel doesn't have) re-arms its own idle timer
+automatically. **Confirmed working on hardware.**
+
+**Master Wheel: Snap to dB Marks** (`Off` / `Hardware Scale` /
+`Musical (Standard)`, default `Off`) - whether the wheel snaps at all,
+and to which mark layout, kept **independent of the channel faders' own
+Fader Snap to dB Marks toggle and layout above** (requested directly) -
+so, for example, channel faders can snap to Hardware Scale while the
+wheel stays off, or the two can use different layouts entirely. Uses the
+same `Fader Snap to dB Marks Range (dB)`/`Fader Snap to dB Marks Delay
+(ms)` settings as the channel faders (those two aren't duplicated
+per-target). Off by default, so enabling Fader Snap to dB Marks for the
+channel faders doesn't silently also start snapping the wheel.
 
 ### Debug
 
@@ -930,6 +1168,27 @@ it's also written up in `BITWIG-API-FEATURE-REQUESTS.md`.
   investigation and the risk (a reproduced LCD-freeze regression) of
   reopening it casually.
 
+- **This unit has no separate physical master fader - the jog wheel
+  substitutes for one under MASTER mode, and the script's pre-existing
+  `hwMasterFader` binding was already handling it correctly.** Reported as
+  "there's a MASTER button and it's adjusting master bus volume, but
+  nothing shows in the console" - confirmed via an independent OS-level
+  MIDI monitor (`receivemidi`, reading the hardware port directly,
+  bypassing this script and Bitwig's controller-script layer entirely)
+  that MASTER-mode wheel turns send absolute pitch-bend on **MIDI channel
+  9** - exactly the channel `hwMasterFader` has been bound to since this
+  script's fader architecture was first built
+  (`midiIn.createAbsolutePitchBendValueMatcher(8)`, 0-indexed -> real
+  channel 9 -> `masterTrack.volume()`), under the assumption of a literal
+  9th physical fader. Nothing was actually broken; the console showed
+  nothing because pitch-bend claimed by a native `HardwareControl`
+  binding is consumed entirely by Bitwig's own binding pipeline and never
+  reaches this script's `onMidi()` handler - the exact same reason the 8
+  track faders' own motor input is invisible to the raw MIDI logger too.
+  Whether note 112 (the master fader's *touch* note) also fires on this
+  unit wasn't separately confirmed - worth checking if fader-touch-select
+  behavior for the master track ever needs to be relied on.
+
 ### Reverted / abandoned
 
 - **Encoder-click volume-to-dB reset** - three different implementation
@@ -945,16 +1204,92 @@ it's also written up in `BITWIG-API-FEATURE-REQUESTS.md`.
   Can/Eraser/Knife) that used to live on plain DRAW - shelved when DRAW was
   made fully automation-centric. Kept as `patches/arranger-tool-cycle.patch`
   for reuse on a different button or controller.
+- **SHIFT+wheel Fine Mode and a low-pass smoothing filter** for the MASTER
+  wheel's volume control - tried to make the wheel usable for careful,
+  continuous volume riding (a relative scaled-down nudge while SHIFT was
+  held, then an exponential filter on the raw signal to damp jitter).
+  Confirmed on hardware, across multiple `receivemidi` captures, that this
+  wheel's raw pitch-bend reporting is genuinely noisy relative to real
+  movement - even "serious" deliberate turns with Fine Mode engaged still
+  showed values jumping backward mid-turn, and no amount of scaling or
+  smoothing fully eliminated it without adding so much lag the control
+  stopped feeling responsive at all. Concluded this wheel just isn't a
+  precise-enough encoder for that use case, and reverted both features -
+  master volume control is back to the plain absolute mapping alone.
+  **Fader Snap to dB Marks (Master Wheel category above) is the intended
+  way to land precisely despite the wheel's own jumpiness**: get close and
+  pause, rather than trying to ride there smoothly. Confirmed working well
+  on hardware in this simpler form.
 
-### Open items
+### Hardware test status
 
-- Notes 50/51/80/81/87 are either unbound or need a fresh confirmation
-  sweep against the current overlay placement.
-- Several Function Keys actions (the 33 generic Editing/File actions beyond
-  the 10 with dedicated typed `Application` methods) are not yet
-  hardware-tested one by one.
-- OPTION+DRAW's `toggle_automation_lanes` action id is not yet
-  hardware-confirmed.
-- A different vendor's per-channel color SysEx variant (e.g. Behringer's
-  single-byte 3-bit color index) hasn't been tried, if track color on this
-  hardware still matters enough to keep chasing.
+The single canonical list of what still needs (re-)confirmation on real
+hardware - kept here instead of scattered across feature sections, so a
+debugging session can work through it top to bottom without hunting for
+stray "not yet tested" notes, and so nothing gets silently forgotten
+between sessions. When an item below gets tested, check it off here *and*
+update its own feature section with the confirmed result (or the fix, if
+it turned out broken) - this list tracks status, the feature sections
+carry the detail/evidence. If a later change touches something already
+checked off, uncheck it here until it's retested.
+
+- [ ] **Scene Mode: SHIFT+Wheel Selects** / **CTRL+Wheel Selects**
+      (`Select Track`/`Page Track Bank`) - brand new, not yet tested on
+      hardware at all. Confirm each modifier moves track selection without
+      disturbing the current scene row, both step directions, that the two
+      modifiers share state sensibly, and that plain wheel/wheel-push
+      behavior is completely unaffected.
+- [ ] **Mixer Layout Presets & Toggles** (F1-F8 in `MODE_MIXER` and
+      `MODE_SCENE`) - first version only checked `MODE_MIXER`, confirmed
+      on hardware to fire in the wrong mode (B.T.A./`MODE_SCENE` is the
+      mode that actually shows the Mixer panel); now fixed to cover both.
+      A second attempted fix (removing B.T.A.'s forced `"ARRANGE"` on
+      toggle-off) was confirmed on hardware to break the user's actual way
+      back to the Arranger view, and was reverted - B.T.A.'s toggle-off
+      still forces `"ARRANGE"`, unchanged from the original design. Needs
+      a full hardware retest: confirm F1/F2's 3-slot presets apply all
+      configured slots in order and land on the exact same layout every
+      press in both `MODE_MIXER` and `MODE_SCENE`; confirm F3-F8 each
+      toggle only their assigned section; confirm an unconfigured (`None`)
+      F-key still selects a device exactly as before; confirm B.T.A.
+      itself still reliably gets back to the Arranger view.
+- [ ] **SESS/ARR (note 74)** - changed from a plain clip-launcher-
+      visibility toggle to a real Mix/Arrange panel layout toggle, reading
+      `application.panelLayout()` to know which way to switch; the
+      original clip-launcher toggle moved to SHIFT+SESS/ARR instead of
+      being lost, for showing/hiding the clip launcher sidebar while
+      already in Arrange view. Brand new, not yet tested on hardware at
+      all. Confirm plain press actually switches Bitwig's panel layout
+      both directions with matching popup text, and SHIFT+press toggles
+      the clip launcher sidebar without changing the panel layout itself.
+- [ ] CURSOR wheel-mode - mode button and wheel-turn behavior both
+      untested.
+- [ ] NUDGE wheel-mode - mode button and wheel-turn behavior both
+      untested.
+- [ ] MASTER wheel-mode's **wheel click** (pressing the wheel in while
+      it's in MASTER mode) - untested; the mode button and wheel-turn
+      behavior are both confirmed, only the click itself isn't.
+- [ ] Note 112 (the master fader's *touch* note, distinct from turning
+      it) - not confirmed to fire on this 8-fader unit at all.
+- [ ] Notes 50/51/80/81/87 - either unbound or need a fresh confirmation
+      sweep against the current overlay placement.
+- [ ] ~33 generic Function Keys Editing/File actions (the ones without a
+      dedicated typed `Application` method) - not hardware-tested one by
+      one.
+- [ ] OPTION+DRAW's `toggle_automation_lanes` action id - not
+      hardware-confirmed.
+- [ ] A different vendor's per-channel color SysEx variant (e.g.
+      Behringer's single-byte 3-bit color index) - never tried; only
+      relevant if track-color display still matters enough to chase
+      further.
+- [ ] Takeover Mode Catch vs. Jump, side-by-side, for Mixer Snapshot
+      recall - one clean Catch-mode retest passed, but a deliberate
+      side-by-side (same session, same snapshot, nothing else changed)
+      was never done - see `patches/README.md`.
+- [ ] **Master Wheel: Snap to dB Marks** dropdown (Off/Hardware
+      Scale/Musical) - the underlying snap behavior was confirmed working
+      before this was split out into its own dedicated per-target
+      setting; the split itself hasn't been separately retested.
+- [ ] **Fader Snap to dB Marks Range (dB)** - switched from a % tolerance
+      to an actual dB one; math should be equivalent in intent, but not
+      retested on hardware since the change.

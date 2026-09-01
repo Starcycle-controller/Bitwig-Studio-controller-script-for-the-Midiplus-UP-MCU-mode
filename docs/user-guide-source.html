@@ -459,7 +459,7 @@ between modes, so this map holds in either.
 <tr><td>76</td><td>DRAW</td><td>Plain: cycle automation write mode (Latch/Touch/Write). SHIFT: toggle Automation Write on/off. OPTION: show/hide automation lanes</td></tr>
 <tr><td>77</td><td>(Live label: BROWSER)</td><td>Toggle browser panel</td></tr>
 <tr><td>78</td><td>(Live label: DETAIL)</td><td>Toggle note/automation editor panel</td></tr>
-<tr><td>79</td><td>B.T.A.</td><td>Toggle Scene mode</td></tr>
+<tr><td>79</td><td>B.T.A. (ALT+press = toggle metering plugin window)</td><td>Toggle Scene mode; ALT+press toggles the metering plugin's window, independent of mode - see README's Master Wheel section</td></tr>
 <tr><td>80, 81, 87</td><td>Unconfirmed</td><td>Unbound - needs testing</td></tr>
 <tr><td>82</td><td>PAGE (left arrow)</td><td>Device mode: page macro bank back. Mixer mode: jump to previous cue marker and follow it with the loop</td></tr>
 <tr><td>83</td><td>PAGE (right arrow)</td><td>Device mode: page macro bank forward. Mixer mode: jump to next cue marker and follow it with the loop</td></tr>
@@ -474,10 +474,11 @@ between modes, so this map holds in either.
 <tr><td>100</td><td>ZOOM</td><td>Toggle zoom mode for cursor arrows</td></tr>
 <tr><td>101</td><td>Jog wheel push</td><td>Momentary "Pan Mode" hold; ALT+press = select item at playhead; SHIFT+CTRL+press = same, one-shot; launches selected scene in Scene mode</td></tr>
 <tr><td>104-111</td><td>Fader touch 1-8</td><td>Optionally selects that channel's track</td></tr>
-<tr><td>112</td><td>Fader touch (Master)</td><td>Optionally selects the master track</td></tr>
+<tr><td>112</td><td>Fader touch (Master)</td><td>Optionally selects the master track - not confirmed on this 8-fader unit</td></tr>
 <tr><td>CC 16-23</td><td>Rotary encoders 1-8</td><td>Mode-dependent (pan/send/macro); SHIFT = stepped or fine adjust</td></tr>
 <tr><td>CC 60</td><td>Jog wheel</td><td>Arranger scrub, or bar/loop/tempo nudge with modifiers, or scene navigation in Scene mode</td></tr>
-<tr><td>Pitch bend ch 0-7 / 8</td><td>Faders 1-8 / Master</td><td>Motorized fader input/output</td></tr>
+<tr><td>Pitch bend ch 0-7</td><td>Faders 1-8</td><td>Motorized fader input/output, native hardware binding</td></tr>
+<tr><td>Pitch bend ch 8</td><td>Master (jog wheel, MASTER mode)</td><td>No separate master fader on this unit - the jog wheel substitutes pitch-bend on this channel instead; parsed manually by the script rather than a native binding, see note below</td></tr>
 </table>
 
 <h2 id="wheel-modes">7. Jog-Wheel "Mode" Buttons</h2>
@@ -495,8 +496,24 @@ subsequently turned.
 <tr><td>MARKER</td><td>No MIDI at all</td><td>Nothing</td><td>Note-On 84/85 - previous/next cue marker</td></tr>
 <tr><td>BANK</td><td>Note 46/47</td><td>Nothing</td><td>Note-On 46/47</td></tr>
 <tr><td>CHANNEL</td><td>Note 48/49</td><td>Nothing</td><td>Note-On 48/49</td></tr>
+<tr><td>MASTER</td><td>No MIDI at all</td><td>Not yet tested</td><td>Pitch-bend, channel 9 - drives master volume, see note below</td></tr>
 </table>
-<p>(CURSOR, MASTER, and NUDGE modes not yet tested.)</p>
+<p>(CURSOR and NUDGE modes not yet tested.)</p>
+<div class="callout setup">
+<p>
+<strong>This unit has no separate physical master fader</strong> - MASTER
+mode substitutes the jog wheel for one. Confirmed with an independent
+OS-level MIDI monitor (<code>receivemidi</code>, reading the hardware port
+directly, bypassing this script entirely): turning the wheel with MASTER
+engaged sends absolute pitch-bend on MIDI channel 9. Unlike the 8 track
+faders (which use a native Bitwig hardware binding, invisible to the
+script's own code), this channel is read and interpreted manually by the
+script itself, so it drives master volume by default but can also be
+repurposed to open/close a metering plugin's window instead, without ever
+touching master volume while that's active - see the README's
+<strong>Master Wheel</strong> Controller Preferences section.
+</p>
+</div>
 
 <div style="page-break-after: always;"></div>
 
