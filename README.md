@@ -249,7 +249,7 @@ between modes, so this map holds in either.
 | 54-61 | F1-F8 (default/orange-lit state) | Select device 1-8 directly on the current track (enters `MODE_DEVICE` if needed) and open its window; pressing the already-selected device's key again toggles its window instead. In `MODE_MIXER`, a key with a Mixer Layout Preset/Toggle assigned does that instead - see Mixer settings below |
 | 62-69 | F1-F8 (green-lit state, toggled via SMPTE/BEATS) | Configurable editing function per key, see Function Keys settings below (defaults: F1=Duplicate, F2=Consolidate, F3-F8=None) |
 | 70-73 | SHIFT / OPTION / CTRL / ALT | Modifier hold state; standalone tap action is configurable, see Plugin Mode settings below |
-| 74 | (Live label: SESS/ARR) | Toggle the Mix (Session-style) / Arrange panel layout - reads `application.panelLayout()` to know which way to switch, rather than assuming |
+| 74 | (Live label: SESS/ARR) | Toggle the Mix (Session-style) / Arrange panel layout - reads `application.panelLayout()` to know which way to switch, rather than assuming. SHIFT+press instead toggles the clip launcher sidebar's visibility within Arrange view specifically |
 | 75 | (Live label: CLIP/FX) | Toggle device / clip view |
 | 76 | DRAW | Plain: cycle the automation write mode (Latch -> Touch -> Write). SHIFT: toggle Arranger Automation Write on/off. OPTION: show/hide automation lanes. See **Automation and mode switches** below |
 | 77 | (Live label: BROWSER) | Toggle browser panel |
@@ -1255,10 +1255,13 @@ checked off, uncheck it here until it's retested.
       itself still reliably gets back to the Arranger view.
 - [ ] **SESS/ARR (note 74)** - changed from a plain clip-launcher-
       visibility toggle to a real Mix/Arrange panel layout toggle, reading
-      `application.panelLayout()` to know which way to switch - brand new,
-      not yet tested on hardware at all. Confirm it actually switches
-      Bitwig's panel layout both directions, and that the popup text
-      matches what's actually shown.
+      `application.panelLayout()` to know which way to switch; the
+      original clip-launcher toggle moved to SHIFT+SESS/ARR instead of
+      being lost, for showing/hiding the clip launcher sidebar while
+      already in Arrange view. Brand new, not yet tested on hardware at
+      all. Confirm plain press actually switches Bitwig's panel layout
+      both directions with matching popup text, and SHIFT+press toggles
+      the clip launcher sidebar without changing the panel layout itself.
 - [ ] CURSOR wheel-mode - mode button and wheel-turn behavior both
       untested.
 - [ ] NUDGE wheel-mode - mode button and wheel-turn behavior both

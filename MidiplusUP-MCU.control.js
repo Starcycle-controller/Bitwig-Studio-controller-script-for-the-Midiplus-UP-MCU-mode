@@ -6510,8 +6510,8 @@ function handleButtonPressInner(note) {
       // 62-69 (confirmed via console testing - see README; not yet bound
       // to anything). Do not bind anything to note 53 itself.
 
-      case 74: // SESS/ARR -> Toggle Mix (Session-style: mixer + clip
-               // launcher) / Arrange panel layout. Previously only
+      case 74: // SESS/ARR -> plain: Toggle Mix (Session-style: mixer +
+               // clip launcher) / Arrange panel layout. Previously only
                // toggled clip launcher visibility within whatever panel
                // layout happened to already be active, which didn't
                // match this button's own printed purpose - confirmed on
@@ -6520,6 +6520,19 @@ function handleButtonPressInner(note) {
                // StringValue, markInterested()'d in init()) lets this
                // toggle off the real current layout instead of guessing
                // or tracking separate state.
+               //
+               // SHIFT+SESS/ARR -> requested directly: reintroduces that
+               // original clip-launcher-visibility toggle instead of
+               // losing it, for showing/hiding the small clip-launcher
+               // sidebar while already in Arrange view specifically,
+               // without leaving it (a full Mix-layout switch would show
+               // the whole mixer too, not just the clip slots).
+         if (isShiftPressed) {
+            shiftUsedForCombo = true;
+            arranger.isClipLauncherVisible().toggle();
+            host.showPopupNotification("Toggle Clip Launcher (Arranger)");
+            break;
+         }
          var sessArrCurrentLayout = application.panelLayout().get();
          try {
             application.setPanelLayout(sessArrCurrentLayout === "ARRANGE" ? "MIX" : "ARRANGE");
