@@ -108,7 +108,7 @@ either way.
 Jump (Immediate)** for day-to-day use, not just a throwaway-branch retest.
 This section (and API Feature Request #12) went through a full round trip
 on whether that switch is Studio-wide or per-controller - see #12 in
-`BITWIG-API-FEATURE-REQUESTS.md` for the whole back-and-forth. Landed on:
+`feature-requests/BITWIG-API-FEATURE-REQUESTS.md` for the whole back-and-forth. Landed on:
 **Studio-wide, confirmed by checking a real Bitwig Studio 6.1 session's
 Controllers panel icon by icon.** Bitwig's own documentation describes a
 per-controller override icon, but it isn't reachable anywhere in the

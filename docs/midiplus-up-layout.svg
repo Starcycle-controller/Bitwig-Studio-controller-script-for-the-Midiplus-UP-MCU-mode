@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 550" font-family="'Helvetica Neue', Arial, sans-serif">
+  <style>
+    .chassis { fill: #1c2430; }
+    .strip { fill: #2a3648; }
+    .lcd { fill: #0e2a20; stroke: #1f5c44; stroke-width: 1; }
+    .lcdtext { fill: #6be3a8; font-size: 8px; font-family: 'SFMono-Regular', Consolas, monospace; }
+    .knob { fill: #3a4658; stroke: #56657a; stroke-width: 1.5; }
+    .knobdot { fill: #c9722a; }
+    .btn { fill: #3a4658; stroke: #56657a; stroke-width: 1; }
+    .btn.orange { fill: #c9722a; stroke: #a85f1f; }
+    .btn.red { fill: #6b3038; stroke: #8a4048; }
+    .btn.dim { fill: #2a3648; stroke: #445068; }
+    .faderTrack { fill: #12181f; stroke: #3a4658; stroke-width: 1; }
+    .faderCap { fill: #c9722a; }
+    .wheel { fill: #2a3648; stroke: #56657a; stroke-width: 2; }
+    .wheelgrip { stroke: #56657a; stroke-width: 1.5; }
+    .label { fill: #cfd6de; font-size: 9px; }
+    .label.small { font-size: 7.5px; fill: #9aa6b4; }
+    .label.tiny { font-size: 7px; fill: #cfd6de; }
+    .label.title { fill: #ffffff; font-size: 11px; font-weight: 700; }
+    .grouplabel { fill: #c9722a; font-size: 7px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+  </style>
+
+  <!-- Chassis -->
+  <rect class="chassis" x="8" y="8" width="1004" height="505" rx="16"/>
+  <text x="30" y="34" class="label title" font-size="14">MIDIPLUS UP - Symbolic Layout (MCU Mode)</text>
+  <text x="30" y="50" class="label small">Button text and order read directly off this project's own Ableton Live overlay hardware (left/right side photos).</text>
+
+  <!-- Section labels -->
+  <text x="30" y="62" class="grouplabel">Assignment / Automation</text>
+  <text x="162" y="62" class="grouplabel">8 Channel Strips (Display / V-Pot / Solo-Mute / Fader / Sel)</text>
+  <text x="856" y="62" class="grouplabel">Page / Jog Wheel / Transport</text>
+
+  <!-- ===================== Left control column ===================== -->
+  <g id="left-col">
+    <rect class="btn dim" x="30" y="70" width="102" height="22" rx="3"/>
+    <text x="81" y="84" text-anchor="middle" class="label tiny">SMPTE/BEATS</text>
+
+    <rect class="btn" x="30" y="100" width="48" height="24" rx="3"/><text x="54" y="115" text-anchor="middle" class="label tiny">I/O</text>
+    <rect class="btn" x="84" y="100" width="48" height="24" rx="3"/><text x="108" y="115" text-anchor="middle" class="label tiny">PAN</text>
+
+    <rect class="btn" x="30" y="130" width="48" height="24" rx="3"/><text x="54" y="145" text-anchor="middle" class="label tiny">PLUG-INS</text>
+    <rect class="btn" x="84" y="130" width="48" height="24" rx="3"/><text x="108" y="145" text-anchor="middle" class="label tiny">SENDS</text>
+
+    <rect class="btn" x="30" y="160" width="48" height="24" rx="3"/><text x="54" y="175" text-anchor="middle" class="label tiny">FLIP</text>
+    <rect class="btn" x="84" y="160" width="48" height="24" rx="3"/><text x="108" y="175" text-anchor="middle" class="label tiny">RETURNS</text>
+
+    <rect class="btn dim" x="30" y="190" width="48" height="24" rx="3"/><text x="54" y="205" text-anchor="middle" class="label tiny">S CLEAR</text>
+    <rect class="btn dim" x="84" y="190" width="48" height="24" rx="3"/><text x="108" y="205" text-anchor="middle" class="label tiny">M CLEAR</text>
+
+    <rect class="btn" x="30" y="220" width="48" height="24" rx="3"/><text x="54" y="235" text-anchor="middle" class="label tiny">SESS/ARR.</text>
+    <rect class="btn" x="84" y="220" width="48" height="24" rx="3"/><text x="108" y="235" text-anchor="middle" class="label tiny">CLIP/FX</text>
+
+    <rect class="btn" x="30" y="250" width="48" height="24" rx="3"/><text x="54" y="265" text-anchor="middle" class="label tiny">BROWSER</text>
+    <rect class="btn" x="84" y="250" width="48" height="24" rx="3"/><text x="108" y="265" text-anchor="middle" class="label tiny">DETAIL</text>
+
+    <rect class="btn" x="30" y="280" width="48" height="24" rx="3"/><text x="54" y="295" text-anchor="middle" class="label tiny">DRAW</text>
+    <rect class="btn" x="84" y="280" width="48" height="24" rx="3"/><text x="108" y="295" text-anchor="middle" class="label tiny">B.T.A.</text>
+
+    <rect class="btn dim" x="30" y="310" width="48" height="24" rx="3"/><text x="54" y="325" text-anchor="middle" class="label tiny">UNDO</text>
+    <rect class="btn dim" x="84" y="310" width="48" height="24" rx="3"/><text x="108" y="325" text-anchor="middle" class="label tiny">REDO</text>
+
+    <rect class="btn red" x="30" y="340" width="48" height="24" rx="3"/><text x="54" y="355" text-anchor="middle" class="label tiny">SHIFT</text>
+    <rect class="btn red" x="84" y="340" width="48" height="24" rx="3"/><text x="108" y="355" text-anchor="middle" class="label tiny">OPTION</text>
+
+    <rect class="btn red" x="30" y="370" width="48" height="24" rx="3"/><text x="54" y="385" text-anchor="middle" class="label tiny">CTRL</text>
+    <rect class="btn red" x="84" y="370" width="48" height="24" rx="3"/><text x="108" y="385" text-anchor="middle" class="label tiny">ALT</text>
+
+    <rect class="btn red" x="30" y="400" width="48" height="24" rx="3"/><text x="54" y="415" text-anchor="middle" class="label tiny">REC</text>
+    <rect class="btn" x="84" y="400" width="48" height="24" rx="3"/><text x="108" y="415" text-anchor="middle" class="label tiny">SELECT</text>
+  </g>
+
+  <!-- ===================== 8 Channel strips ===================== -->
+  <defs>
+    <g id="strip-frame">
+      <rect class="strip" x="0" y="0" width="76" height="342" rx="6"/>
+      <rect class="btn orange" x="0" y="0" width="76" height="22" rx="3"/>
+      <rect class="lcd" x="4" y="30" width="68" height="40" rx="2"/>
+      <circle class="knob" cx="38" cy="95" r="17"/>
+      <line x1="38" y1="95" x2="38" y2="80" class="wheelgrip"/>
+      <circle class="knobdot" cx="38" cy="81" r="2"/>
+      <rect class="btn" x="6" y="120" width="30" height="20" rx="2"/>
+      <text x="21" y="134" text-anchor="middle" class="label small">S</text>
+      <rect class="btn" x="40" y="120" width="30" height="20" rx="2"/>
+      <text x="55" y="134" text-anchor="middle" class="label small">M</text>
+      <rect class="faderTrack" x="34" y="150" width="8" height="160"/>
+      <rect class="faderCap" x="18" y="220" width="40" height="16" rx="3"/>
+      <rect class="btn" x="0" y="320" width="76" height="22" rx="3"/>
+    </g>
+  </defs>
+
+  <g transform="translate(162,70)">
+    <use href="#strip-frame"/>
+    <text x="38" y="15" text-anchor="middle" class="label" font-weight="700" fill="#fff">F1</text>
+    <text x="38" y="45" text-anchor="middle" class="lcdtext">Track 1</text>
+    <text x="38" y="58" text-anchor="middle" class="lcdtext">0.0 dB</text>
+    <rect class="btn orange" x="0" y="320" width="76" height="22" rx="3"/>
+    <text x="38" y="335" text-anchor="middle" class="label small">SEL 1</text>
+  </g>
+  <g transform="translate(246,70)"><use href="#strip-frame"/><text x="38" y="15" text-anchor="middle" class="label" font-weight="700" fill="#fff">F2</text><text x="38" y="45" text-anchor="middle" class="lcdtext">Track 2</text><text x="38" y="58" text-anchor="middle" class="lcdtext">0.0 dB</text><text x="38" y="335" text-anchor="middle" class="label small">SEL 2</text></g>
+  <g transform="translate(330,70)"><use href="#strip-frame"/><text x="38" y="15" text-anchor="middle" class="label" font-weight="700" fill="#fff">F3</text><text x="38" y="45" text-anchor="middle" class="lcdtext">Track 3</text><text x="38" y="58" text-anchor="middle" class="lcdtext">0.0 dB</text><text x="38" y="335" text-anchor="middle" class="label small">SEL 3</text></g>
+  <g transform="translate(414,70)"><use href="#strip-frame"/><text x="38" y="15" text-anchor="middle" class="label" font-weight="700" fill="#fff">F4</text><text x="38" y="45" text-anchor="middle" class="lcdtext">Track 4</text><text x="38" y="58" text-anchor="middle" class="lcdtext">0.0 dB</text><text x="38" y="335" text-anchor="middle" class="label small">SEL 4</text></g>
+  <g transform="translate(498,70)"><use href="#strip-frame"/><text x="38" y="15" text-anchor="middle" class="label" font-weight="700" fill="#fff">F5</text><text x="38" y="45" text-anchor="middle" class="lcdtext">Track 5</text><text x="38" y="58" text-anchor="middle" class="lcdtext">0.0 dB</text><text x="38" y="335" text-anchor="middle" class="label small">SEL 5</text></g>
+  <g transform="translate(582,70)"><use href="#strip-frame"/><text x="38" y="15" text-anchor="middle" class="label" font-weight="700" fill="#fff">F6</text><text x="38" y="45" text-anchor="middle" class="lcdtext">Track 6</text><text x="38" y="58" text-anchor="middle" class="lcdtext">0.0 dB</text><text x="38" y="335" text-anchor="middle" class="label small">SEL 6</text></g>
+  <g transform="translate(666,70)"><use href="#strip-frame"/><text x="38" y="15" text-anchor="middle" class="label" font-weight="700" fill="#fff">F7</text><text x="38" y="45" text-anchor="middle" class="lcdtext">Track 7</text><text x="38" y="58" text-anchor="middle" class="lcdtext">0.0 dB</text><text x="38" y="335" text-anchor="middle" class="label small">SEL 7</text></g>
+  <g transform="translate(750,70)"><use href="#strip-frame"/><text x="38" y="15" text-anchor="middle" class="label" font-weight="700" fill="#fff">F8</text><text x="38" y="45" text-anchor="middle" class="lcdtext">Track 8</text><text x="38" y="58" text-anchor="middle" class="lcdtext">0.0 dB</text><text x="38" y="335" text-anchor="middle" class="label small">SEL 8</text></g>
+
+  <!-- ===================== Right control column ===================== -->
+  <g id="right-col">
+    <text x="856" y="86" class="label tiny">UP - PRO CONTROLLER</text>
+
+    <rect class="btn dim" x="856" y="100" width="48" height="24" rx="3"/><text x="880" y="115" text-anchor="middle" class="label tiny">PAGE &#9664;</text>
+    <rect class="btn dim" x="910" y="100" width="48" height="24" rx="3"/><text x="934" y="115" text-anchor="middle" class="label tiny">PAGE &#9654;</text>
+
+    <rect class="btn dim" x="856" y="130" width="48" height="24" rx="3"/><text x="880" y="145" text-anchor="middle" class="label tiny">HOME</text>
+    <rect class="btn dim" x="910" y="130" width="48" height="24" rx="3"/><text x="934" y="145" text-anchor="middle" class="label tiny">END</text>
+
+    <rect class="btn dim" x="856" y="160" width="48" height="24" rx="3"/><text x="880" y="172" text-anchor="middle" class="label tiny" font-size="6">LEFT/RIGHT</text>
+    <rect class="btn dim" x="910" y="160" width="48" height="24" rx="3"/><text x="934" y="172" text-anchor="middle" class="label tiny" font-size="6">UP/DOWN</text>
+
+    <rect class="btn dim" x="856" y="190" width="48" height="24" rx="3"/><text x="880" y="205" text-anchor="middle" class="label tiny">ZOOM</text>
+    <rect class="btn orange" x="910" y="190" width="48" height="24" rx="3"/><text x="934" y="205" text-anchor="middle" class="label tiny" fill="#fff">SCROLL</text>
+
+    <rect class="btn dim" x="856" y="220" width="48" height="24" rx="3"/><text x="880" y="235" text-anchor="middle" class="label tiny">MARKER</text>
+    <rect class="btn dim" x="910" y="220" width="48" height="24" rx="3"/><text x="934" y="235" text-anchor="middle" class="label tiny">MASTER</text>
+
+    <rect class="btn dim" x="856" y="250" width="48" height="24" rx="3"/><text x="880" y="265" text-anchor="middle" class="label tiny">BANK</text>
+    <rect class="btn dim" x="910" y="250" width="48" height="24" rx="3"/><text x="934" y="265" text-anchor="middle" class="label tiny">CHANNEL</text>
+
+    <!-- Jog wheel -->
+    <g transform="translate(907,333)">
+      <circle class="wheel" cx="0" cy="0" r="45"/>
+      <circle fill="none" stroke="#56657a" stroke-width="1" cx="0" cy="0" r="45" stroke-dasharray="3,4"/>
+      <line x1="0" y1="0" x2="0" y2="-38" class="wheelgrip"/>
+      <line x1="0" y1="0" x2="33" y2="19" class="wheelgrip"/>
+      <line x1="0" y1="0" x2="-33" y2="19" class="wheelgrip"/>
+      <text x="0" y="4" text-anchor="middle" class="label" font-weight="700">JOG</text>
+    </g>
+
+    <rect class="btn dim" x="856" y="388" width="48" height="22" rx="3"/><text x="880" y="402" text-anchor="middle" class="label tiny">&#9664;&#9664; REW</text>
+    <rect class="btn dim" x="910" y="388" width="48" height="22" rx="3"/><text x="934" y="402" text-anchor="middle" class="label tiny">FF &#9654;&#9654;</text>
+
+    <rect class="btn dim" x="856" y="416" width="48" height="22" rx="3"/><text x="880" y="430" text-anchor="middle" class="label tiny">STOP</text>
+    <rect class="btn orange" x="910" y="416" width="48" height="22" rx="3"/><text x="934" y="430" text-anchor="middle" class="label tiny" fill="#fff">PLAY</text>
+
+    <rect class="btn dim" x="856" y="444" width="48" height="22" rx="3"/><text x="880" y="458" text-anchor="middle" class="label tiny">LOOP</text>
+    <rect class="btn red" x="910" y="444" width="48" height="22" rx="3"/><text x="934" y="458" text-anchor="middle" class="label tiny">RECORD</text>
+  </g>
+
+  <text x="30" y="524" class="label small">Original schematic diagram - button text and top-to-bottom order read directly off this project's own Ableton Live overlay hardware (photos of the left and right control columns), not the generic manual.</text>
+  <text x="30" y="536" class="label small">Exact note numbers and Bitwig behavior are in the Confirmed Button Map (README.md / User Guide Section 6).</text>
+</svg>

@@ -35,6 +35,8 @@
     column-count: 4;
     column-gap: 6mm;
     column-rule: 1px solid #e3e7ec;
+    column-fill: auto;
+    height: 178mm;
   }
   .group {
     break-inside: avoid;
@@ -51,7 +53,7 @@
   }
   .entry {
     break-inside: avoid;
-    font-size: 16pt;
+    font-size: 14pt;
     line-height: 1.08;
     margin-bottom: 1.1mm;
   }
@@ -90,7 +92,7 @@
     <div class="entry"><span class="k">PLUG-INS / F1-F8</span> <span class="d">Device - macros (encoders); Vol or macros (faders, FLIP)</span></div>
     <div class="entry"><span class="k">PAN</span> <span class="d">Gain-Stage - TRLVL device Gain/Pan (needs TRLVL on track!)</span></div>
     <div class="entry"><span class="k">RETURNS</span> <span class="d">Same modes, on Return tracks</span></div>
-    <div class="entry"><span class="k">B.T.A.</span> <span class="d">Scene - clip launcher, wheel selects/launches</span></div>
+    <div class="entry"><span class="k">B.T.A.</span> <span class="d">Scene - clip launcher + mixer, wheel selects/launches</span></div>
     <div class="entry"><span class="k">FLIP</span> <span class="d">Swap faders/encoders Vol&lt;-&gt;Pan/Macro</span></div>
   </div>
 
@@ -107,6 +109,19 @@
   </div>
 
   <div class="group">
+    <h2>Scene Mode Wheel (B.T.A.)</h2>
+    <div class="entry"><span class="k">(plain)</span> <span class="d">Select scene row (doesn't move on SHIFT/CTRL below)</span></div>
+    <div class="entry"><span class="k">SHIFT+wheel</span> <span class="d">Select track - configurable: single track or page bank</span></div>
+    <div class="entry"><span class="k">CTRL+wheel</span> <span class="d">Same options, independent 2nd modifier - off by default</span></div>
+  </div>
+
+  <div class="group">
+    <h2>Mixer Layout (F1-F8, Mixer/Scene mode)</h2>
+    <div class="entry"><span class="k">F1 / F2</span> <span class="d">Recall layout preset - 3 configurable Show/Hide slots each</span></div>
+    <div class="entry"><span class="k">F3-F8</span> <span class="d">Toggle one mixer section each - configurable, off by default</span></div>
+  </div>
+
+  <div class="group">
     <h2>Other Combos</h2>
     <div class="entry"><span class="k">SHIFT+PLUG-INS</span> <span class="d">EQ Mode - jump to last EQ in chain</span></div>
     <div class="entry"><span class="k">DRAW</span> <span class="d">Cycle automation write mode</span></div>
@@ -117,6 +132,14 @@
     <div class="entry"><span class="k">SMPTE/BEATS</span> <span class="d">Toggle F1-F8 green state</span></div>
     <div class="entry"><span class="k">SELECT x2</span> <span class="d">Fold/unfold group track</span></div>
     <div class="entry"><span class="k">ALT+B.T.A.</span> <span class="d">Toggle metering plugin window</span></div>
+    <div class="entry"><span class="k">SESS/ARR</span> <span class="d">Toggle Mix / Arrange panel layout</span></div>
+    <div class="entry"><span class="k">SHIFT+SESS/ARR</span> <span class="d">Toggle clip launcher sidebar (in Arrange)</span></div>
+  </div>
+
+  <div class="group">
+    <h2>Master Wheel (MASTER mode)</h2>
+    <div class="entry"><span class="k">turn</span> <span class="d">Master volume (this unit has no physical master fader)</span></div>
+    <div class="entry"><span class="k">turn (plugin mode)</span> <span class="d">Open/close metering plugin - never touches volume - opt-in</span></div>
   </div>
 
   <div class="group">

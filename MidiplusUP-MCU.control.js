@@ -5560,7 +5560,7 @@ function onMidi(status, data1, data2) {
             // LastClickedParameter never resolved to a real Parameter at
             // all for those, most likely because they aren't backed by
             // one in Bitwig's object model in the first place (see
-            // BITWIG-API-FEATURE-REQUESTS.md #11). Previously this still
+            // feature-requests/BITWIG-API-FEATURE-REQUESTS.md #11). Previously this still
             // called .inc() and showed an empty popup box, which just
             // looked broken - now it's a clear, distinct message instead.
             host.showPopupNotification("No Parameter (click a Bitwig control first)");

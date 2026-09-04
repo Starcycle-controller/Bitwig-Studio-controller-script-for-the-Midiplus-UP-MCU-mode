@@ -1,5 +1,11 @@
 # Midiplus UP - Bitwig Controller Script
 
+![Symbolic layout diagram of the Midiplus UP in MCU mode - global/automation buttons on the left, 8 channel strips in the middle, transport and jog wheel on the right](docs/midiplus-up-layout.svg)
+
+*Original schematic diagram for this project - button text and order read
+directly off this project's own Ableton Live overlay hardware (not a photo)
+- see the button map below for exact note numbers.*
+
 **File:** `MidiplusUP-MCU.control.js`
 **Hardware mode:** standard **MCU mode** (see the unit's manual, section 3.3
 and section 8) - not one of the Logic/Cubase/Live "customized" modes. Only
@@ -31,6 +37,11 @@ A printable PDF version of the Quick Start / usage sections below is at
 `docs/MidiplusUP-User-Guide.pdf`. A one-page, large-print (16pt minimum)
 cheat sheet meant to sit next to the controller is at
 `docs/MidiplusUP-Quick-Reference.pdf`.
+
+**Vendor feature requests:** kept separate from the rest of this repo in
+`feature-requests/` - `BITWIG-API-FEATURE-REQUESTS.md` (real Controller
+API gaps reported to Bitwig) and `midiplus-support-email-draft.md` (the
+firmware/hardware asks sent to MIDIPLUS support).
 
 ## Quick Start
 
@@ -65,7 +76,7 @@ Bitwig's native MCU protocol.
 > it to just one controller (Bitwig's own documentation describes a
 > per-controller override icon, but it isn't reachable in the actual 6.1
 > Controllers panel - already reported to Bitwig, see
-> `BITWIG-API-FEATURE-REQUESTS.md` #12). As a general rule for other
+> `feature-requests/BITWIG-API-FEATURE-REQUESTS.md` #12). As a general rule for other
 > gear: **Pick Up (Catch)** is the safer default for any non-motorized
 > knob/fader/pad controller (no accidental value jumps when a physical
 > control's position doesn't match the software value); **Jump
@@ -218,6 +229,56 @@ FLIP (note 43) swaps faders and encoders between volume and pan in
 ---
 
 ## Confirmed Button Map
+
+The diagram at the top of this document shows the physical layout. Here's
+what each left/right-column button does natively under the Ableton Live
+overlay, and what this project's script repurposes it for:
+
+### Left Column
+
+| Button | What it does (native Ableton Live overlay function) | This project's Bitwig repurpose |
+|---|---|---|
+| SMPTE/BEATS | Switch the time display between SMPTE and Beats. | Hardware-only - toggles the F1-F8 row's backlight/note range in firmware; not bound to anything in Bitwig. |
+| I/O | Cycle the track's Input/Output settings (Input Type, Input Channel, Output Type, Output Channel). | Toggle Track Inspector, or switch to Mixer mode. |
+| PAN | Control Pan with the V-Pots. | Toggle Gain-Staging mode (a `TRLVL` device's Gain/Pan). |
+| PLUG-INS | Enter Plug-in Edit mode for the selected track. | Toggle Device mode (selects/opens a plugin); SHIFT+PLUG-INS jumps to the last EQ in the chain (EQ Mode). |
+| SENDS | Control the Send level for the selected track. | Toggle Sends mode (SHIFT jumps straight to Sends 9-16). |
+| FLIP | Swap the faders' and V-Pots' functions. | Swap faders/encoders between Volume/Pan (Mixer) or Volume/Macros (Device). |
+| RETURNS | Switch the channel strips between Return Tracks and Audio/MIDI Tracks. | Swap channel strips to/from the Return Tracks bank. |
+| S CLEAR | Clear (disable) solo for the currently focused bank of channel strips. | Confirmed on hardware - clears solo for the current channel bank as expected. |
+| M CLEAR | Clear (disable) mute for the currently focused bank of channel strips. | Confirmed on hardware - clears mute for the current channel bank as expected. |
+| SESS/ARR. | Toggle Session/Arrangement View. | Toggle Bitwig's Mix/Arrange panel layout; SHIFT+press toggles the clip launcher sidebar in Arrange view. |
+| CLIP/FX | Toggle Device/Clip View. | Toggle device/clip view. |
+| BROWSER | Show/hide the Browser. | Toggle the browser panel. |
+| DETAIL | Show/hide the Detail view. | Toggle the note/automation editor panel. |
+| DRAW | Toggle Draw Mode. | Cycle the automation write mode (Latch -> Touch -> Write); SHIFT toggles write on/off; OPTION shows/hides automation lanes. |
+| B.T.A. | Back to Arrangement. | Toggle Scene mode (clip launcher + Mix layout); ALT+press toggles the Master Wheel's metering plugin window. |
+| UNDO | Undo the last action. | `application.undo()` |
+| REDO | Redo the last action. | `application.redo()` |
+| SHIFT / OPTION / CTRL / ALT | Modifier keys, like the ones on a computer keyboard. | Modifier hold-state used across nearly every other button/encoder/wheel gesture - see Modifier buttons at a glance above. |
+| REC | Arms the 8 SEL buttons for record instead of select. | Same - toggles the SEL row between `track.arm().toggle()` and select. |
+| SELECT | Default state - the 8 SEL buttons choose/activate a channel. | Same - `selectInMixer()` / double-press folds/unfolds a group track. |
+
+### Right Column
+
+| Button | What it does (native Ableton Live overlay function) | This project's Bitwig repurpose |
+|---|---|---|
+| PAGE ◄ / ► | Move through pages while in Plug-ins mode. | `MODE_DEVICE`: page the macro bank. `MODE_MIXER`: jump to the previous/next cue marker and move the loop to follow it. |
+| HOME | Move the insert marker to the beginning. | Jump the playhead to the project start; SHIFT+HOME adds a "Bar N" cue marker at the current position. |
+| END | Move the insert marker to the end. | Jump the playhead to the loop start. |
+| LEFT/RIGHT, UP/DOWN | Jog-wheel mode selectors, always used together with the ZOOM button. | Same wheel-mode role this guide's Jog-Wheel Mode Buttons table calls SCROLL/ZOOM's cursor pairing - turning the wheel sends the cursor-arrow notes (96-99). Not separately hardware-confirmed as two distinct modes. |
+| ZOOM | Jog-wheel zoom mode (session/arrangement zoom, paired with LEFT/RIGHT or UP/DOWN). | Toggle zoom mode for the cursor-arrow notes. |
+| SCROLL | Base/default jog-wheel mode. | Base/default wheel mode - normal arranger scrub (CC 60); press enters scrub mode. |
+| MARKER | Rotate the wheel to move the playhead through markers; press the wheel to add one at the current position. | Jumps to the previous/next cue marker (already bound above). |
+| MASTER | Use the wheel to control the Master level. | Wheel sends absolute pitch-bend on channel 9, driving master track volume - or optionally opens/closes a metering plugin window instead (see Master Wheel settings). |
+| BANK | Shift the active channel bank up/down by one bank. | Same - pages the track bank. |
+| CHANNEL | Shift the active channel bank up/down by one channel. | Same - nudges one channel (CTRL = previous/next device or tempo). |
+| REWIND / FAST FORWARD | Press and hold to move the cursor backward/forward through the session. | Standard transport rewind/fast-forward. |
+| STOP / PLAY | Stop, or start playback from the cursor position. | Standard transport stop/play. |
+| LOOP | Toggle Loop selection. | Toggle the arranger loop (CTRL sets the loop end from the playhead). |
+| RECORD | Start recording on the armed track. | Standard transport record. |
+
+### Full Note Map
 
 Live-tested against real hardware in MCU mode (pressing every button and
 reading the console's `RAW Note-On received` log). Switching the hardware
@@ -393,7 +454,7 @@ below for the other candidates that were tried and don't work.
 > hardware to do nothing at all. Once a clip is selected by clicking it,
 > CTRL+Wheel reliably steps to the next/previous one from there - it just
 > can't establish that starting point on its own. See API Feature Request
-> #1 in `BITWIG-API-FEATURE-REQUESTS.md`.
+> #1 in `feature-requests/BITWIG-API-FEATURE-REQUESTS.md`.
 
 In `MODE_DEVICE`, CTRL + Jog Wheel instead steps through devices on the
 current chain.
@@ -438,7 +499,7 @@ imply anything about - genuine per-note Expression data on individual
 notes within a MIDI/instrument clip's Detail/Note editor, which wasn't
 tested; see Feature Request #11.) If a wheel turn doesn't move something
 you clicked, this GUI-element scope gap - not a modifier detection issue -
-is the most likely reason; see `BITWIG-API-FEATURE-REQUESTS.md` #11.
+is the most likely reason; see `feature-requests/BITWIG-API-FEATURE-REQUESTS.md` #11.
 
 **ALT + Jog Wheel Press** (push the wheel while holding ALT, note 101)
 attempts to select whatever's at the current GUI focus, via
@@ -1046,7 +1107,7 @@ applied.
 Engineering history and hardware-debugging findings from building this
 script - useful context if you're extending it, not required reading just
 to use it. Where a finding turned into a genuine, lasting API-design gap,
-it's also written up in `BITWIG-API-FEATURE-REQUESTS.md`.
+it's also written up in `feature-requests/BITWIG-API-FEATURE-REQUESTS.md`.
 
 - **Motorized fader output is fully manual.** Binding a fader via
   `setBinding()` only covers input - there's no automatic motor feedback.
@@ -1271,8 +1332,10 @@ checked off, uncheck it here until it's retested.
       behavior are both confirmed, only the click itself isn't.
 - [ ] Note 112 (the master fader's *touch* note, distinct from turning
       it) - not confirmed to fire on this 8-fader unit at all.
-- [ ] Notes 50/51/80/81/87 - either unbound or need a fresh confirmation
-      sweep against the current overlay placement.
+- [x] **S CLEAR / M CLEAR** - confirmed on hardware: clears solo/mute for
+      the current channel bank as expected.
+- [ ] Notes 50/51/87 - either unbound or need a fresh confirmation sweep
+      against the current overlay placement.
 - [ ] ~33 generic Function Keys Editing/File actions (the ones without a
       dedicated typed `Application` method) - not hardware-tested one by
       one.
