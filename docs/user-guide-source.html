@@ -437,6 +437,59 @@ Original schematic diagram for this project - button text and order read
 directly off this project's own Ableton Live overlay hardware. Not a
 photo; exact note numbers are in the table below.
 </p>
+
+<h3>Left Column</h3>
+<table class="wide">
+<thead>
+<tr><th>Button</th><th>What it does (native Ableton Live overlay function)</th><th>This project's Bitwig repurpose</th></tr>
+</thead>
+<tbody>
+<tr><td>SMPTE/BEATS</td><td>Switch the time display between SMPTE and Beats.</td><td>Hardware-only - toggles the F1-F8 row's backlight/note range in firmware; not bound to anything in Bitwig.</td></tr>
+<tr><td>I/O</td><td>Cycle the track's Input/Output settings (Input Type, Input Channel, Output Type, Output Channel).</td><td>Toggle Track Inspector, or switch to Mixer mode.</td></tr>
+<tr><td>PAN</td><td>Control Pan with the V-Pots.</td><td>Toggle Gain-Staging mode (a <code>TRLVL</code> device's Gain/Pan).</td></tr>
+<tr><td>PLUG-INS</td><td>Enter Plug-in Edit mode for the selected track.</td><td>Toggle Device mode (selects/opens a plugin); SHIFT+PLUG-INS jumps to the last EQ in the chain (EQ Mode).</td></tr>
+<tr><td>SENDS</td><td>Control the Send level for the selected track.</td><td>Toggle Sends mode (SHIFT jumps straight to Sends 9-16).</td></tr>
+<tr><td>FLIP</td><td>Swap the faders' and V-Pots' functions.</td><td>Swap faders/encoders between Volume/Pan (Mixer) or Volume/Macros (Device).</td></tr>
+<tr><td>RETURNS</td><td>Switch the channel strips between Return Tracks and Audio/MIDI Tracks.</td><td>Swap channel strips to/from the Return Tracks bank.</td></tr>
+<tr><td>S CLEAR</td><td>Clear (disable) solo for the currently focused bank of channel strips.</td><td>Not yet confirmed/bound in this script - see Hardware test status.</td></tr>
+<tr><td>M CLEAR</td><td>Clear (disable) mute for the currently focused bank of channel strips.</td><td>Not yet confirmed/bound in this script - see Hardware test status.</td></tr>
+<tr><td>SESS/ARR.</td><td>Toggle Session/Arrangement View.</td><td>Toggle Bitwig's Mix/Arrange panel layout; SHIFT+press toggles the clip launcher sidebar in Arrange view.</td></tr>
+<tr><td>CLIP/FX</td><td>Toggle Device/Clip View.</td><td>Toggle device/clip view.</td></tr>
+<tr><td>BROWSER</td><td>Show/hide the Browser.</td><td>Toggle the browser panel.</td></tr>
+<tr><td>DETAIL</td><td>Show/hide the Detail view.</td><td>Toggle the note/automation editor panel.</td></tr>
+<tr><td>DRAW</td><td>Toggle Draw Mode.</td><td>Cycle the automation write mode (Latch &rarr; Touch &rarr; Write); SHIFT toggles write on/off; OPTION shows/hides automation lanes.</td></tr>
+<tr><td>B.T.A.</td><td>Back to Arrangement.</td><td>Toggle Scene mode (clip launcher + Mix layout); ALT+press toggles the Master Wheel's metering plugin window.</td></tr>
+<tr><td>UNDO</td><td>Undo the last action.</td><td><code>application.undo()</code></td></tr>
+<tr><td>REDO</td><td>Redo the last action.</td><td><code>application.redo()</code></td></tr>
+<tr><td>SHIFT / OPTION / CTRL / ALT</td><td>Modifier keys, like the ones on a computer keyboard.</td><td>Modifier hold-state used across nearly every other button/encoder/wheel gesture - see Modifier Buttons at a Glance above.</td></tr>
+<tr><td>REC</td><td>Arms the 8 SEL buttons for record instead of select.</td><td>Same - toggles the SEL row between <code>track.arm().toggle()</code> and select.</td></tr>
+<tr><td>SELECT</td><td>Default state - the 8 SEL buttons choose/activate a channel.</td><td>Same - <code>selectInMixer()</code> / double-press folds/unfolds a group track.</td></tr>
+</tbody>
+</table>
+
+<h3>Right Column</h3>
+<table class="wide">
+<thead>
+<tr><th>Button</th><th>What it does (native Ableton Live overlay function)</th><th>This project's Bitwig repurpose</th></tr>
+</thead>
+<tbody>
+<tr><td>PAGE &#9664; / &#9654;</td><td>Move through pages while in Plug-ins mode.</td><td><code>MODE_DEVICE</code>: page the macro bank. <code>MODE_MIXER</code>: jump to the previous/next cue marker and move the loop to follow it.</td></tr>
+<tr><td>HOME</td><td>Move the insert marker to the beginning.</td><td>Jump the playhead to the project start; SHIFT+HOME adds a "Bar N" cue marker at the current position.</td></tr>
+<tr><td>END</td><td>Move the insert marker to the end.</td><td>Jump the playhead to the loop start.</td></tr>
+<tr><td>LEFT/RIGHT, UP/DOWN</td><td>Jog-wheel mode selectors, always used together with the ZOOM button.</td><td>Same wheel-mode role this guide's Jog-Wheel Mode Buttons table calls SCROLL/ZOOM's cursor pairing - turning the wheel sends the cursor-arrow notes (96-99). Not separately hardware-confirmed as two distinct modes.</td></tr>
+<tr><td>ZOOM</td><td>Jog-wheel zoom mode (session/arrangement zoom, paired with LEFT/RIGHT or UP/DOWN).</td><td>Toggle zoom mode for the cursor-arrow notes.</td></tr>
+<tr><td>SCROLL</td><td>Base/default jog-wheel mode.</td><td>Base/default wheel mode - normal arranger scrub (CC 60); press enters scrub mode.</td></tr>
+<tr><td>MARKER</td><td>Rotate the wheel to move the playhead through markers; press the wheel to add one at the current position.</td><td>Jumps to the previous/next cue marker (already bound above).</td></tr>
+<tr><td>MASTER</td><td>Use the wheel to control the Master level.</td><td>Wheel sends absolute pitch-bend on channel 9, driving master track volume - or optionally opens/closes a metering plugin window instead (see Master Wheel settings).</td></tr>
+<tr><td>BANK</td><td>Shift the active channel bank up/down by one bank.</td><td>Same - pages the track bank.</td></tr>
+<tr><td>CHANNEL</td><td>Shift the active channel bank up/down by one channel.</td><td>Same - nudges one channel (CTRL = previous/next device or tempo).</td></tr>
+<tr><td>REWIND / FAST FORWARD</td><td>Press and hold to move the cursor backward/forward through the session.</td><td>Standard transport rewind/fast-forward.</td></tr>
+<tr><td>STOP / PLAY</td><td>Stop, or start playback from the cursor position.</td><td>Standard transport stop/play.</td></tr>
+<tr><td>LOOP</td><td>Toggle Loop selection.</td><td>Toggle the arranger loop (CTRL sets the loop end from the playhead).</td></tr>
+<tr><td>RECORD</td><td>Start recording on the armed track.</td><td>Standard transport record.</td></tr>
+</tbody>
+</table>
+
 <p>
 Live-tested against real hardware in MCU mode. Switching the hardware
 between Live mode (with the overlay) and standard MCU mode does not change

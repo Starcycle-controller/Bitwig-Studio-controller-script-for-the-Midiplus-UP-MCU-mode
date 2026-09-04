@@ -230,6 +230,56 @@ FLIP (note 43) swaps faders and encoders between volume and pan in
 
 ## Confirmed Button Map
 
+The diagram at the top of this document shows the physical layout. Here's
+what each left/right-column button does natively under the Ableton Live
+overlay, and what this project's script repurposes it for:
+
+### Left Column
+
+| Button | What it does (native Ableton Live overlay function) | This project's Bitwig repurpose |
+|---|---|---|
+| SMPTE/BEATS | Switch the time display between SMPTE and Beats. | Hardware-only - toggles the F1-F8 row's backlight/note range in firmware; not bound to anything in Bitwig. |
+| I/O | Cycle the track's Input/Output settings (Input Type, Input Channel, Output Type, Output Channel). | Toggle Track Inspector, or switch to Mixer mode. |
+| PAN | Control Pan with the V-Pots. | Toggle Gain-Staging mode (a `TRLVL` device's Gain/Pan). |
+| PLUG-INS | Enter Plug-in Edit mode for the selected track. | Toggle Device mode (selects/opens a plugin); SHIFT+PLUG-INS jumps to the last EQ in the chain (EQ Mode). |
+| SENDS | Control the Send level for the selected track. | Toggle Sends mode (SHIFT jumps straight to Sends 9-16). |
+| FLIP | Swap the faders' and V-Pots' functions. | Swap faders/encoders between Volume/Pan (Mixer) or Volume/Macros (Device). |
+| RETURNS | Switch the channel strips between Return Tracks and Audio/MIDI Tracks. | Swap channel strips to/from the Return Tracks bank. |
+| S CLEAR | Clear (disable) solo for the currently focused bank of channel strips. | Not yet confirmed/bound in this script - see Hardware test status. |
+| M CLEAR | Clear (disable) mute for the currently focused bank of channel strips. | Not yet confirmed/bound in this script - see Hardware test status. |
+| SESS/ARR. | Toggle Session/Arrangement View. | Toggle Bitwig's Mix/Arrange panel layout; SHIFT+press toggles the clip launcher sidebar in Arrange view. |
+| CLIP/FX | Toggle Device/Clip View. | Toggle device/clip view. |
+| BROWSER | Show/hide the Browser. | Toggle the browser panel. |
+| DETAIL | Show/hide the Detail view. | Toggle the note/automation editor panel. |
+| DRAW | Toggle Draw Mode. | Cycle the automation write mode (Latch -> Touch -> Write); SHIFT toggles write on/off; OPTION shows/hides automation lanes. |
+| B.T.A. | Back to Arrangement. | Toggle Scene mode (clip launcher + Mix layout); ALT+press toggles the Master Wheel's metering plugin window. |
+| UNDO | Undo the last action. | `application.undo()` |
+| REDO | Redo the last action. | `application.redo()` |
+| SHIFT / OPTION / CTRL / ALT | Modifier keys, like the ones on a computer keyboard. | Modifier hold-state used across nearly every other button/encoder/wheel gesture - see Modifier buttons at a glance above. |
+| REC | Arms the 8 SEL buttons for record instead of select. | Same - toggles the SEL row between `track.arm().toggle()` and select. |
+| SELECT | Default state - the 8 SEL buttons choose/activate a channel. | Same - `selectInMixer()` / double-press folds/unfolds a group track. |
+
+### Right Column
+
+| Button | What it does (native Ableton Live overlay function) | This project's Bitwig repurpose |
+|---|---|---|
+| PAGE ◄ / ► | Move through pages while in Plug-ins mode. | `MODE_DEVICE`: page the macro bank. `MODE_MIXER`: jump to the previous/next cue marker and move the loop to follow it. |
+| HOME | Move the insert marker to the beginning. | Jump the playhead to the project start; SHIFT+HOME adds a "Bar N" cue marker at the current position. |
+| END | Move the insert marker to the end. | Jump the playhead to the loop start. |
+| LEFT/RIGHT, UP/DOWN | Jog-wheel mode selectors, always used together with the ZOOM button. | Same wheel-mode role this guide's Jog-Wheel Mode Buttons table calls SCROLL/ZOOM's cursor pairing - turning the wheel sends the cursor-arrow notes (96-99). Not separately hardware-confirmed as two distinct modes. |
+| ZOOM | Jog-wheel zoom mode (session/arrangement zoom, paired with LEFT/RIGHT or UP/DOWN). | Toggle zoom mode for the cursor-arrow notes. |
+| SCROLL | Base/default jog-wheel mode. | Base/default wheel mode - normal arranger scrub (CC 60); press enters scrub mode. |
+| MARKER | Rotate the wheel to move the playhead through markers; press the wheel to add one at the current position. | Jumps to the previous/next cue marker (already bound above). |
+| MASTER | Use the wheel to control the Master level. | Wheel sends absolute pitch-bend on channel 9, driving master track volume - or optionally opens/closes a metering plugin window instead (see Master Wheel settings). |
+| BANK | Shift the active channel bank up/down by one bank. | Same - pages the track bank. |
+| CHANNEL | Shift the active channel bank up/down by one channel. | Same - nudges one channel (CTRL = previous/next device or tempo). |
+| REWIND / FAST FORWARD | Press and hold to move the cursor backward/forward through the session. | Standard transport rewind/fast-forward. |
+| STOP / PLAY | Stop, or start playback from the cursor position. | Standard transport stop/play. |
+| LOOP | Toggle Loop selection. | Toggle the arranger loop (CTRL sets the loop end from the playhead). |
+| RECORD | Start recording on the armed track. | Standard transport record. |
+
+### Full Note Map
+
 Live-tested against real hardware in MCU mode (pressing every button and
 reading the console's `RAW Note-On received` log). Switching the hardware
 between Live mode (with the overlay) and standard MCU mode did **not**
