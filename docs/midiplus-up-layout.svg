@@ -24,41 +24,41 @@
   <!-- Chassis -->
   <rect class="chassis" x="8" y="8" width="1004" height="505" rx="16"/>
   <text x="30" y="34" class="label title" font-size="14">MIDIPLUS UP - Symbolic Layout (MCU Mode)</text>
-  <text x="30" y="50" class="label small">Redrawn from the manufacturer's UP/UP+ manual control-layout diagram - schematic, not a photo.</text>
+  <text x="30" y="50" class="label small">Physical layout from the manufacturer's manual; button text matches this project's Ableton-overlay hardware (see README's Confirmed Button Map).</text>
 
   <!-- Section labels -->
-  <text x="30" y="62" class="grouplabel">Global / Automation</text>
+  <text x="30" y="62" class="grouplabel">Assignment / Automation</text>
   <text x="162" y="62" class="grouplabel">8 Channel Strips (Display / V-Pot / Solo-Mute / Fader / Sel)</text>
   <text x="856" y="62" class="grouplabel">Transport / Jog Wheel</text>
 
   <!-- ===================== Left control column ===================== -->
   <g id="left-col">
-    <rect class="btn dim" x="30" y="70" width="102" height="24" rx="3"/>
-    <text x="81" y="85" text-anchor="middle" class="label tiny">FUNCTION/VIEW</text>
+    <rect class="btn" x="30" y="70" width="48" height="24" rx="3"/><text x="54" y="85" text-anchor="middle" class="label tiny">TRACK/IO</text>
+    <rect class="btn" x="84" y="70" width="48" height="24" rx="3"/><text x="108" y="85" text-anchor="middle" class="label tiny">SEND</text>
 
-    <rect class="btn" x="30" y="100" width="48" height="24" rx="3"/><text x="54" y="115" text-anchor="middle" class="label tiny">TRACK</text>
-    <rect class="btn" x="84" y="100" width="48" height="24" rx="3"/><text x="108" y="115" text-anchor="middle" class="label tiny">PAN</text>
+    <rect class="btn" x="30" y="100" width="48" height="24" rx="3"/><text x="54" y="115" text-anchor="middle" class="label tiny">PAN</text>
+    <rect class="btn" x="84" y="100" width="48" height="24" rx="3"/><text x="108" y="115" text-anchor="middle" class="label tiny">FLIP</text>
 
-    <rect class="btn" x="30" y="130" width="48" height="24" rx="3"/><text x="54" y="145" text-anchor="middle" class="label tiny">EQ</text>
-    <rect class="btn" x="84" y="130" width="48" height="24" rx="3"/><text x="108" y="145" text-anchor="middle" class="label tiny">SEND</text>
+    <rect class="btn" x="30" y="130" width="48" height="24" rx="3"/><text x="54" y="145" text-anchor="middle" class="label tiny">PLUG-INS</text>
+    <rect class="btn" x="84" y="130" width="48" height="24" rx="3"/><text x="108" y="145" text-anchor="middle" class="label tiny">RETURNS</text>
 
-    <rect class="btn" x="30" y="160" width="48" height="24" rx="3"/><text x="54" y="175" text-anchor="middle" class="label tiny">PLUGIN</text>
-    <rect class="btn" x="84" y="160" width="48" height="24" rx="3"/><text x="108" y="175" text-anchor="middle" class="label tiny">INST</text>
+    <rect class="btn dim" x="30" y="160" width="48" height="24" rx="3"/><text x="54" y="175" text-anchor="middle" class="label tiny">S CLR</text>
+    <rect class="btn dim" x="84" y="160" width="48" height="24" rx="3"/><text x="108" y="175" text-anchor="middle" class="label tiny">M CLR</text>
 
-    <rect class="btn dim" x="30" y="190" width="48" height="24" rx="3"/><text x="54" y="205" text-anchor="middle" class="label tiny">S CLR</text>
-    <rect class="btn dim" x="84" y="190" width="48" height="24" rx="3"/><text x="108" y="205" text-anchor="middle" class="label tiny">M CLR</text>
+    <rect class="btn" x="30" y="190" width="48" height="24" rx="3"/><text x="54" y="205" text-anchor="middle" class="label tiny">SESS/ARR</text>
+    <rect class="btn" x="84" y="190" width="48" height="24" rx="3"/><text x="108" y="205" text-anchor="middle" class="label tiny">CLIP/FX</text>
 
-    <rect class="btn" x="30" y="220" width="48" height="24" rx="3"/><text x="54" y="235" text-anchor="middle" class="label tiny">READ</text>
-    <rect class="btn" x="84" y="220" width="48" height="24" rx="3"/><text x="108" y="235" text-anchor="middle" class="label tiny">WRITE</text>
+    <rect class="btn" x="30" y="220" width="48" height="24" rx="3"/><text x="54" y="235" text-anchor="middle" class="label tiny">DRAW</text>
+    <rect class="btn" x="84" y="220" width="48" height="24" rx="3"/><text x="108" y="235" text-anchor="middle" class="label tiny">BROWSER</text>
 
-    <rect class="btn" x="30" y="250" width="48" height="24" rx="3"/><text x="54" y="265" text-anchor="middle" class="label tiny">TOUCH</text>
-    <rect class="btn" x="84" y="250" width="48" height="24" rx="3"/><text x="108" y="265" text-anchor="middle" class="label tiny">LATCH</text>
+    <rect class="btn" x="30" y="250" width="48" height="24" rx="3"/><text x="54" y="265" text-anchor="middle" class="label tiny">DETAIL</text>
+    <rect class="btn" x="84" y="250" width="48" height="24" rx="3"/><text x="108" y="265" text-anchor="middle" class="label tiny">B.T.A.</text>
 
-    <rect class="btn" x="30" y="280" width="48" height="24" rx="3"/><text x="54" y="295" text-anchor="middle" class="label tiny">TRIM</text>
-    <rect class="btn" x="84" y="280" width="48" height="24" rx="3"/><text x="108" y="295" text-anchor="middle" class="label tiny">GROUP</text>
+    <rect class="btn" x="30" y="280" width="48" height="24" rx="3"/><text x="54" y="295" text-anchor="middle" class="label tiny">LOOP</text>
+    <rect class="btn" x="84" y="280" width="48" height="24" rx="3" /><text x="108" y="295" text-anchor="middle" class="label tiny" font-size="6.5">PUNCH OUT</text>
 
-    <rect class="btn" x="30" y="310" width="48" height="24" rx="3"/><text x="54" y="325" text-anchor="middle" class="label tiny">FLIP</text>
-    <rect class="btn" x="84" y="310" width="48" height="24" rx="3"/><text x="108" y="325" text-anchor="middle" class="label tiny">GLOBAL</text>
+    <rect class="btn" x="30" y="310" width="48" height="24" rx="3"/><text x="54" y="325" text-anchor="middle" class="label tiny">HOME</text>
+    <rect class="btn" x="84" y="310" width="48" height="24" rx="3"/><text x="108" y="325" text-anchor="middle" class="label tiny">END</text>
 
     <rect class="btn red" x="30" y="340" width="48" height="24" rx="3"/><text x="54" y="355" text-anchor="middle" class="label tiny">SHIFT</text>
     <rect class="btn red" x="84" y="340" width="48" height="24" rx="3"/><text x="108" y="355" text-anchor="middle" class="label tiny">OPTION</text>
@@ -110,10 +110,10 @@
     <text x="856" y="86" class="label tiny">UP - MCU CONTROLLER</text>
 
     <rect class="btn" x="856" y="100" width="48" height="24" rx="3"/><text x="880" y="115" text-anchor="middle" class="label tiny">UNDO</text>
-    <rect class="btn" x="910" y="100" width="48" height="24" rx="3"/><text x="934" y="115" text-anchor="middle" class="label tiny">SAVE</text>
+    <rect class="btn" x="910" y="100" width="48" height="24" rx="3"/><text x="934" y="115" text-anchor="middle" class="label tiny">REDO</text>
 
-    <rect class="btn" x="856" y="130" width="48" height="24" rx="3"/><text x="880" y="145" text-anchor="middle" class="label tiny">CANCEL</text>
-    <rect class="btn" x="910" y="130" width="48" height="24" rx="3"/><text x="934" y="145" text-anchor="middle" class="label tiny">ENTER</text>
+    <rect class="btn dim" x="856" y="130" width="48" height="24" rx="3"/><text x="880" y="145" text-anchor="middle" class="label tiny" font-size="6">NAME/VALUE</text>
+    <rect class="btn dim" x="910" y="130" width="48" height="24" rx="3"/><text x="934" y="145" text-anchor="middle" class="label tiny" font-size="6">SMPTE/BEATS</text>
 
     <rect class="btn dim" x="856" y="160" width="48" height="24" rx="3"/><text x="880" y="175" text-anchor="middle" class="label tiny">CURSOR</text>
     <rect class="btn orange" x="910" y="160" width="48" height="24" rx="3"/><text x="934" y="175" text-anchor="middle" class="label tiny" fill="#fff">SCROLL</text>
@@ -143,9 +143,9 @@
     <rect class="btn dim" x="856" y="416" width="48" height="22" rx="3"/><text x="880" y="430" text-anchor="middle" class="label tiny">STOP</text>
     <rect class="btn orange" x="910" y="416" width="48" height="22" rx="3"/><text x="934" y="430" text-anchor="middle" class="label tiny" fill="#fff">PLAY</text>
 
-    <rect class="btn dim" x="856" y="444" width="48" height="22" rx="3"/><text x="880" y="458" text-anchor="middle" class="label tiny">CYCLE</text>
-    <rect class="btn red" x="910" y="444" width="48" height="22" rx="3"/><text x="934" y="458" text-anchor="middle" class="label tiny">RECORD</text>
+    <rect class="btn red" x="856" y="444" width="102" height="22" rx="3"/><text x="907" y="458" text-anchor="middle" class="label tiny">RECORD</text>
   </g>
 
-  <text x="30" y="530" class="label small">Redrawn from the official MIDIPLUS UP/UP+ manual's control-layout diagram (not a manufacturer photo) - left column, 8 channel strips, and right column/jog-wheel match the real physical arrangement. Exact note numbers are in the Confirmed Button Map (README.md / User Guide Section 6).</text>
+  <text x="30" y="522" class="label small">Original schematic diagram - physical arrangement from the manufacturer's UP/UP+ manual; button text matches this project's Ableton-overlay hardware (real MCU labels under the removed top piece; live-overlay stickers under the left/right pieces).</text>
+  <text x="30" y="534" class="label small">A few unconfirmed/low-visibility buttons (notes 80-81, 84-85, 87, PAGE 82-83) are omitted. Exact note numbers are in the Confirmed Button Map (README.md / User Guide Section 6).</text>
 </svg>

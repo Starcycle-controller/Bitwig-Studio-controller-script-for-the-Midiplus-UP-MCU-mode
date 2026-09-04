@@ -2,9 +2,10 @@
 
 ![Symbolic layout diagram of the Midiplus UP in MCU mode - global/automation buttons on the left, 8 channel strips in the middle, transport and jog wheel on the right](docs/midiplus-up-layout.svg)
 
-*Original schematic diagram for this project, redrawn from the manufacturer's
-UP/UP+ manual control-layout diagram (not a manufacturer photo) - see the
-button map below for exact note numbers.*
+*Original schematic diagram for this project - physical arrangement from the
+manufacturer's UP/UP+ manual, button text matches this project's
+Ableton-overlay hardware (not a manufacturer photo) - see the button map
+below for exact note numbers.*
 
 **File:** `MidiplusUP-MCU.control.js`
 **Hardware mode:** standard **MCU mode** (see the unit's manual, section 3.3
