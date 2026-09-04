@@ -32,6 +32,11 @@ A printable PDF version of the Quick Start / usage sections below is at
 cheat sheet meant to sit next to the controller is at
 `docs/MidiplusUP-Quick-Reference.pdf`.
 
+**Vendor feature requests:** kept separate from the rest of this repo in
+`feature-requests/` - `BITWIG-API-FEATURE-REQUESTS.md` (real Controller
+API gaps reported to Bitwig) and `midiplus-support-email-draft.md` (the
+firmware/hardware asks sent to MIDIPLUS support).
+
 ## Quick Start
 
 **Intended use case**: this script turns the Midiplus UP (in standard MCU
@@ -65,7 +70,7 @@ Bitwig's native MCU protocol.
 > it to just one controller (Bitwig's own documentation describes a
 > per-controller override icon, but it isn't reachable in the actual 6.1
 > Controllers panel - already reported to Bitwig, see
-> `BITWIG-API-FEATURE-REQUESTS.md` #12). As a general rule for other
+> `feature-requests/BITWIG-API-FEATURE-REQUESTS.md` #12). As a general rule for other
 > gear: **Pick Up (Catch)** is the safer default for any non-motorized
 > knob/fader/pad controller (no accidental value jumps when a physical
 > control's position doesn't match the software value); **Jump
@@ -393,7 +398,7 @@ below for the other candidates that were tried and don't work.
 > hardware to do nothing at all. Once a clip is selected by clicking it,
 > CTRL+Wheel reliably steps to the next/previous one from there - it just
 > can't establish that starting point on its own. See API Feature Request
-> #1 in `BITWIG-API-FEATURE-REQUESTS.md`.
+> #1 in `feature-requests/BITWIG-API-FEATURE-REQUESTS.md`.
 
 In `MODE_DEVICE`, CTRL + Jog Wheel instead steps through devices on the
 current chain.
@@ -438,7 +443,7 @@ imply anything about - genuine per-note Expression data on individual
 notes within a MIDI/instrument clip's Detail/Note editor, which wasn't
 tested; see Feature Request #11.) If a wheel turn doesn't move something
 you clicked, this GUI-element scope gap - not a modifier detection issue -
-is the most likely reason; see `BITWIG-API-FEATURE-REQUESTS.md` #11.
+is the most likely reason; see `feature-requests/BITWIG-API-FEATURE-REQUESTS.md` #11.
 
 **ALT + Jog Wheel Press** (push the wheel while holding ALT, note 101)
 attempts to select whatever's at the current GUI focus, via
@@ -1046,7 +1051,7 @@ applied.
 Engineering history and hardware-debugging findings from building this
 script - useful context if you're extending it, not required reading just
 to use it. Where a finding turned into a genuine, lasting API-design gap,
-it's also written up in `BITWIG-API-FEATURE-REQUESTS.md`.
+it's also written up in `feature-requests/BITWIG-API-FEATURE-REQUESTS.md`.
 
 - **Motorized fader output is fully manual.** Binding a fader via
   `setBinding()` only covers input - there's no automatic motor feedback.
