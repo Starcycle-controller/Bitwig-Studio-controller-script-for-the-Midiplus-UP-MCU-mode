@@ -1,5 +1,10 @@
 # Midiplus UP - Bitwig Controller Script
 
+![Symbolic layout diagram of the Midiplus UP in MCU mode - 8 channel strips, assignment row, F1-F8, modifiers, jog wheel, and transport](docs/midiplus-up-layout.svg)
+
+*Original schematic diagram for this project (not a manufacturer photo) -
+see the button map below for exact note numbers.*
+
 **File:** `MidiplusUP-MCU.control.js`
 **Hardware mode:** standard **MCU mode** (see the unit's manual, section 3.3
 and section 8) - not one of the Logic/Cubase/Live "customized" modes. Only

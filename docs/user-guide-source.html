@@ -168,6 +168,18 @@
     font-size: 9.5pt;
     color: #14202e;
   }
+  .diagram {
+    width: 100%;
+    height: auto;
+    margin: 2mm 0 1mm 0;
+    page-break-inside: avoid;
+  }
+  .diagram-caption {
+    font-size: 8.5pt;
+    color: #8a97a5;
+    font-style: italic;
+    margin: 0 0 5mm 0;
+  }
 </style>
 </head>
 <body>
@@ -419,6 +431,12 @@ faders only between volume and macros in Device mode.
 <div style="page-break-after: always;"></div>
 
 <h2 id="button-map">6. Confirmed Button Map</h2>
+<img class="diagram" src="midiplus-up-layout.svg" alt="Symbolic layout diagram of the Midiplus UP in MCU mode">
+<p class="diagram-caption">
+Original schematic diagram for this project, not a manufacturer photo -
+group positions are approximate; exact note numbers are in the table
+below.
+</p>
 <p>
 Live-tested against real hardware in MCU mode. Switching the hardware
 between Live mode (with the overlay) and standard MCU mode does not change

@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" font-family="'Helvetica Neue', Arial, sans-serif">
+  <style>
+    .chassis { fill: #1c2430; }
+    .panel { fill: #232e3d; }
+    .strip { fill: #2a3648; }
+    .lcd { fill: #0e2a20; stroke: #1f5c44; stroke-width: 1; }
+    .lcdtext { fill: #6be3a8; font-size: 9px; font-family: 'SFMono-Regular', Consolas, monospace; }
+    .knob { fill: #3a4658; stroke: #56657a; stroke-width: 1.5; }
+    .knobdot { fill: #c9722a; }
+    .btn { fill: #3a4658; stroke: #56657a; stroke-width: 1; }
+    .btn.orange { fill: #c9722a; stroke: #a85f1f; }
+    .btn.red { fill: #6b3038; stroke: #8a4048; }
+    .btn.dim { fill: #2a3648; stroke: #445068; }
+    .faderTrack { fill: #12181f; stroke: #3a4658; stroke-width: 1; }
+    .faderCap { fill: #c9722a; }
+    .wheel { fill: #2a3648; stroke: #56657a; stroke-width: 2; }
+    .wheelgrip { stroke: #56657a; stroke-width: 1.5; }
+    .label { fill: #cfd6de; font-size: 9px; }
+    .label.small { font-size: 7.5px; fill: #9aa6b4; }
+    .label.title { fill: #ffffff; font-size: 11px; font-weight: 700; }
+    .grouplabel { fill: #c9722a; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .divider { stroke: #3a4658; stroke-width: 1; }
+  </style>
+
+  <!-- Chassis -->
+  <rect class="chassis" x="8" y="8" width="1184" height="504" rx="16"/>
+  <text x="30" y="34" class="label title" font-size="14">MIDIPLUS UP - Symbolic Layout (MCU Mode)</text>
+  <text x="30" y="50" class="label small">Schematic overview, not to scale - matches the note numbers in this project's README / User Guide</text>
+
+  <!-- Channel strip section (8 strips) -->
+  <g id="channels">
+    <!-- x start 40, each strip 78 wide, 8 strips -->
+    <g id="strip-template"></g>
+    <!-- Strip 1..8 -->
+    <!-- generated manually below -->
+  </g>
+
+  <!-- Loop unrolled manually for 8 channels -->
+  <g>
+    <!-- channel column x offsets: 40 + i*78 -->
+    <!-- Channel 1 -->
+    <g transform="translate(40,66)">
+      <rect class="strip" x="0" y="0" width="70" height="410" rx="6"/>
+      <rect class="lcd" x="6" y="8" width="58" height="24" rx="2"/>
+      <text x="35" y="19" text-anchor="middle" class="lcdtext">Track 1</text>
+      <text x="35" y="29" text-anchor="middle" class="lcdtext">0.0 dB</text>
+      <circle class="knob" cx="35" cy="52" r="15"/>
+      <line x1="35" y1="52" x2="35" y2="40" class="wheelgrip"/>
+      <circle class="knobdot" cx="35" cy="41" r="2"/>
+      <rect class="btn" x="7" y="76" width="24" height="12" rx="2"/>
+      <text x="19" y="85" text-anchor="middle" class="label small">REC</text>
+      <rect class="btn" x="39" y="76" width="24" height="12" rx="2"/>
+      <text x="51" y="85" text-anchor="middle" class="label small">SOLO</text>
+      <rect class="btn" x="7" y="92" width="24" height="12" rx="2"/>
+      <text x="19" y="101" text-anchor="middle" class="label small">MUTE</text>
+      <rect class="btn orange" x="39" y="92" width="24" height="12" rx="2"/>
+      <text x="51" y="101" text-anchor="middle" class="label small" fill="#fff">SEL</text>
+      <rect class="faderTrack" x="27" y="114" width="16" height="280"/>
+      <rect class="faderCap" x="21" y="230" width="28" height="10" rx="2"/>
+      <text x="35" y="404" text-anchor="middle" class="label" font-weight="700">1</text>
+    </g>
+    <g transform="translate(118,66)"><use href="#ch-body"/><text x="35" y="404" text-anchor="middle" class="label" font-weight="700">2</text></g>
+  </g>
+
+  <!-- Defs for repeated channel body 2-8 (identical minus number) -->
+  <defs>
+    <g id="ch-body">
+      <rect class="strip" x="0" y="0" width="70" height="410" rx="6"/>
+      <rect class="lcd" x="6" y="8" width="58" height="24" rx="2"/>
+      <circle class="knob" cx="35" cy="52" r="15"/>
+      <line x1="35" y1="52" x2="35" y2="40" class="wheelgrip"/>
+      <circle class="knobdot" cx="35" cy="41" r="2"/>
+      <rect class="btn" x="7" y="76" width="24" height="12" rx="2"/>
+      <rect class="btn" x="39" y="76" width="24" height="12" rx="2"/>
+      <rect class="btn" x="7" y="92" width="24" height="12" rx="2"/>
+      <rect class="btn orange" x="39" y="92" width="24" height="12" rx="2"/>
+      <rect class="faderTrack" x="27" y="114" width="16" height="280"/>
+      <rect class="faderCap" x="21" y="245" width="28" height="10" rx="2"/>
+    </g>
+  </defs>
+
+  <g transform="translate(196,66)"><use href="#ch-body"/><text x="35" y="404" text-anchor="middle" class="label" font-weight="700">3</text></g>
+  <g transform="translate(274,66)"><use href="#ch-body"/><text x="35" y="404" text-anchor="middle" class="label" font-weight="700">4</text></g>
+  <g transform="translate(352,66)"><use href="#ch-body"/><text x="35" y="404" text-anchor="middle" class="label" font-weight="700">5</text></g>
+  <g transform="translate(430,66)"><use href="#ch-body"/><text x="35" y="404" text-anchor="middle" class="label" font-weight="700">6</text></g>
+  <g transform="translate(508,66)"><use href="#ch-body"/><text x="35" y="404" text-anchor="middle" class="label" font-weight="700">7</text></g>
+  <g transform="translate(586,66)"><use href="#ch-body"/><text x="35" y="404" text-anchor="middle" class="label" font-weight="700">8</text></g>
+  <text x="118" y="61" class="grouplabel">8 Motorized Channel Strips (notes 0-31, 104-111, encoders CC16-23, faders ch0-7)</text>
+
+  <!-- divider -->
+  <line x1="672" y1="60" x2="672" y2="490" class="divider"/>
+
+  <!-- Right control panel -->
+  <g transform="translate(690,60)">
+    <text x="0" y="8" class="grouplabel">Assignment Row (notes 40-45)</text>
+    <g transform="translate(0,16)">
+      <rect class="btn" x="0" y="0" width="72" height="20" rx="3"/><text x="36" y="13" text-anchor="middle" class="label">TRACK/IO</text>
+      <rect class="btn" x="78" y="0" width="72" height="20" rx="3"/><text x="114" y="13" text-anchor="middle" class="label">SEND</text>
+      <rect class="btn" x="156" y="0" width="72" height="20" rx="3"/><text x="192" y="13" text-anchor="middle" class="label">PAN</text>
+      <rect class="btn" x="234" y="0" width="72" height="20" rx="3"/><text x="270" y="13" text-anchor="middle" class="label">PLUG-INS</text>
+      <rect class="btn" x="312" y="0" width="72" height="20" rx="3"/><text x="348" y="13" text-anchor="middle" class="label">RETURNS</text>
+    </g>
+
+    <text x="0" y="60" class="grouplabel">Bank / Channel (notes 46-49)</text>
+    <g transform="translate(0,68)">
+      <rect class="btn" x="0" y="0" width="88" height="20" rx="3"/><text x="44" y="13" text-anchor="middle" class="label small">BANK &#9664;/&#9654;</text>
+      <rect class="btn" x="96" y="0" width="88" height="20" rx="3"/><text x="140" y="13" text-anchor="middle" class="label small">CHANNEL &#9664;/&#9654;</text>
+      <rect class="btn dim" x="192" y="0" width="72" height="20" rx="3"/><text x="228" y="13" text-anchor="middle" class="label small">UNDO/REDO</text>
+      <rect class="btn dim" x="270" y="0" width="114" height="20" rx="3"/><text x="327" y="13" text-anchor="middle" class="label small">SMPTE/BEATS</text>
+    </g>
+
+    <text x="0" y="112" class="grouplabel">F1-F8 (notes 54-61 orange / 62-69 green)</text>
+    <g transform="translate(0,120)">
+      <rect class="btn orange" x="0" y="0" width="42" height="20" rx="3"/><text x="21" y="13" text-anchor="middle" class="label" fill="#fff">F1</text>
+      <rect class="btn orange" x="48" y="0" width="42" height="20" rx="3"/><text x="69" y="13" text-anchor="middle" class="label" fill="#fff">F2</text>
+      <rect class="btn orange" x="96" y="0" width="42" height="20" rx="3"/><text x="117" y="13" text-anchor="middle" class="label" fill="#fff">F3</text>
+      <rect class="btn orange" x="144" y="0" width="42" height="20" rx="3"/><text x="165" y="13" text-anchor="middle" class="label" fill="#fff">F4</text>
+      <rect class="btn orange" x="192" y="0" width="42" height="20" rx="3"/><text x="213" y="13" text-anchor="middle" class="label" fill="#fff">F5</text>
+      <rect class="btn orange" x="240" y="0" width="42" height="20" rx="3"/><text x="261" y="13" text-anchor="middle" class="label" fill="#fff">F6</text>
+      <rect class="btn orange" x="288" y="0" width="42" height="20" rx="3"/><text x="309" y="13" text-anchor="middle" class="label" fill="#fff">F7</text>
+      <rect class="btn orange" x="336" y="0" width="42" height="20" rx="3"/><text x="357" y="13" text-anchor="middle" class="label" fill="#fff">F8</text>
+    </g>
+
+    <text x="0" y="164" class="grouplabel">Modifiers (notes 70-73)</text>
+    <g transform="translate(0,172)">
+      <rect class="btn red" x="0" y="0" width="88" height="20" rx="3"/><text x="44" y="13" text-anchor="middle" class="label">SHIFT</text>
+      <rect class="btn red" x="96" y="0" width="88" height="20" rx="3"/><text x="140" y="13" text-anchor="middle" class="label">OPTION</text>
+      <rect class="btn red" x="192" y="0" width="88" height="20" rx="3"/><text x="236" y="13" text-anchor="middle" class="label">CTRL</text>
+      <rect class="btn red" x="288" y="0" width="88" height="20" rx="3"/><text x="332" y="13" text-anchor="middle" class="label">ALT</text>
+    </g>
+
+    <text x="0" y="216" class="grouplabel">B.T.A. / DRAW / other (notes 74-79, 86-90)</text>
+    <g transform="translate(0,224)">
+      <rect class="btn dim" x="0" y="0" width="70" height="20" rx="3"/><text x="35" y="13" text-anchor="middle" class="label small">SESS/ARR</text>
+      <rect class="btn dim" x="76" y="0" width="70" height="20" rx="3"/><text x="111" y="13" text-anchor="middle" class="label small">DRAW</text>
+      <rect class="btn dim" x="152" y="0" width="70" height="20" rx="3"/><text x="187" y="13" text-anchor="middle" class="label small">HOME/END</text>
+      <rect class="btn orange" x="228" y="0" width="70" height="20" rx="3"/><text x="263" y="13" text-anchor="middle" class="label" fill="#fff">B.T.A.</text>
+      <rect class="btn dim" x="304" y="0" width="80" height="20" rx="3"/><text x="344" y="13" text-anchor="middle" class="label small">PUNCH OUT</text>
+    </g>
+
+    <text x="0" y="270" class="grouplabel">Jog-Wheel Section (note 101, CC 60)</text>
+    <g transform="translate(120,340)">
+      <circle class="wheel" cx="0" cy="0" r="56"/>
+      <circle fill="none" stroke="#56657a" stroke-width="1" cx="0" cy="0" r="56" stroke-dasharray="3,4"/>
+      <line x1="0" y1="0" x2="0" y2="-48" class="wheelgrip"/>
+      <line x1="0" y1="0" x2="41" y2="24" class="wheelgrip"/>
+      <line x1="0" y1="0" x2="-41" y2="24" class="wheelgrip"/>
+      <text x="0" y="5" text-anchor="middle" class="label" font-weight="700">JOG</text>
+    </g>
+    <g transform="translate(0,296)">
+      <rect class="btn dim" x="0" y="0" width="54" height="16" rx="2"/><text x="27" y="11" text-anchor="middle" class="label small">CURSOR</text>
+      <rect class="btn orange" x="58" y="0" width="54" height="16" rx="2"/><text x="85" y="11" text-anchor="middle" class="label small" fill="#fff">SCROLL</text>
+      <rect class="btn dim" x="116" y="0" width="54" height="16" rx="2"/><text x="143" y="11" text-anchor="middle" class="label small">ZOOM</text>
+      <rect class="btn dim" x="0" y="20" width="54" height="16" rx="2"/><text x="27" y="31" text-anchor="middle" class="label small">MASTER</text>
+      <rect class="btn dim" x="58" y="20" width="54" height="16" rx="2"/><text x="85" y="31" text-anchor="middle" class="label small">MARKER</text>
+      <rect class="btn dim" x="116" y="20" width="54" height="16" rx="2"/><text x="143" y="31" text-anchor="middle" class="label small">NUDGE</text>
+    </g>
+    <text x="0" y="412" class="label small" font-style="italic">Wheel-mode buttons pick what the wheel itself sends when turned</text>
+    <text x="0" y="424" class="label small" font-style="italic">(most combos in this guide need SCROLL mode - see Section 8)</text>
+
+    <text x="230" y="270" class="grouplabel">Transport</text>
+    <g transform="translate(230,278)">
+      <rect class="btn dim" x="0" y="0" width="72" height="18" rx="3"/><text x="36" y="13" text-anchor="middle" class="label small">&#9664;&#9664; REW</text>
+      <rect class="btn dim" x="78" y="0" width="72" height="18" rx="3"/><text x="114" y="13" text-anchor="middle" class="label small">FF &#9654;&#9654;</text>
+      <rect class="btn dim" x="0" y="22" width="72" height="18" rx="3"/><text x="36" y="35" text-anchor="middle" class="label small">STOP</text>
+      <rect class="btn orange" x="78" y="22" width="72" height="18" rx="3"/><text x="114" y="35" text-anchor="middle" class="label small" fill="#fff">PLAY</text>
+      <rect class="btn red" x="0" y="44" width="150" height="18" rx="3"/><text x="75" y="57" text-anchor="middle" class="label small">RECORD</text>
+    </g>
+    <text x="230" y="356" class="grouplabel">Page / Cursor (notes 82-83, 96-100)</text>
+    <g transform="translate(230,364)">
+      <rect class="btn dim" x="0" y="0" width="72" height="18" rx="3"/><text x="36" y="13" text-anchor="middle" class="label small">PAGE &#9664;/&#9654;</text>
+      <rect class="btn dim" x="78" y="0" width="72" height="18" rx="3"/><text x="114" y="13" text-anchor="middle" class="label small">ZOOM tgl</text>
+      <rect class="btn dim" x="0" y="22" width="150" height="18" rx="3"/><text x="75" y="35" text-anchor="middle" class="label small">Cursor &#9650; &#9660; &#9664; &#9654;</text>
+    </g>
+  </g>
+
+  <text x="30" y="508" class="label small">Original schematic diagram for this project - not a manufacturer photo. Group positions are approximate; exact note numbers are in the Confirmed Button Map (README.md / User Guide Section 6).</text>
+</svg>
