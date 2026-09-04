@@ -245,8 +245,8 @@ overlay, and what this project's script repurposes it for:
 | SENDS | Control the Send level for the selected track. | Toggle Sends mode (SHIFT jumps straight to Sends 9-16). |
 | FLIP | Swap the faders' and V-Pots' functions. | Swap faders/encoders between Volume/Pan (Mixer) or Volume/Macros (Device). |
 | RETURNS | Switch the channel strips between Return Tracks and Audio/MIDI Tracks. | Swap channel strips to/from the Return Tracks bank. |
-| S CLEAR | Clear (disable) solo for the currently focused bank of channel strips. | Not yet confirmed/bound in this script - see Hardware test status. |
-| M CLEAR | Clear (disable) mute for the currently focused bank of channel strips. | Not yet confirmed/bound in this script - see Hardware test status. |
+| S CLEAR | Clear (disable) solo for the currently focused bank of channel strips. | Confirmed on hardware - clears solo for the current channel bank as expected. |
+| M CLEAR | Clear (disable) mute for the currently focused bank of channel strips. | Confirmed on hardware - clears mute for the current channel bank as expected. |
 | SESS/ARR. | Toggle Session/Arrangement View. | Toggle Bitwig's Mix/Arrange panel layout; SHIFT+press toggles the clip launcher sidebar in Arrange view. |
 | CLIP/FX | Toggle Device/Clip View. | Toggle device/clip view. |
 | BROWSER | Show/hide the Browser. | Toggle the browser panel. |
@@ -1332,8 +1332,10 @@ checked off, uncheck it here until it's retested.
       behavior are both confirmed, only the click itself isn't.
 - [ ] Note 112 (the master fader's *touch* note, distinct from turning
       it) - not confirmed to fire on this 8-fader unit at all.
-- [ ] Notes 50/51/80/81/87 - either unbound or need a fresh confirmation
-      sweep against the current overlay placement.
+- [x] **S CLEAR / M CLEAR** - confirmed on hardware: clears solo/mute for
+      the current channel bank as expected.
+- [ ] Notes 50/51/87 - either unbound or need a fresh confirmation sweep
+      against the current overlay placement.
 - [ ] ~33 generic Function Keys Editing/File actions (the ones without a
       dedicated typed `Application` method) - not hardware-tested one by
       one.
