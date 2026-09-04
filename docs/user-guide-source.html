@@ -23,7 +23,7 @@
     margin: 0;
   }
   .cover {
-    height: 240mm;
+    height: 210mm;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -99,6 +99,7 @@
     padding: 3mm 5mm;
     margin: 4mm 0;
     border-radius: 0 4px 4px 0;
+    page-break-inside: avoid;
   }
   .callout.setup {
     background: #eef5f0;
@@ -136,9 +137,11 @@
     color: #fff;
     font-weight: 600;
   }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
   tr:nth-child(even) td { background: #f7f9fb; }
   ul, ol { margin: 0 0 3.5mm 0; padding-left: 5mm; }
-  li { margin-bottom: 1.5mm; }
+  li { margin-bottom: 1.5mm; page-break-inside: avoid; }
   .section { page-break-inside: auto; }
   .keep { page-break-inside: avoid; }
   .toc { margin-top: 6mm; }
@@ -231,34 +234,18 @@ elsewhere in Bitwig), and a fader position self-test.
 <div class="callout setup">
 <span class="label" style="color:#2f7d5c;">Takeover Mode doesn't matter for this controller</span>
 <p>
-Bitwig's <strong>Takeover Mode</strong> preference (Settings -&gt;
-Controllers, top of the page - Pick Up (Catch) / Jump (Immediate) / Value
-Scaling) is a Studio-wide setting that applies to every connected
-controller at once. But this script never uses Bitwig's own
-HardwareControl binding system for anything except the 8 faders, and
-every one of those explicitly opts out of Takeover Mode already (the
-motor drives the fader to match the real value directly, so there is
-nothing to catch up on). Every other control on this hardware - encoders,
-buttons, the jog wheel - is read as raw MIDI and written straight to
-Bitwig parameters by this script's own code, which never goes through
-Bitwig's binding/Takeover pipeline at all. <strong>Net result: whatever
-you set Takeover Mode to, it changes nothing about how the Midiplus UP
-behaves.</strong>
-</p>
-<p>
-So pick it based on your <em>other</em> connected controllers, if you
-have any, since it is Studio-wide - there is no confirmed way in Bitwig
-6.1 to scope it to just one controller (Bitwig's own documentation
-describes a per-controller override icon, but it was not found in the
-actual 6.1 Controllers panel - already reported to Bitwig). As a general
-rule for other gear: <strong>Pick Up (Catch)</strong> is the safer
-default for any non-motorized knob/fader/pad controller (no accidental
-value jumps when a physical control's position does not match the
-software value); <strong>Jump (Immediate)</strong> trades that safety for
-instant response, which only really makes sense on a motorized controller
-that keeps its own physical position in sync automatically - exactly what
-this script's own faders already do internally, independent of this
-setting either way.
+Bitwig's <strong>Takeover Mode</strong> (Settings -&gt; Controllers - Pick
+Up / Jump / Value Scaling) is Studio-wide, applying to every connected
+controller - there's no per-controller override in Bitwig 6.1. This
+script only uses Bitwig's native binding system for the 8 motorized
+faders, and each one opts out of Takeover Mode already (the motor keeps
+the fader in sync directly). Everything else is raw MIDI handled by the
+script's own code, bypassing Bitwig's Takeover pipeline entirely.
+<strong>So this setting changes nothing about how the Midiplus UP
+behaves</strong> - pick it based on your other connected gear instead. As
+a rule of thumb: <strong>Pick Up (Catch)</strong> is safer for
+non-motorized controllers; <strong>Jump (Immediate)</strong> suits
+motorized ones that already track their own position, like this one.
 </p>
 </div>
 
@@ -336,7 +323,10 @@ you can add one in a couple of clicks.
 
 <h2 id="modes-glance">3. Modes at a Glance</h2>
 <table class="wide">
+<thead>
 <tr><th>Mode</th><th>How to enter</th><th>What the faders / encoders control</th></tr>
+</thead>
+<tbody>
 <tr>
   <td><strong>Mixer</strong> (default)</td>
   <td>TRACK/IO button, or leaving any other mode</td>
@@ -367,6 +357,7 @@ you can add one in a couple of clicks.
   <td>B.T.A. button</td>
   <td>Shows the clip launcher and switches Bitwig to the Mix panel layout; the jog wheel selects/launches scenes instead of scrubbing the timeline.</td>
 </tr>
+</tbody>
 </table>
 <p>
 Every mode-changing button fully resyncs the mode LEDs, LCD text,
@@ -388,11 +379,15 @@ configurable standalone action, described in the full settings reference
 (see Section 9).
 </p>
 <table>
+<thead>
 <tr><th>Modifier</th><th>Broad role</th></tr>
+</thead>
+<tbody>
 <tr><td><span class="modkey">SHIFT</span></td><td>Stepped/coarser adjustment on encoders; jump-to-start/end on bank scrolling; "store" actions (Mixer Snapshots, F-key green state) and the automation-write-enable toggle on DRAW.</td></tr>
 <tr><td><span class="modkey">OPTION</span></td><td>Loop-length halve/double on the wheel; "recall" actions (Mixer Snapshots) and hover-lock for last-clicked-parameter adjustment.</td></tr>
 <tr><td><span class="modkey">CTRL</span></td><td>The most-used combo modifier: steps devices, steps clip/track selection, and combines with SHIFT/ALT for clip/track duplicate-or-delete gestures.</td></tr>
 <tr><td><span class="modkey">ALT</span></td><td>Fine-resolution adjustment on encoders/faders; adjusts the last-clicked Bitwig GUI parameter via the wheel; combines with F8 for the Fader Position Test.</td></tr>
+</tbody>
 </table>
 
 <h2 id="modes-detail">5. Modes in Detail</h2>
@@ -431,7 +426,10 @@ any button's note number - only local-firmware LED behavior differs
 between modes, so this map holds in either.
 </p>
 <table class="wide">
+<thead>
 <tr><th>Notes</th><th>Function</th><th>Bitwig behavior</th></tr>
+</thead>
+<tbody>
 <tr><td>0-7</td><td>Rec Arm 1-8 (SEL row while the standalone REC button is toggled on)</td><td>Toggle record-arm</td></tr>
 <tr><td>8-15</td><td>Solo 1-8</td><td>Toggle solo</td></tr>
 <tr><td>16-23</td><td>Mute 1-8</td><td>Toggle mute</td></tr>
@@ -479,6 +477,7 @@ between modes, so this map holds in either.
 <tr><td>CC 60</td><td>Jog wheel</td><td>Arranger scrub, or bar/loop/tempo nudge with modifiers, or scene navigation in Scene mode</td></tr>
 <tr><td>Pitch bend ch 0-7</td><td>Faders 1-8</td><td>Motorized fader input/output, native hardware binding</td></tr>
 <tr><td>Pitch bend ch 8</td><td>Master (jog wheel, MASTER mode)</td><td>No separate master fader on this unit - the jog wheel substitutes pitch-bend on this channel instead; parsed manually by the script rather than a native binding, see note below</td></tr>
+</tbody>
 </table>
 
 <h2 id="wheel-modes">7. Jog-Wheel "Mode" Buttons</h2>
@@ -490,13 +489,17 @@ purely local firmware state that changes what the wheel itself sends when
 subsequently turned.
 </p>
 <table>
+<thead>
 <tr><th>Mode</th><th>Mode button itself</th><th>Wheel click</th><th>Wheel turn</th></tr>
+</thead>
+<tbody>
 <tr><td>SCROLL (base/default)</td><td>No MIDI at all</td><td>Note 101</td><td>CC 60 (normal scrub)</td></tr>
 <tr><td>ZOOM</td><td>Note 100 (toggle)</td><td>Nothing</td><td>Note-On 96/97 (up/down) or 98/99 (left/right)</td></tr>
 <tr><td>MARKER</td><td>No MIDI at all</td><td>Nothing</td><td>Note-On 84/85 - previous/next cue marker</td></tr>
 <tr><td>BANK</td><td>Note 46/47</td><td>Nothing</td><td>Note-On 46/47</td></tr>
 <tr><td>CHANNEL</td><td>Note 48/49</td><td>Nothing</td><td>Note-On 48/49</td></tr>
 <tr><td>MASTER</td><td>No MIDI at all</td><td>Not yet tested</td><td>Pitch-bend, channel 9 - drives master volume, see note below</td></tr>
+</tbody>
 </table>
 <p>(CURSOR and NUDGE modes not yet tested.)</p>
 <div class="callout setup">
