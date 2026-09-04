@@ -69,6 +69,8 @@
     margin-top: 12mm;
     margin-bottom: 5mm;
     page-break-after: avoid;
+    break-after: avoid-page;
+    page-break-inside: avoid;
   }
   h3 {
     font-size: 12.5pt;
@@ -76,6 +78,8 @@
     margin-bottom: 3mm;
     color: #c9722a;
     page-break-after: avoid;
+    break-after: avoid-page;
+    page-break-inside: avoid;
   }
   h4 {
     font-size: 11pt;
@@ -83,6 +87,12 @@
     margin-bottom: 2mm;
     color: #14202e;
     page-break-after: avoid;
+    break-after: avoid-page;
+    page-break-inside: avoid;
+  }
+  h2 + *, h3 + *, h4 + * {
+    page-break-before: avoid;
+    break-before: avoid-page;
   }
   p { margin: 0 0 3.5mm 0; }
   code {
@@ -200,12 +210,12 @@
 <div class="toc">
   <h2 style="border:none;margin-top:0;">Contents</h2>
   <ol>
+    <li>Confirmed Button Map</li>
     <li>Intended Use Case</li>
     <li>One-Time Setup (MCU mode, overlay, the TRLVL device)</li>
     <li>Modes at a Glance</li>
     <li>Modifier Buttons at a Glance</li>
     <li>Modes in Detail</li>
-    <li>Confirmed Button Map</li>
     <li>Jog-Wheel "Mode" Buttons</li>
     <li>Jog Wheel Modifier Combos</li>
     <li>Where to Find Everything Else</li>
@@ -214,223 +224,7 @@
 
 <div style="page-break-after: always;"></div>
 
-<h2 id="use-case">1. Intended Use Case</h2>
-<p>
-This script turns a single Midiplus UP unit (in standard MCU mode) into a
-dedicated Bitwig mixing and gain-staging control surface: 8 motorized
-channel strips plus a master strip, not a multi-unit MCU array.
-</p>
-<p>It is built around three everyday jobs:</p>
-<ul>
-  <li><strong>Mixing</strong> - motorized-fader control of track Volume and
-  Pan, with fader snap points (to true zero, and to the round dB marks
-  printed on the hardware) so you can land exactly where you mean to.</li>
-  <li><strong>Gain-staging</strong> - a dedicated mode that points the same
-  faders/encoders at a per-track utility device instead of the track's own
-  Volume/Pan, for a separate, non-destructive gain-staging pass ahead of the
-  main mix (see Setup below).</li>
-  <li><strong>Plugin control and navigation</strong> - encoder control of a
-  selected device's 8 macros, jog-wheel scrubbing/zooming/clip and track
-  navigation, scene launching, and automation-mode cycling - all without
-  reaching for the mouse.</li>
-</ul>
-<p>
-On top of that, the script adds a set of quality-of-life extras: whole-project
-mixer snapshots (store/recall a full Volume+Pan balance across every track,
-not just the visible 8), auto-banking (the bank follows track selection made
-elsewhere in Bitwig), and a fader position self-test.
-</p>
-
-<h2 id="setup">2. One-Time Setup</h2>
-
-<div class="callout setup">
-<span class="label" style="color:#2f7d5c;">Takeover Mode doesn't matter for this controller</span>
-<p>
-Bitwig's <strong>Takeover Mode</strong> (Settings -&gt; Controllers - Pick
-Up / Jump / Value Scaling) is Studio-wide, applying to every connected
-controller - there's no per-controller override in Bitwig 6.1. This
-script only uses Bitwig's native binding system for the 8 motorized
-faders, and each one opts out of Takeover Mode already (the motor keeps
-the fader in sync directly). Everything else is raw MIDI handled by the
-script's own code, bypassing Bitwig's Takeover pipeline entirely.
-<strong>So this setting changes nothing about how the Midiplus UP
-behaves</strong> - pick it based on your other connected gear instead. As
-a rule of thumb: <strong>Pick Up (Catch)</strong> is safer for
-non-motorized controllers; <strong>Jump (Immediate)</strong> suits
-motorized ones that already track their own position, like this one.
-</p>
-</div>
-
-<h3>Hardware mode</h3>
-<p>
-In Bitwig, go to <strong>Settings -&gt; Controllers</strong>, add this
-script, and confirm the Midiplus UP is switched to standard
-<strong>MCU mode</strong> (hardware manual sections 3.3 / 8) - not one of
-the Logic/Cubase/Live "customized" modes.
-</p>
-<div class="callout">
-<p>
-After loading, check that Bitwig's Controllers panel (or Controller
-Preferences -&gt; About -&gt; Version) shows the version string on the cover
-page. An older string means Bitwig is still running a cached copy of a
-previous version of the script.
-</p>
-</div>
-
-<h3>The Ableton Live overlay</h3>
-<p>
-This setup deliberately leaves the plastic Ableton Live overlay's
-<strong>left and right</strong> pieces attached, and removes only its
-<strong>top</strong> piece. That matters for reading the button map in this
-guide without confusion:
-</p>
-<ul>
-  <li>Buttons under the <strong>top</strong> piece show their real, printed
-  MCU labels - TRACK/IO, SEND, PAN, PLUG-INS, RETURNS, BANK/CHANNEL, F1-F8,
-  the four modifier buttons, the jog-wheel section, and transport. These are
-  the labels used throughout this guide.</li>
-  <li>Buttons under the <strong>left and right</strong> pieces still show old
-  Live-mode stickers (SESS/ARR, CLIP/FX, BROWSER, DETAIL, LOOP, PUNCH OUT,
-  HOME, END, and others) that have nothing to do with what the button
-  actually does in this script. Wherever the button map below shows
-  <em>"(Live label: X)"</em>, that is this case - ignore the sticker, the
-  Bitwig behavior listed in that row is what actually happens.</li>
-</ul>
-<p>
-Confirmed on hardware: switching the unit between Live mode and standard MCU
-mode does not change any button's note number - only local LED/display
-behavior differs - so this mapping holds regardless of which overlay pieces
-happen to be attached.
-</p>
-
-<h3>The TRLVL device (required for Gain-Staging mode)</h3>
-<div class="callout setup">
-<p>
-The <span class="badge">PAN</span> button's Gain-Staging mode (see Modes
-below) does not control the track's own Volume/Pan - it controls a separate
-utility device on that track's chain. For this to work, that device
-<strong>must exist and must be named exactly <code>TRLVL</code></strong>
-(case-sensitive, no extra text).
-</p>
-<p>
-Bitwig's built-in <strong>Tool</strong> device (browser category
-<strong>Audio FX</strong>) is the natural fit: its first two native
-parameters are already Gain and Pan, exactly what this script expects to
-find on that device's first Remote Controls page.
-</p>
-<p><strong>To set it up on a track:</strong></p>
-<ol>
-  <li>Add a <strong>Tool</strong> device anywhere in that track's device
-  chain (a common choice is right before the track's own output, after EQ
-  and other corrective processing).</li>
-  <li>Rename it to exactly <code>TRLVL</code>.</li>
-  <li>Repeat per track you want to gain-stage this way.</li>
-</ol>
-<p>
-If you press PAN on a track with no <code>TRLVL</code> device yet, the
-script opens the browser at the end of that track's chain automatically, so
-you can add one in a couple of clicks.
-</p>
-</div>
-
-<h2 id="modes-glance">3. Modes at a Glance</h2>
-<table class="wide">
-<thead>
-<tr><th>Mode</th><th>How to enter</th><th>What the faders / encoders control</th></tr>
-</thead>
-<tbody>
-<tr>
-  <td><strong>Mixer</strong> (default)</td>
-  <td>TRACK/IO button, or leaving any other mode</td>
-  <td>Faders: track Volume. Encoders: track Pan. FLIP swaps faders/encoders between the two.</td>
-</tr>
-<tr>
-  <td><strong>Sends</strong></td>
-  <td>SEND button (cycles Sends 1-8 &rarr; 9-16 &rarr; back to Mixer, or 1-8 &harr; Mixer if Send/Return Bank Size = 8); SHIFT+SEND jumps straight to Sends 9-16</td>
-  <td>Faders/encoders: the selected track's send levels.</td>
-</tr>
-<tr>
-  <td><strong>Device / Plugin</strong></td>
-  <td>PLUG-INS button, or F1-F8 (default orange state, selects device 1-8 directly and opens its window)</td>
-  <td>Encoders: always the 8 device Remote Control macros. Faders: Volume by default, the same macros once FLIP is on.</td>
-</tr>
-<tr>
-  <td><strong>Gain-Staging (Tool Volume)</strong></td>
-  <td>PAN button, toggle - a sub-mode of Mixer</td>
-  <td>Faders/encoders: the Gain/Pan of that track's <code>TRLVL</code> device instead of its own Volume/Pan - requires the Setup step above.</td>
-</tr>
-<tr>
-  <td><strong>Returns</strong></td>
-  <td>RETURNS button</td>
-  <td>Same as Mixer/Sends, but the 8 channel strips are the Return tracks instead of Main tracks.</td>
-</tr>
-<tr>
-  <td><strong>Scene</strong></td>
-  <td>B.T.A. button</td>
-  <td>Shows the clip launcher and switches Bitwig to the Mix panel layout; the jog wheel selects/launches scenes instead of scrubbing the timeline.</td>
-</tr>
-</tbody>
-</table>
-<p>
-Every mode-changing button fully resyncs the mode LEDs, LCD text,
-channel-strip LEDs, and fader/encoder bindings together in one step, and
-automatically closes a Device-mode plugin window when leaving that mode -
-jumping directly between any two modes always lands in one consistent
-state.
-</p>
-
-<h2 id="modifiers-glance">4. Modifier Buttons at a Glance</h2>
-<p>
-<span class="modkey">SHIFT</span> <span class="modkey">OPTION</span>
-<span class="modkey">CTRL</span> <span class="modkey">ALT</span> - the four
-buttons directly under the F-keys - are held modifiers for most of what
-this controller does. Encoder turns, jog-wheel turns, and some button taps
-all change behavior depending on which is held. A quick tap-and-release of
-any of them (without using it to modify anything else) also has its own
-configurable standalone action, described in the full settings reference
-(see Section 9).
-</p>
-<table>
-<thead>
-<tr><th>Modifier</th><th>Broad role</th></tr>
-</thead>
-<tbody>
-<tr><td><span class="modkey">SHIFT</span></td><td>Stepped/coarser adjustment on encoders; jump-to-start/end on bank scrolling; "store" actions (Mixer Snapshots, F-key green state) and the automation-write-enable toggle on DRAW.</td></tr>
-<tr><td><span class="modkey">OPTION</span></td><td>Loop-length halve/double on the wheel; "recall" actions (Mixer Snapshots) and hover-lock for last-clicked-parameter adjustment.</td></tr>
-<tr><td><span class="modkey">CTRL</span></td><td>The most-used combo modifier: steps devices, steps clip/track selection, and combines with SHIFT/ALT for clip/track duplicate-or-delete gestures.</td></tr>
-<tr><td><span class="modkey">ALT</span></td><td>Fine-resolution adjustment on encoders/faders; adjusts the last-clicked Bitwig GUI parameter via the wheel; combines with F8 for the Fader Position Test.</td></tr>
-</tbody>
-</table>
-
-<h2 id="modes-detail">5. Modes in Detail</h2>
-<ul>
-  <li><strong>Mixer</strong> (default) - faders/encoders control track
-  volume/pan, or a <code>TRLVL</code> device's Gain/Pan if Gain-Staging mode
-  is active (PAN button).</li>
-  <li><strong>Sends</strong> - faders/encoders control the focused track's
-  sends. SEND cycles 1-8 &rarr; 9-16 &rarr; back to Mixer by default, or 1-8
-  &rarr; Mixer directly if <strong>Send/Return Bank Size</strong> is set to
-  8. SHIFT+SEND always jumps straight to sends 9-16.</li>
-  <li><strong>Device</strong> - encoders <em>always</em> control the
-  selected device's 8 Remote Control macros, regardless of FLIP. Faders
-  control track volume by default and swap to the macros when FLIP is on
-  (press again to revert) - FLIP only affects the faders here, not the
-  encoders. Entered via PLUG-INS, or via F1-F8 in their default/orange
-  state, which also jump directly to device 1-8 on the chain and open its
-  plugin window. Pressing the same F-key again for the already-selected
-  device toggles its window closed/open instead of reselecting it.</li>
-  <li><strong>Scene</strong> - entered via B.T.A.: shows the clip launcher,
-  switches Bitwig to the Mix panel layout, and the jog wheel
-  selects/launches scenes instead of scrubbing.</li>
-</ul>
-<p>
-FLIP swaps faders and encoders between volume and pan in Mixer mode, and
-faders only between volume and macros in Device mode.
-</p>
-
-<div style="page-break-after: always;"></div>
-
-<h2 id="button-map">6. Confirmed Button Map</h2>
+<h2 id="button-map">1. Confirmed Button Map</h2>
 <img class="diagram" src="midiplus-up-layout.svg" alt="Symbolic layout diagram of the Midiplus UP in MCU mode">
 <p class="diagram-caption">
 Original schematic diagram for this project - button text and order read
@@ -461,7 +255,7 @@ photo; exact note numbers are in the table below.
 <tr><td>B.T.A.</td><td>Back to Arrangement.</td><td>Toggle Scene mode (clip launcher + Mix layout); ALT+press toggles the Master Wheel's metering plugin window.</td></tr>
 <tr><td>UNDO</td><td>Undo the last action.</td><td><code>application.undo()</code></td></tr>
 <tr><td>REDO</td><td>Redo the last action.</td><td><code>application.redo()</code></td></tr>
-<tr><td>SHIFT / OPTION / CTRL / ALT</td><td>Modifier keys, like the ones on a computer keyboard.</td><td>Modifier hold-state used across nearly every other button/encoder/wheel gesture - see Modifier Buttons at a Glance above.</td></tr>
+<tr><td>SHIFT / OPTION / CTRL / ALT</td><td>Modifier keys, like the ones on a computer keyboard.</td><td>Modifier hold-state used across nearly every other button/encoder/wheel gesture - see Modifier Buttons at a Glance below.</td></tr>
 <tr><td>REC</td><td>Arms the 8 SEL buttons for record instead of select.</td><td>Same - toggles the SEL row between <code>track.arm().toggle()</code> and select.</td></tr>
 <tr><td>SELECT</td><td>Default state - the 8 SEL buttons choose/activate a channel.</td><td>Same - <code>selectInMixer()</code> / double-press folds/unfolds a group track.</td></tr>
 </tbody>
@@ -550,6 +344,225 @@ between modes, so this map holds in either.
 <tr><td>Pitch bend ch 8</td><td>Master (jog wheel, MASTER mode)</td><td>No separate master fader on this unit - the jog wheel substitutes pitch-bend on this channel instead; parsed manually by the script rather than a native binding, see note below</td></tr>
 </tbody>
 </table>
+
+<div style="page-break-after: always;"></div>
+
+<h2 id="use-case">2. Intended Use Case</h2>
+<p>
+This script turns a single Midiplus UP unit (in standard MCU mode) into a
+dedicated Bitwig mixing and gain-staging control surface: 8 motorized
+channel strips plus a master strip, not a multi-unit MCU array.
+</p>
+<p>It is built around three everyday jobs:</p>
+<ul>
+  <li><strong>Mixing</strong> - motorized-fader control of track Volume and
+  Pan, with fader snap points (to true zero, and to the round dB marks
+  printed on the hardware) so you can land exactly where you mean to.</li>
+  <li><strong>Gain-staging</strong> - a dedicated mode that points the same
+  faders/encoders at a per-track utility device instead of the track's own
+  Volume/Pan, for a separate, non-destructive gain-staging pass ahead of the
+  main mix (see Setup below).</li>
+  <li><strong>Plugin control and navigation</strong> - encoder control of a
+  selected device's 8 macros, jog-wheel scrubbing/zooming/clip and track
+  navigation, scene launching, and automation-mode cycling - all without
+  reaching for the mouse.</li>
+</ul>
+<p>
+On top of that, the script adds a set of quality-of-life extras: whole-project
+mixer snapshots (store/recall a full Volume+Pan balance across every track,
+not just the visible 8), auto-banking (the bank follows track selection made
+elsewhere in Bitwig), and a fader position self-test.
+</p>
+
+<h2 id="setup">3. One-Time Setup</h2>
+
+<div class="callout setup">
+<span class="label" style="color:#2f7d5c;">Takeover Mode doesn't matter for this controller</span>
+<p>
+Bitwig's <strong>Takeover Mode</strong> (Settings -&gt; Controllers - Pick
+Up / Jump / Value Scaling) is Studio-wide, applying to every connected
+controller - there's no per-controller override in Bitwig 6.1. This
+script only uses Bitwig's native binding system for the 8 motorized
+faders, and each one opts out of Takeover Mode already (the motor keeps
+the fader in sync directly). Everything else is raw MIDI handled by the
+script's own code, bypassing Bitwig's Takeover pipeline entirely.
+<strong>So this setting changes nothing about how the Midiplus UP
+behaves</strong> - pick it based on your other connected gear instead. As
+a rule of thumb: <strong>Pick Up (Catch)</strong> is safer for
+non-motorized controllers; <strong>Jump (Immediate)</strong> suits
+motorized ones that already track their own position, like this one.
+</p>
+</div>
+
+<h3>Hardware mode</h3>
+<p>
+In Bitwig, go to <strong>Settings -&gt; Controllers</strong>, add this
+script, and confirm the Midiplus UP is switched to standard
+<strong>MCU mode</strong> (hardware manual sections 3.3 / 8) - not one of
+the Logic/Cubase/Live "customized" modes.
+</p>
+<div class="callout">
+<p>
+After loading, check that Bitwig's Controllers panel (or Controller
+Preferences -&gt; About -&gt; Version) shows the version string on the cover
+page. An older string means Bitwig is still running a cached copy of a
+previous version of the script.
+</p>
+</div>
+
+<h3>The Ableton Live overlay</h3>
+<p>
+This setup deliberately leaves the plastic Ableton Live overlay's
+<strong>left and right</strong> pieces attached, and removes only its
+<strong>top</strong> piece. That matters for reading the button map in this
+guide without confusion:
+</p>
+<ul>
+  <li>Buttons under the <strong>top</strong> piece show their real, printed
+  MCU labels - TRACK/IO, SEND, PAN, PLUG-INS, RETURNS, BANK/CHANNEL, F1-F8,
+  the four modifier buttons, the jog-wheel section, and transport. These are
+  the labels used throughout this guide.</li>
+  <li>Buttons under the <strong>left and right</strong> pieces still show old
+  Live-mode stickers (SESS/ARR, CLIP/FX, BROWSER, DETAIL, LOOP, PUNCH OUT,
+  HOME, END, and others) that have nothing to do with what the button
+  actually does in this script. Wherever the Confirmed Button Map at the
+  front of this guide shows <em>"(Live label: X)"</em>, that is this case -
+  ignore the sticker, the Bitwig behavior listed in that row is what
+  actually happens.</li>
+</ul>
+<p>
+Confirmed on hardware: switching the unit between Live mode and standard MCU
+mode does not change any button's note number - only local LED/display
+behavior differs - so this mapping holds regardless of which overlay pieces
+happen to be attached.
+</p>
+
+<h3>The TRLVL device (required for Gain-Staging mode)</h3>
+<div class="callout setup">
+<p>
+The <span class="badge">PAN</span> button's Gain-Staging mode (see Modes
+below) does not control the track's own Volume/Pan - it controls a separate
+utility device on that track's chain. For this to work, that device
+<strong>must exist and must be named exactly <code>TRLVL</code></strong>
+(case-sensitive, no extra text).
+</p>
+<p>
+Bitwig's built-in <strong>Tool</strong> device (browser category
+<strong>Audio FX</strong>) is the natural fit: its first two native
+parameters are already Gain and Pan, exactly what this script expects to
+find on that device's first Remote Controls page.
+</p>
+<p><strong>To set it up on a track:</strong></p>
+<ol>
+  <li>Add a <strong>Tool</strong> device anywhere in that track's device
+  chain (a common choice is right before the track's own output, after EQ
+  and other corrective processing).</li>
+  <li>Rename it to exactly <code>TRLVL</code>.</li>
+  <li>Repeat per track you want to gain-stage this way.</li>
+</ol>
+<p>
+If you press PAN on a track with no <code>TRLVL</code> device yet, the
+script opens the browser at the end of that track's chain automatically, so
+you can add one in a couple of clicks.
+</p>
+</div>
+
+<h2 id="modes-glance">4. Modes at a Glance</h2>
+<table class="wide">
+<thead>
+<tr><th>Mode</th><th>How to enter</th><th>What the faders / encoders control</th></tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>Mixer</strong> (default)</td>
+  <td>TRACK/IO button, or leaving any other mode</td>
+  <td>Faders: track Volume. Encoders: track Pan. FLIP swaps faders/encoders between the two.</td>
+</tr>
+<tr>
+  <td><strong>Sends</strong></td>
+  <td>SEND button (cycles Sends 1-8 &rarr; 9-16 &rarr; back to Mixer, or 1-8 &harr; Mixer if Send/Return Bank Size = 8); SHIFT+SEND jumps straight to Sends 9-16</td>
+  <td>Faders/encoders: the selected track's send levels.</td>
+</tr>
+<tr>
+  <td><strong>Device / Plugin</strong></td>
+  <td>PLUG-INS button, or F1-F8 (default orange state, selects device 1-8 directly and opens its window)</td>
+  <td>Encoders: always the 8 device Remote Control macros. Faders: Volume by default, the same macros once FLIP is on.</td>
+</tr>
+<tr>
+  <td><strong>Gain-Staging (Tool Volume)</strong></td>
+  <td>PAN button, toggle - a sub-mode of Mixer</td>
+  <td>Faders/encoders: the Gain/Pan of that track's <code>TRLVL</code> device instead of its own Volume/Pan - requires the Setup step above.</td>
+</tr>
+<tr>
+  <td><strong>Returns</strong></td>
+  <td>RETURNS button</td>
+  <td>Same as Mixer/Sends, but the 8 channel strips are the Return tracks instead of Main tracks.</td>
+</tr>
+<tr>
+  <td><strong>Scene</strong></td>
+  <td>B.T.A. button</td>
+  <td>Shows the clip launcher and switches Bitwig to the Mix panel layout; the jog wheel selects/launches scenes instead of scrubbing the timeline.</td>
+</tr>
+</tbody>
+</table>
+<p>
+Every mode-changing button fully resyncs the mode LEDs, LCD text,
+channel-strip LEDs, and fader/encoder bindings together in one step, and
+automatically closes a Device-mode plugin window when leaving that mode -
+jumping directly between any two modes always lands in one consistent
+state.
+</p>
+
+<h2 id="modifiers-glance">5. Modifier Buttons at a Glance</h2>
+<p>
+<span class="modkey">SHIFT</span> <span class="modkey">OPTION</span>
+<span class="modkey">CTRL</span> <span class="modkey">ALT</span> - the four
+buttons directly under the F-keys - are held modifiers for most of what
+this controller does. Encoder turns, jog-wheel turns, and some button taps
+all change behavior depending on which is held. A quick tap-and-release of
+any of them (without using it to modify anything else) also has its own
+configurable standalone action, described in the full settings reference
+(see Section 9).
+</p>
+<table>
+<thead>
+<tr><th>Modifier</th><th>Broad role</th></tr>
+</thead>
+<tbody>
+<tr><td><span class="modkey">SHIFT</span></td><td>Stepped/coarser adjustment on encoders; jump-to-start/end on bank scrolling; "store" actions (Mixer Snapshots, F-key green state) and the automation-write-enable toggle on DRAW.</td></tr>
+<tr><td><span class="modkey">OPTION</span></td><td>Loop-length halve/double on the wheel; "recall" actions (Mixer Snapshots) and hover-lock for last-clicked-parameter adjustment.</td></tr>
+<tr><td><span class="modkey">CTRL</span></td><td>The most-used combo modifier: steps devices, steps clip/track selection, and combines with SHIFT/ALT for clip/track duplicate-or-delete gestures.</td></tr>
+<tr><td><span class="modkey">ALT</span></td><td>Fine-resolution adjustment on encoders/faders; adjusts the last-clicked Bitwig GUI parameter via the wheel; combines with F8 for the Fader Position Test.</td></tr>
+</tbody>
+</table>
+
+<h2 id="modes-detail">6. Modes in Detail</h2>
+<ul>
+  <li><strong>Mixer</strong> (default) - faders/encoders control track
+  volume/pan, or a <code>TRLVL</code> device's Gain/Pan if Gain-Staging mode
+  is active (PAN button).</li>
+  <li><strong>Sends</strong> - faders/encoders control the focused track's
+  sends. SEND cycles 1-8 &rarr; 9-16 &rarr; back to Mixer by default, or 1-8
+  &rarr; Mixer directly if <strong>Send/Return Bank Size</strong> is set to
+  8. SHIFT+SEND always jumps straight to sends 9-16.</li>
+  <li><strong>Device</strong> - encoders <em>always</em> control the
+  selected device's 8 Remote Control macros, regardless of FLIP. Faders
+  control track volume by default and swap to the macros when FLIP is on
+  (press again to revert) - FLIP only affects the faders here, not the
+  encoders. Entered via PLUG-INS, or via F1-F8 in their default/orange
+  state, which also jump directly to device 1-8 on the chain and open its
+  plugin window. Pressing the same F-key again for the already-selected
+  device toggles its window closed/open instead of reselecting it.</li>
+  <li><strong>Scene</strong> - entered via B.T.A.: shows the clip launcher,
+  switches Bitwig to the Mix panel layout, and the jog wheel
+  selects/launches scenes instead of scrubbing.</li>
+</ul>
+<p>
+FLIP swaps faders and encoders between volume and pan in Mixer mode, and
+faders only between volume and macros in Device mode.
+</p>
+
+<div style="page-break-after: always;"></div>
 
 <h2 id="wheel-modes">7. Jog-Wheel "Mode" Buttons</h2>
 <p>
